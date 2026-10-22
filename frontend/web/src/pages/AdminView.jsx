@@ -12,23 +12,31 @@ const SERVICE = {
 
 const STATE_TEXT = { up: 'Running', degraded: 'Degraded', down: 'Not reachable' };
 
+function messagingSummary(m) {
+  if (!m) return '';
+  const broker = m.mode === 'rabbitmq' ? (m.connected ? 'RabbitMQ connected' : `RabbitMQ unreachable${m.lastError ? ` (${m.lastError})` : ''}`) : 'no broker (direct HTTP fallback)';
+  const dead = (m.queues || []).filter((q) => q.queue.endsWith('.dlq') && q.messages > 0);
+  const deadText = dead.length ? `, ${dead.map((q) => `${q.messages} in ${q.queue}`).join(', ')} - review and replay` : '';
+  return `Messaging: ${broker}${deadText}`;
+}
+
 function serviceDetails(s) {
   const d = s.details || {};
   if (s.status === 'down') return `No response (${s.error || 'connection refused'}). Start it with npm start in its folder.`;
   if (s.name === 'checkin' && d.outbox) {
     const pending = d.outbox.pending || 0;
     const failed = d.outbox.failed || 0;
-    return `${d.outbox.delivered || 0} events delivered${pending ? `, ${pending} waiting to send` : ''}${failed ? `, ${failed} need manual follow-up` : ''}`;
+    return [`${d.outbox.delivered || 0} events published${pending ? `, ${pending} waiting to send` : ''}${failed ? `, ${failed} need manual follow-up` : ''}`, messagingSummary(d.messaging)].filter(Boolean).join('. ');
   }
   if (s.name === 'alert' && d.integrations) {
     const i = d.integrations;
     return [
-      `SMS: ${i.twilio === 'live' ? 'sending through Twilio' : 'test mode (messages logged, not sent)'}`,
+      `SMS: ${i.sms && i.sms.live ? 'sending through TextBee' : `test mode (messages logged, not sent)${i.sms && i.sms.reason ? ` - ${i.sms.reason}` : ''}`}`,
       `Weather: ${i.openWeatherMap === 'configured' ? `OpenWeatherMap connected${i.lastWeatherFetch ? `, last check ${relTime(i.lastWeatherFetch)}` : ''}` : 'no API key set'}`,
-      `SMS retry queue: ${String(i.smsQueue).startsWith('bullmq') ? 'Redis (durable)' : 'in memory'}`,
-    ].join('. ');
+      messagingSummary(d.messaging),
+    ].filter(Boolean).join('. ');
   }
-  if (s.name === 'clinic' && d.activeQueueItems !== undefined) return `${d.activeQueueItems} patients in the active queue`;
+  if (s.name === 'clinic' && d.activeQueueItems !== undefined) return [`${d.activeQueueItems} patients in the active queue`, messagingSummary(d.messaging)].filter(Boolean).join('. ');
   if (s.name === 'legacyAdapter') return 'Translates SOAP/XML records from the health center system into JSON';
   return '';
 }

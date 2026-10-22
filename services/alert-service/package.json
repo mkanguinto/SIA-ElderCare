@@ -1,22 +1,23 @@
 {
   "name": "eldercare-alert-service",
   "version": "1.0.0",
-  "description": "ElderCare Connect - Family Alert & Notification Service (Twilio SMS + OpenWeatherMap mashup)",
+  "description": "ElderCare Connect - Family Alert & Notification Service (RabbitMQ + TextBee SMS + OpenWeatherMap mashup)",
   "main": "server.js",
   "private": true,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test"
   },
   "dependencies": {
+    "amqplib": "^0.10.4",
     "axios": "^1.7.0",
-    "bullmq": "^5.30.0",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
     "helmet": "^8.0.0",
-    "pg": "^8.13.0",
-    "twilio": "^5.3.0"
+    "pg": "^8.13.0"
   }
 }

@@ -87,3 +87,26 @@ ON CONFLICT (code) DO NOTHING;
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS provider TEXT;
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS note     TEXT;
 ALTER TABLE subscribers      ADD COLUMN IF NOT EXISTS created_by TEXT;
+
+-- ------------------------------------------------------------------------------------------
+-- v2 (RabbitMQ + TextBee): transactional outbox for weather.risk_detected and
+-- notification.sms.requested events (relay publishes to the eldercare.events exchange).
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id               BIGSERIAL PRIMARY KEY,
+  event_id         UUID        NOT NULL,
+  event_type       TEXT        NOT NULL,     -- RabbitMQ routing key
+  target           TEXT        NOT NULL DEFAULT 'broker',
+  payload          JSONB       NOT NULL,
+  status           TEXT        NOT NULL DEFAULT 'pending',   -- pending | delivered | failed
+  attempts         INT         NOT NULL DEFAULT 0,
+  next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error       TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  delivered_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events (next_attempt_at) WHERE status = 'pending';
+
+-- SMS worker idempotency: a notification moves queued -> sending -> sent|simulated|failed|unconfirmed
+-- exactly once. sending_started_at lets a redelivery tell "in flight" from "crashed mid-send".
+ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMPTZ;
+ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS alert_type TEXT;

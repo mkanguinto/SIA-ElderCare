@@ -2,7 +2,13 @@
 #   cp .env.example .env    (then fill in secrets / API keys)
 #   docker compose up --build
 # Public entry point: http://localhost:8080  (API Gateway)
-# One PostgreSQL instance per microservice (Section 9 / Section 18 data-ownership rule).
+# RabbitMQ management UI: http://localhost:15672  (user/password from RABBITMQ_USER / RABBITMQ_PASSWORD)
+#
+# Data isolation (Section 9 / Section 18, professor's evaluation):
+#   one PostgreSQL container per microservice, and inside each one a dedicated NON-superuser login
+#   (checkin_svc / alert_svc / clinic_svc) created by infra/postgres/10-app-role.sh. Services never see
+#   the admin password or another service's password.  Verify: npm run verify:db-isolation
+#   (Upgrading from v1? run `docker compose down -v` once so the init script can create the roles.)
 
 x-node-service: &node-service
   restart: unless-stopped
@@ -12,33 +18,56 @@ services:
   # ------------------------------ Databases ------------------------------
   checkin-db:
     image: postgres:16-alpine
-    environment: { POSTGRES_DB: checkin_db, POSTGRES_USER: checkin_user, POSTGRES_PASSWORD: "${CHECKIN_DB_PASSWORD:-checkin_pass}" }
-    volumes: [checkin-data:/var/lib/postgresql/data]
+    environment:
+      POSTGRES_DB: checkin_db
+      POSTGRES_USER: checkin_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${CHECKIN_DB_ADMIN_PASSWORD:-checkin_admin_pass}"
+      APP_DB_USER: checkin_svc                         # the only login the checkin service has
+      APP_DB_PASSWORD: "${CHECKIN_DB_PASSWORD:-checkin_pass}"
+    volumes: ["checkin-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
     ports: ["5433:5432"]           # dev only - remove in production
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U checkin_user -d checkin_db"], interval: 5s, retries: 10 }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U checkin_admin -d checkin_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
   alert-db:
     image: postgres:16-alpine
-    environment: { POSTGRES_DB: alert_db, POSTGRES_USER: alert_user, POSTGRES_PASSWORD: "${ALERT_DB_PASSWORD:-alert_pass}" }
-    volumes: [alert-data:/var/lib/postgresql/data]
+    environment:
+      POSTGRES_DB: alert_db
+      POSTGRES_USER: alert_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${ALERT_DB_ADMIN_PASSWORD:-alert_admin_pass}"
+      APP_DB_USER: alert_svc                         # the only login the alert service has
+      APP_DB_PASSWORD: "${ALERT_DB_PASSWORD:-alert_pass}"
+    volumes: ["alert-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
     ports: ["5434:5432"]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U alert_user -d alert_db"], interval: 5s, retries: 10 }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U alert_admin -d alert_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
   clinic-db:
     image: postgres:16-alpine
-    environment: { POSTGRES_DB: clinic_db, POSTGRES_USER: clinic_user, POSTGRES_PASSWORD: "${CLINIC_DB_PASSWORD:-clinic_pass}" }
-    volumes: [clinic-data:/var/lib/postgresql/data]
+    environment:
+      POSTGRES_DB: clinic_db
+      POSTGRES_USER: clinic_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${CLINIC_DB_ADMIN_PASSWORD:-clinic_admin_pass}"
+      APP_DB_USER: clinic_svc                         # the only login the clinic service has
+      APP_DB_PASSWORD: "${CLINIC_DB_PASSWORD:-clinic_pass}"
+    volumes: ["clinic-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
     ports: ["5435:5432"]
-    healthcheck: { test: ["CMD-SHELL", "pg_isready -U clinic_user -d clinic_db"], interval: 5s, retries: 10 }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U clinic_admin -d clinic_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes: [redis-data:/data]
-    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 10 }
+  # ------------------------------ Middleware ------------------------------
+  # RabbitMQ: topic exchange eldercare.events, per-service durable queues, retry tiers and DLQs
+  # (declared by the services on start-up - see docs/MESSAGING.md).
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    hostname: eldercare-rabbitmq            # fixed node name so the durable data volume is reused
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER:-eldercare}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD:-eldercare_pass}"
+      RABBITMQ_DEFAULT_VHOST: eldercare
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    ports: ["5672:5672", "15672:15672"]     # dev only: AMQP + management UI
+    healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, timeout: 10s, retries: 12 }
     networks: [internal]
 
   # ------------------------------ Services -------------------------------
@@ -70,12 +99,16 @@ services:
     environment:
       PORT: 4001
       SERVICE_NAME: checkin-service
-      DATABASE_URL: "postgres://checkin_user:${CHECKIN_DB_PASSWORD:-checkin_pass}@checkin-db:5432/checkin_db"
+      DATABASE_URL: "postgres://checkin_svc:${CHECKIN_DB_PASSWORD:-checkin_pass}@checkin-db:5432/checkin_db"
       SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
+      EVENT_TRANSPORT: rabbitmq
+      AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       ALERT_SERVICE_URL: http://alert-service:4002
       CLINIC_SERVICE_URL: http://clinic-risk-service:4003
-    depends_on: { checkin-db: { condition: service_healthy } }
+    depends_on:
+      checkin-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
 
   alert-service:
     <<: *node-service
@@ -83,23 +116,18 @@ services:
     environment:
       PORT: 4002
       SERVICE_NAME: alert-service
-      NODE_ENV: "${ALERT_NODE_ENV:-development}"   # development => SMS dry-run when Twilio is not configured
-      DATABASE_URL: "postgres://alert_user:${ALERT_DB_PASSWORD:-alert_pass}@alert-db:5432/alert_db"
+      NODE_ENV: "${ALERT_NODE_ENV:-development}"   # development => SMS simulated unless the number is allow-listed
+      DATABASE_URL: "postgres://alert_svc:${ALERT_DB_PASSWORD:-alert_pass}@alert-db:5432/alert_db"
       SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
       CHECKIN_SERVICE_URL: http://checkin-service:4001
       CLINIC_SERVICE_URL: http://clinic-risk-service:4003
-      REDIS_URL: redis://redis:6379
+      EVENT_TRANSPORT: rabbitmq
+      AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY:-}"
       OPENWEATHER_ONECALL_ENABLED: "${OPENWEATHER_ONECALL_ENABLED:-false}"
       WEATHER_POLL_INTERVAL_MINUTES: "${WEATHER_POLL_INTERVAL_MINUTES:-30}"
       HEAT_INDEX_THRESHOLD_C: "${HEAT_INDEX_THRESHOLD_C:-40}"
-      TWILIO_ACCOUNT_SID: "${TWILIO_ACCOUNT_SID:-}"
-      TWILIO_AUTH_TOKEN: "${TWILIO_AUTH_TOKEN:-}"
-      TWILIO_FROM_NUMBER: "${TWILIO_FROM_NUMBER:-}"
-      TWILIO_MESSAGING_SERVICE_SID: "${TWILIO_MESSAGING_SERVICE_SID:-}"
-      TWILIO_STATUS_CALLBACK_URL: "${TWILIO_STATUS_CALLBACK_URL:-}"
-      TWILIO_INBOUND_WEBHOOK_URL: "${TWILIO_INBOUND_WEBHOOK_URL:-}"
       SMS_DRY_RUN: "${SMS_DRY_RUN:-true}"
       SMS_PROVIDER: "${SMS_PROVIDER:-}"
       TEXTBEE_API_KEY: "${TEXTBEE_API_KEY:-}"
@@ -110,9 +138,10 @@ services:
       TEXTBEE_VALIDATE_WEBHOOK: "${TEXTBEE_VALIDATE_WEBHOOK:-true}"
       SMS_RECIPIENT_ALLOWLIST: "${SMS_RECIPIENT_ALLOWLIST:-}"
       SMS_DAILY_LIMIT: "${SMS_DAILY_LIMIT:-40}"
+      SMS_RETRY_ON_TIMEOUT: "${SMS_RETRY_ON_TIMEOUT:-false}"
     depends_on:
       alert-db: { condition: service_healthy }
-      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
 
   clinic-risk-service:
     <<: *node-service
@@ -120,13 +149,17 @@ services:
     environment:
       PORT: 4003
       SERVICE_NAME: clinic-risk-service
-      DATABASE_URL: "postgres://clinic_user:${CLINIC_DB_PASSWORD:-clinic_pass}@clinic-db:5432/clinic_db"
+      DATABASE_URL: "postgres://clinic_svc:${CLINIC_DB_PASSWORD:-clinic_pass}@clinic-db:5432/clinic_db"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
+      EVENT_TRANSPORT: rabbitmq
+      AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
       ENV_RISK_TTL_HOURS: "${ENV_RISK_TTL_HOURS:-24}"
       RECENT_VISIT_DAYS: "${RECENT_VISIT_DAYS:-30}"
       VISIT_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"
-    depends_on: { clinic-db: { condition: service_healthy } }
+    depends_on:
+      clinic-db: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
 
   legacy-emr-adapter:
     <<: *node-service
@@ -158,4 +191,4 @@ volumes:
   checkin-data: {}
   alert-data: {}
   clinic-data: {}
-  redis-data: {}
+  rabbitmq-data: {}

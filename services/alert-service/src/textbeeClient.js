@@ -21,9 +21,10 @@ function isConfigured() {
 }
 
 class SmsProviderError extends Error {
-  constructor(message, { permanent = false, status, code } = {}) {
+  constructor(message, { permanent = false, ambiguous = false, status, code } = {}) {
     super(message);
     this.permanent = permanent;
+    this.ambiguous = ambiguous;
     this.status = status;
     this.code = code;
   }
@@ -50,7 +51,9 @@ async function sendViaTextbee({ to, body }, http = axios) {
     const detail = err.response && err.response.data ? (err.response.data.message || err.response.data.error || JSON.stringify(err.response.data)) : err.message;
     // 400 bad number/payload, 401/403 bad key, 404 unknown device: retrying will not help. 429/5xx/network: retry.
     const permanent = Boolean(status && status >= 400 && status < 500 && status !== 408 && status !== 429);
-    throw new SmsProviderError(`TextBee ${status || err.code || 'error'}: ${String(detail).slice(0, 300)}`, { permanent, status, code: err.code });
+    // No HTTP answer after the request may already have reached TextBee: the SMS may or may not be sent.
+    const ambiguous = !status && ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'ERR_CANCELED'].includes(err.code);
+    throw new SmsProviderError(`TextBee ${status || err.code || 'error'}: ${String(detail).slice(0, 300)}`, { permanent, ambiguous, status, code: err.code });
   }
 
   const data = (res.data && res.data.data) || res.data || {};

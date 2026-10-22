@@ -4,11 +4,30 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**", "fix/**"]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
+  # Shared middleware code (message bus, outbox, idempotency) and the event contracts are copied into
+  # each service by scripts/sync-shared.js. Fail if a service's copy drifted from /shared or /contracts.
+  contracts-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/sync-shared.js
+      - name: Shared code and event contracts are in sync
+        run: git diff --exit-code -- services api-gateway
+      - name: Event contracts are valid JSON
+        run: for f in contracts/events/*.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || exit 1; done
+
+
   unit-tests:
     runs-on: ubuntu-latest
     strategy:
@@ -23,9 +42,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: ${{ matrix.service }}/package-lock.json
-      - run: npm ci --no-audit --no-fund
+      # npm ci when a lock file is committed, npm install otherwise (batch 1 removed stale locks; commit the regenerated ones)
+      - run: if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
       - run: npm test
 
   frontend-build:

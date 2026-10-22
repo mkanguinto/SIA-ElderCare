@@ -1,6 +1,6 @@
 {
   "name": "eldercare-connect",
-  "version": "1.0.0",
+  "version": "2.0.0-batch1",
   "private": true,
   "description": "ElderCare Connect - integrated community-based elderly health monitoring and emergency response platform",
   "scripts": {
@@ -13,6 +13,7 @@
     "sync-shared": "node scripts/sync-shared.js",
     "up": "docker compose up --build",
     "up:cloud": "docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build",
-    "down": "docker compose down"
+    "down": "docker compose down",
+    "verify:db-isolation": "node scripts/verify-db-isolation.js"
   }
 }

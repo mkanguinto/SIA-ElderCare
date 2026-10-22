@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build
 #
 # What changes vs. local docker-compose.yml:
-#   - databases, Redis, adapter and mock EMR are no longer published to the host (only the gateway is)
+#   - databases, RabbitMQ, adapter and mock EMR are no longer published to the host (only the gateway is)
 #   - services run with NODE_ENV=production, restart always, and memory limits
 #   - demo seed data is off unless SEED_DEMO_DATA=true is set in .env
 #   - the gateway binds to 127.0.0.1 so it sits behind a TLS reverse proxy / load balancer
@@ -26,8 +26,9 @@ services:
   clinic-db:
     <<: *prod
     ports: !reset []
-  redis:
+  rabbitmq:
     <<: *prod
+    ports: !reset []
 
   api-gateway:
     <<: *prod

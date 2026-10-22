@@ -4,15 +4,18 @@ Integrated community-based elderly health monitoring and emergency response plat
 (TIP Manila · Systems Integration and Architecture 1 · IT31S1 Group 6).
 
 Node.js + Express microservices behind an API Gateway, PostgreSQL per service, OAuth 2.0/JWT + RBAC,
-OpenWeatherMap × patient-profile mashup, Twilio SMS with retry queue, and a SOAP/XML adapter for
+OpenWeatherMap × patient-profile mashup, **RabbitMQ** message-oriented middleware (topic exchange, retry tiers,
+dead-letter queues, idempotent consumers), **TextBee** SMS, and a SOAP/XML adapter for
 legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app are included.
 
 ### Documentation
+- `docs/MESSAGING.md` – RabbitMQ topology, event catalogue + JSON Schemas, DLQ, idempotency (v2 · Batch 1)
+- `docs/EVALUATION_RESPONSE.md` – each item of the professor's evaluation → where it is addressed
 - `docs/PROPOSAL_TRACEABILITY.md` – every proposal section mapped to code and verification evidence
 - `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
 - `testing/README.md` – Postman, SoapUI, JMeter and failure-test commands
 
-### Verified results (local run: PostgreSQL 16, Redis 7, all six services)
+### Verified results (v1.1 local run: PostgreSQL 16, all six services – re-run after the v2 RabbitMQ batches)
 | Check | Result |
 |---|---|
 | Unit tests | 38 / 38 passing |
@@ -21,15 +24,16 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 | Alert service down during a check-in | check-in accepted; event delivered automatically after restart |
 | Heatwave (heat index 46.8 °C) / typhoon (24 m/s) | correct at-risk patients warned; P1 / P2 triage items created |
 | OpenWeatherMap unreachable | stale cached data used, outage logged |
-| Twilio unreachable | BullMQ retried with backoff, marked failed, in-app alert kept |
-| Forged Twilio webhook | rejected (403) |
+| TextBee unreachable | RabbitMQ retry tiers 5 s / 30 s / 2 min, then DLQ; in-app alert kept |
+| Forged TextBee webhook | rejected (401, HMAC `X-Signature`) |
 
 ### Where the Section 10 / 11 / 12 deliverables live
 | Task | Files |
 |---|---|
 | 1 · API Gateway & security | `api-gateway/server.js`, `api-gateway/src/middleware/authMiddleware.js`, `api-gateway/src/middleware/roleMiddleware.js`, `api-gateway/src/routes/oauth.js`, `api-gateway/src/auth/*` |
 | 2 · API routing contracts | `api-gateway/src/routes/index.js`, `api-gateway/src/lib/proxy.js` |
-| 3 · Weather × Twilio mashup | `services/alert-service/src/weatherAlertMashup.js`, `weatherRisk.js`, `twilioClient.js`, `smsQueue.js` |
+| 3 · Weather × SMS mashup | `services/alert-service/src/weatherAlertMashup.js`, `weatherRisk.js`, `textbeeClient.js`, `smsWorker.js` |
+| Middleware (RabbitMQ) | `shared/messageBus.js`, `shared/outboxRelay.js`, `shared/idempotency.js`, `contracts/events/*.schema.json` |
 | Legacy SOAP/XML adapter | `services/legacy-emr-adapter/` (+ mock EMR and WSDL in `services/mock-legacy-emr/`) |
 
 ---
@@ -47,17 +51,18 @@ flowchart TB
   GW --> CK[Daily Check-In Logger :4001]
   GW --> AL[Family Alert & Notification :4002]
   GW --> CL[Clinic Risk Queue :4003]
-  CK -- outbox events --> AL
-  CK -- outbox events --> CL
-  AL -- weather.risk_detected --> CL
-  CK --- CKDB[(checkin_db)]
-  AL --- ALDB[(alert_db)]
-  CL --- CLDB[(clinic_db)]
-  AL --> R[(Redis / BullMQ<br/>SMS retry queue)]
+  CK -- "checkin.* (outbox)" --> MQ[[RabbitMQ<br/>exchange eldercare.events<br/>retry tiers · DLQs]]
+  AL -- "weather.risk_detected<br/>notification.sms.requested" --> MQ
+  MQ -- alert-service.checkin-events --> AL
+  MQ -- alert-service.sms-dispatch --> SW[TextBee SMS worker<br/>in alert service]
+  MQ -- clinic-risk-service.events --> CL
+  CK --- CKDB[(checkin_db<br/>login checkin_svc)]
+  AL --- ALDB[(alert_db<br/>login alert_svc)]
+  CL --- CLDB[(clinic_db<br/>login clinic_svc)]
   AL -->|REST| OWM[OpenWeatherMap API]
-  AL -->|REST| TW[Twilio Messaging API]
-  CL --> AD[Legacy EMR Adapter :4004<br/>SOAP/XML → JSON]
-  AD -->|SOAP 1.1| EMR[Legacy Clinic EMR<br/>mock :4005]
+  SW -->|REST| TB[TextBee SMS gateway<br/>Android phone]
+  EMR[Legacy Clinic EMR<br/>mock :4005] ==>|"SOAP 1.1 XML (inbound data)"| AD[Legacy Integration Layer :4004<br/>SOAP/XML → JSON adapter]
+  AD ==>|"JSON patient history"| CL
 ```
 
 | Component | Folder | Owns |
@@ -72,16 +77,22 @@ flowchart TB
 | Caregiver mobile | `frontend/mobile/` | React Native (Expo), offline-first check-ins |
 | Test assets | `testing/` | Postman, JMeter, SoapUI |
 
-**Data ownership rule:** each service talks only to its own database. Cross-service data moves over
-REST (`/internal/*` endpoints) or events – never by reading another service's tables.
+**Data ownership rule:** each service talks only to its own database, with its **own non-superuser login**
+(`checkin_svc`, `alert_svc`, `clinic_svc`); another service's credentials are refused by PostgreSQL itself
+(`npm run verify:db-isolation`). Cross-service data moves over REST (`/internal/*` endpoints) or RabbitMQ
+events – never by reading another service's tables.
+
+**Legacy EMR direction (Figure 7 correction):** data flows **inbound** – Legacy Clinic EMR ⇒ Legacy
+Integration Layer (SOAP/XML → JSON) ⇒ Clinic Risk Queue Service. The Clinic service initiates the request,
+but patient history travels from the legacy system into the platform, never the other way.
 
 ### The Check-in → Alert → Clinic Queue saga (Section 15)
 1. Caregiver `POST /api/checkins` → gateway validates JWT, role `caregiver`, and that the patient is in the token's `patients` claim.
-2. Check-in service validates vitals, runs anomaly detection, and in **one DB transaction** stores the check-in **and** an outbox event per target.
-3. The outbox dispatcher immediately delivers `checkin.anomaly_detected` to the Alert and Clinic services (exponential backoff on failure, marked `failed` after 10 attempts for manual follow-up – never silently dropped).
-4. Alert service writes the in-app alert and enqueues one SMS per subscriber (BullMQ → Twilio, retry with backoff; in-app alert is the fallback channel).
+2. Check-in service validates vitals, runs anomaly detection, and in **one DB transaction** stores the check-in **and** one outbox event.
+3. The outbox relay publishes `checkin.anomaly_detected` to the RabbitMQ topic exchange `eldercare.events` (persistent, publisher-confirmed). The broker fans it out to `alert-service.checkin-events` and `clinic-risk-service.events`. If the broker is down the row stays pending and is retried – never silently dropped.
+4. Alert service writes the in-app alert and one `notification.sms.requested` event per subscriber (same transaction); the TextBee SMS worker sends them (retry tiers 5 s / 30 s / 2 min, then DLQ; in-app alert is the fallback channel).
 5. Clinic service upserts the patient's single active triage item and recomputes the weighted score/priority.
-Both consumers are idempotent on `eventId`, so at-least-once delivery is safe. Typical end-to-end time is well under the 2.0 s target.
+Both consumers are idempotent on `eventId` (recorded in the same transaction as their change), so at-least-once delivery is safe. Failed messages are retried through TTL retry queues and then parked in a DLQ for replay (`GET /api/admin/messaging`). Details: `docs/MESSAGING.md`.
 
 ---
 
@@ -92,11 +103,13 @@ Requirements: Docker Desktop (or Docker Engine + Compose v2).
 ```bash
 cp .env.example .env
 # edit .env: set strong JWT_SECRET, JWT_REFRESH_SECRET, INTERNAL_SERVICE_TOKEN
-#            optionally OPENWEATHER_API_KEY and TWILIO_* (SMS stays in dry-run until SMS_DRY_RUN=false)
+#            RABBITMQ_PASSWORD, optionally OPENWEATHER_API_KEY and TEXTBEE_* (SMS stays in dry-run until SMS_DRY_RUN=false)
 docker compose up --build
 ```
 
-Gateway: <http://localhost:8080> · Mock EMR WSDL: <http://localhost:4005/emr?wsdl>
+Gateway: <http://localhost:8080> · RabbitMQ UI: <http://localhost:15672> (vhost `eldercare`) · Mock EMR WSDL: <http://localhost:4005/emr?wsdl>
+
+Upgrading an existing v1 stack: run `docker compose down -v` once so the new database init script can create the per-service logins.
 
 Smoke test:
 ```bash
@@ -127,7 +140,7 @@ Users live in `api-gateway/data/users.json` with scrypt hashes. New hash: `node 
 
 ## 3. Running without Docker (Windows / macOS / Linux)
 
-You need Node 18+ and PostgreSQL 14+. Redis is optional; without it the SMS retry queue runs in memory.
+You need Node 18+ and PostgreSQL 14+. RabbitMQ is optional locally: without `--amqp` the services use `EVENT_TRANSPORT=http` (direct REST delivery; the SMS queue runs in-process with the same retry/DLQ rules).
 
 ```powershell
 # 1. create the three databases (psql, pgAdmin, or:)
@@ -143,9 +156,10 @@ npm run install:all
 - one shared, freshly generated `INTERNAL_SERVICE_TOKEN`
 - random JWT secrets
 - `DATABASE_URL`s for `localhost:5432` (special characters in the password are encoded for you)
-- `REDIS_URL` blank and `SMS_DRY_RUN=true`
+- one dedicated PostgreSQL login per service (`checkin_svc`, `alert_svc`, `clinic_svc`), created for you
+- `EVENT_TRANSPORT=http` (or RabbitMQ with `--amqp amqp://guest:guest@localhost:5672`) and `SMS_DRY_RUN=true`
 
-Re-run it with `--force` to regenerate. Use `--db-port`, `--db-user` or `--redis redis://localhost:6379` if your setup differs.
+Re-run it with `--force` to regenerate. Use `--db-port`, `--db-user` or `--amqp <url>` if your setup differs.
 
 ```powershell
 # 3. start each service in its own terminal tab (order matters only for the first log lines)
@@ -197,8 +211,8 @@ All `/api/*` routes need `Authorization: Bearer <access_token>`.
 | PUT | `/api/directory/users/:userId/patients` | clinic, admin | gateway | `{add:[], remove:[]}` link patients to an account |
 | GET / POST / DELETE | `/api/alerts/subscribers` | clinic, admin | Alert | SMS alert contacts per patient; shows whether real SMS is live |
 | POST | `/webhooks/textbee` | TextBee (HMAC-verified) | Alert | delivery receipts + inbound SMS check-ins |
-| POST | `/webhooks/twilio/status` | Twilio (signature-verified) | Alert | SMS delivery receipts |
-| POST | `/webhooks/twilio/inbound` | Twilio (signature-verified) | Alert → Check-In | **SMS check-in** for caregivers without internet: `CHECKIN P-1001 BP 150/90 HR 80 MED Y` |
+| GET | `/api/admin/messaging` | admin | gateway → services | RabbitMQ connection, queue + **DLQ depths**, outbox counts |
+| POST | `/api/admin/messaging/replay` | admin | gateway → service | `{service, queue, limit?}` replay parked DLQ messages |
 
 Example check-in body:
 ```json
@@ -252,7 +266,7 @@ Every queue item gets a total score (0–100) from health (latest check-in), env
 - **RBAC at the gateway** (`roleMiddleware.js`) + **patient scoping** for caregivers/families from the `patients` claim. Services re-check scope as defence in depth.
 - **Internal trust:** services accept requests only with `X-Internal-Token`; client-supplied `X-User-*` headers are stripped and replaced by the gateway.
 - **Brute-force protection:** 20 failed logins / 15 min per IP; 300 API requests / min per IP (tune `RATE_LIMIT_*`).
-- **Secrets only in env vars:** `OPENWEATHER_API_KEY`, `TWILIO_*`, JWT secrets, DB passwords. `.env` is git-ignored. Logs redact `authorization`, `password`, `token`, `phone`, `appid`.
+- **Secrets only in env vars:** `OPENWEATHER_API_KEY`, `TEXTBEE_*`, `RABBITMQ_PASSWORD`, JWT secrets, DB passwords. `.env` is git-ignored. Logs redact `authorization`, `password`, `token`, `phone`, `appid`.
 - **Transport/at rest:** terminate TLS at the load balancer in front of the gateway; set `DB_SSL=true` for managed Postgres (e.g. AWS RDS with storage encryption = AES-256).
 - **Helmet** security headers and CORS allow-list (`CORS_ORIGINS`).
 
@@ -273,7 +287,7 @@ Try it without a database:
 ```bash
 cd services/alert-service && npm install
 OPENWEATHER_API_KEY=xxx node src/weatherAlertMashup.js --zip 1012 --country PH
-OPENWEATHER_API_KEY=xxx TWILIO_ACCOUNT_SID=AC... TWILIO_AUTH_TOKEN=... TWILIO_FROM_NUMBER=+1... \
+OPENWEATHER_API_KEY=xxx TEXTBEE_API_KEY=... TEXTBEE_DEVICE_ID=... SMS_DRY_RUN=false SMS_RECIPIENT_ALLOWLIST=+63917XXXXXXX \
   node src/weatherAlertMashup.js --zip 1012 --country PH --threshold 30 --send-to +63917XXXXXXX
 ```
 
@@ -291,7 +305,7 @@ Content-Type: application/json
 { "deviceId": "<TEXTBEE_DEVICE_ID>", "recipients": ["+639171234567"], "message": "[ElderCare Connect] ALERT for ..." }
 ```
 
-(`src/textbeeClient.js`, used by the BullMQ SMS queue with retries; 4xx except 408/429 are not retried.)
+(`src/textbeeClient.js`, called by the RabbitMQ SMS worker `src/smsWorker.js`; 4xx except 408/429 are permanent → DLQ; a timeout is *ambiguous* → `unconfirmed` + DLQ so no duplicate SMS is sent.)
 
 Setup (`services/alert-service/.env`, never commit it):
 ```
@@ -311,16 +325,17 @@ Optional webhook (delivery receipts + caregivers replying by SMS): in the TextBe
 
 | Failure | Behaviour |
 |---|---|
-| Twilio down / carrier error | SMS job retried with exponential backoff (5 attempts); permanent errors (invalid / opted-out number) stop immediately; in-app alert already delivered |
+| TextBee down / carrier error | SMS retried via RabbitMQ retry queues (5 s, 30 s, 2 min) then parked in `alert-service.sms-dispatch.dlq`; permanent errors (invalid number, bad key) go straight to the DLQ; in-app alert already delivered |
+| RabbitMQ down | check-ins still succeed; events wait in each service's outbox and are published when the broker returns |
 | OpenWeatherMap down | stale cache (≤ 24 h) used, outage logged; health endpoint shows last fetch |
-| Alert or Clinic service down | check-in still succeeds (201); outbox retries delivery until the service returns |
+| Alert or Clinic service down | check-in still succeeds (201); its events wait in the service's durable queue and drain after restart |
 | Any service slow/down behind gateway | per-service circuit breaker → fast 503 instead of hung requests; GETs retried, POSTs never auto-retried |
 | Legacy EMR down / slow | adapter returns 502/503; clinic queue keeps working without EMR enrichment |
 | Duplicate event delivery | consumers de-duplicate on `eventId` |
 | Phone offline (rural) | mobile app stores check-ins locally and syncs later; `idempotencyKey` prevents duplicates |
-| No mobile data at all | caregiver texts the check-in by SMS; Twilio's webhook creates it and replies with the result |
+| No mobile data at all | caregiver texts the check-in to the TextBee phone; TextBee's webhook creates it and replies with the result |
 
-Simulate: `docker compose stop alert-service`, submit a critical check-in, restart it, watch the outbox deliver.
+Simulate: `docker compose stop alert-service`, submit a critical check-in, watch `alert-service.checkin-events` grow in the RabbitMQ UI, restart it and watch it drain.
 Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 
 ---
@@ -353,14 +368,15 @@ Every service has a `.env.example`. Most important:
 | `INTERNAL_SERVICE_TOKEN` | all | gateway ↔ service trust (same value everywhere) |
 | `DATABASE_URL` | checkin, alert, clinic | own PostgreSQL database |
 | `OPENWEATHER_API_KEY` | alert | weather mashup |
-| `SMS_PROVIDER` | alert | `textbee`, `twilio` or `none` (empty = auto) |
+| `SMS_PROVIDER` | alert | `textbee` or `none` (empty = auto) |
+| `EVENT_TRANSPORT`, `AMQP_URL` | checkin, alert, clinic | `rabbitmq` + broker URL (Docker default) or `http` fallback |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | compose | broker login (vhost `eldercare`) |
+| `SMS_RETRY_DELAYS_MS`, `SMS_RETRY_ON_TIMEOUT` | alert | SMS retry tiers; resend after an ambiguous timeout (default `false`) |
 | `TEXTBEE_API_KEY`, `TEXTBEE_DEVICE_ID` | alert | TextBee SMS gateway (Android phone) |
 | `TEXTBEE_WEBHOOK_SECRET` | alert | verifies `/webhooks/textbee` (HMAC-SHA256 of the raw body, `X-Signature`) |
 | `SMS_RECIPIENT_ALLOWLIST` | alert | numbers that may get **real** texts; empty outside production = all simulated |
 | `SMS_DAILY_LIMIT` | alert | real SMS per day (default 40; TextBee free plan is 50/day) |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` / `TWILIO_MESSAGING_SERVICE_SID` | alert | SMS (alternative provider) |
 | `SMS_DRY_RUN` | alert | `true` = log instead of send |
-| `REDIS_URL` | alert | durable BullMQ queue (empty = in-memory) |
 | `HEAT_INDEX_THRESHOLD_C` | alert | default 40 |
 | `ENV_RISK_TTL_HOURS`, `RECENT_VISIT_DAYS`, `VISIT_TZ_OFFSET` | clinic | weather-risk expiry (24), Recent Visits window (30), visit time zone (+08:00) |
 | `LEGACY_EMR_URL` | adapter | partner RHU SOAP endpoint |
@@ -370,15 +386,15 @@ Every service has a `.env.example`. Most important:
 
 ## 10. Deploying to the cloud (Section 14)
 
-Single VM (EC2 / Azure VM / GCP): `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. Only the gateway is exposed (on 127.0.0.1, behind a TLS proxy); databases, Redis and internal services stay private. Full walkthrough: `docs/SUBMISSION_GUIDE.md` §2.
+Single VM (EC2 / Azure VM / GCP): `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. Only the gateway is exposed (on 127.0.0.1, behind a TLS proxy); databases, RabbitMQ and internal services stay private. Full walkthrough: `docs/SUBMISSION_GUIDE.md` §2.
 
 Managed AWS outline:
 
 - Build/push each image to ECR; run each as an ECS Fargate service (2+ tasks each for availability).
 - Only the gateway sits behind a public Application Load Balancer (HTTPS via ACM). Services live in private subnets and reach each other through ECS Service Connect / Cloud Map names (`http://checkin-service:4001`, …).
 - Three RDS PostgreSQL instances (or three databases on one instance for a student budget), `DB_SSL=true`, encryption at rest on.
-- ElastiCache Redis for BullMQ. Secrets in AWS Secrets Manager injected as env vars.
-- Point `TWILIO_STATUS_CALLBACK_URL` at `https://<your-domain>/webhooks/twilio/status`.
+- Amazon MQ for RabbitMQ (or a RabbitMQ container on the VM). Secrets in AWS Secrets Manager injected as env vars.
+- Point the TextBee webhook at `https://<your-domain>/webhooks/textbee`.
 
 ---
 
@@ -391,9 +407,9 @@ Managed AWS outline:
 | 403 from gateway | role not allowed, or patient not in your token's `patients` claim |
 | 401 `Missing or invalid internal service token` from a service | `INTERNAL_SERVICE_TOKEN` differs between gateway and service |
 | 429 during JMeter runs | raise `RATE_LIMIT_MAX` for the test |
-| SMS not arriving | `SMS_DRY_RUN=true` (default), Twilio trial can only text verified numbers, number must be E.164 (`+63917…`) |
+| SMS not arriving | `SMS_DRY_RUN=true` (default), number not in `SMS_RECIPIENT_ALLOWLIST`, TextBee phone offline, or the message is in `alert-service.sms-dispatch.dlq` (`GET /api/admin/messaging`) |
 | `weather-check` returns 503 | `OPENWEATHER_API_KEY` not set (new keys can take up to 2 h to activate) |
-| Clinic queue empty after a check-in | check `GET /api/admin/health` → checkin `outbox` counts; `pending` means the alert/clinic service was unreachable |
+| Clinic queue empty after a check-in | `GET /api/admin/messaging`: checkin `outbox.pending` = broker unreachable; messages in `clinic-risk-service.events` = clinic service down; a `.dlq` count = failed processing (replay after fixing) |
 
 ## Disclaimer
 Anomaly thresholds and risk weights are screening heuristics for a student prototype, not a medical device.

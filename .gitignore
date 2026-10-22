@@ -5,3 +5,4 @@ dist/
 .expo/
 testing/jmeter/results/
 .DS_Store
+scripts/.local-db-isolation.sql
