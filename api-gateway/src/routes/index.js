@@ -27,6 +27,10 @@
  * | GET    | /api/clinic/visits                  | clinic, admin                       | Clinic Risk Queue      |
  * | PATCH  | /api/clinic/visits/:visitId         | clinic                              | Clinic Risk Queue      |
  * | GET/POST/DELETE | /api/alerts/subscribers    | clinic, admin                       | Family Alert & Notif.  |
+ * v2 Batch 2:
+ * | GET    | /api/alerts/rules[/:code]           | clinic, admin                       | Family Alert & Notif.  |
+ * | POST/PATCH/DELETE | /api/alerts/rules[/:code] | admin                              | Family Alert & Notif.  |
+ * List endpoints accept ?page=&pageSize= and return a `pagination` envelope (limit= still works).
  */
 const express = require('express');
 const { authenticate } = require('../middleware/authMiddleware');
@@ -105,6 +109,13 @@ router.post(
 router.get('/alerts/subscribers', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
 router.post('/alerts/subscribers', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
 router.delete('/alerts/subscribers/:id', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
+
+// Heatwave / typhoon alert rules read by the weather mashup (admin CRUD; clinic staff may read)
+router.get('/alerts/rules', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
+router.get('/alerts/rules/:code', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
+router.post('/alerts/rules', authorize(ROLES.ADMIN), forwardTo('alert'));
+router.patch('/alerts/rules/:code', authorize(ROLES.ADMIN), forwardTo('alert'));
+router.delete('/alerts/rules/:code', authorize(ROLES.ADMIN), forwardTo('alert'));
 
 router.get(
   '/alerts/notifications',

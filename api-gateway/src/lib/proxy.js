@@ -60,6 +60,8 @@ function forwardTo(serviceKey, pathBuilder) {
 
       logger.info('proxied', { requestId: req.id, service: serviceKey, method: req.method, path, status: upstream.status, ms: Date.now() - started });
       if (upstream.headers['content-type']) res.set('Content-Type', upstream.headers['content-type']);
+      // 201 Created points at the new resource; public /api paths equal the services' paths.
+      if (upstream.headers.location && String(upstream.headers.location).startsWith('/api/')) res.set('Location', upstream.headers.location);
       return res.status(upstream.status).send(upstream.data);
     } catch (err) {
       const ms = Date.now() - started;

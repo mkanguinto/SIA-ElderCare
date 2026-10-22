@@ -16,6 +16,7 @@ const path = require('path');
 const tmpUsers = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-users-')), 'users.json');
 fs.copyFileSync(path.join(__dirname, '..', 'data', 'users.json'), tmpUsers);
 process.env.USERS_FILE = tmpUsers;
+process.env.TOKEN_STORE_FILE = 'memory';
 
 // Fake upstream that echoes what the gateway forwarded.
 const upstream = express();
@@ -176,6 +177,20 @@ test('new v1.1 routes enforce roles', async () => {
   assert.strictEqual(v.status, 200);
   assert.strictEqual(v.body.path, '/api/clinic/visits?patientId=P-1001&view=recent');
   assert.strictEqual((await call('POST', '/api/clinic/queue/x/visits', { token: nurse.access_token, body: {} })).status, 200);
+});
+
+test('alert rules: clinic staff can read, only admins can change; pagination params are forwarded', async () => {
+  const nurse = (await login('nurse.ana')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const list = await call('GET', '/api/alerts/rules?page=2&pageSize=5', { token: nurse });
+  assert.strictEqual(list.status, 200);
+  assert.strictEqual(list.body.path, '/api/alerts/rules?page=2&pageSize=5');
+  assert.strictEqual((await call('GET', '/api/alerts/rules', { token: fam })).status, 403);
+  for (const [method, path] of [['POST', '/api/alerts/rules'], ['PATCH', '/api/alerts/rules/WEATHER_HEAT'], ['DELETE', '/api/alerts/rules/WEATHER_HEAT']]) {
+    assert.strictEqual((await call(method, path, { token: nurse, body: {} })).status, 403, `${method} as nurse`);
+    assert.strictEqual((await call(method, path, { token: admin, body: {} })).status, 200, `${method} as admin`);
+  }
 });
 
 test('webhook bodies are forwarded byte-for-byte (needed for TextBee signatures)', async () => {

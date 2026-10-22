@@ -6,18 +6,17 @@
  * On success it sets `req.user = { id, name, role, patients, scope }`.
  * On failure it returns 401 with a standards-compliant WWW-Authenticate header.
  *
- * Checks performed:
+ * Checks performed (tokenService.verifyAccessToken):
  *   - Authorization header present and uses the "Bearer" scheme
- *   - signature valid, using ONLY the configured algorithm (blocks alg=none / alg-confusion)
+ *   - signature valid with the key named by the header's `kid`, using ONLY the configured algorithm
+ *     (blocks alg=none / alg-confusion); unknown or retired kids are rejected
  *   - exp / nbf (with small clock tolerance), iss and aud match configuration
  *   - token type is "access" (a refresh token cannot be used to call APIs)
+ *   - not revoked: jti deny-list, ended session (logout / refresh reuse), admin "revoke all sessions"
  *   - required claims (sub, role) are present and the role is a known platform role
  */
-const jwt = require('jsonwebtoken');
-const config = require('../config');
 const { ALL_ROLES } = require('../config/roles');
-
-const verifyKey = config.jwt.algorithm === 'HS256' ? config.jwt.secret : config.jwt.publicKey;
+const { verifyAccessToken } = require('../auth/tokenService');
 
 function unauthorized(res, error, description) {
   res.set('WWW-Authenticate', `Bearer realm="eldercare-connect", error="${error}", error_description="${description}"`);
@@ -39,18 +38,13 @@ function authenticate(req, res, next) {
 
   let claims;
   try {
-    claims = jwt.verify(token, verifyKey, {
-      algorithms: [config.jwt.algorithm],
-      issuer: config.jwt.issuer,
-      audience: config.jwt.audience,
-      clockTolerance: 30,
-    });
+    claims = verifyAccessToken(token);
   } catch (err) {
-    if (err.name === 'TokenExpiredError') return unauthorized(res, 'invalid_token', 'Access token has expired');
+    if (err.code === 'expired') return unauthorized(res, 'invalid_token', 'Access token has expired');
+    if (err.code === 'revoked' || err.message === 'Token is not an access token') return unauthorized(res, 'invalid_token', err.message);
     return unauthorized(res, 'invalid_token', 'Access token is invalid');
   }
 
-  if (claims.typ !== 'access') return unauthorized(res, 'invalid_token', 'Token is not an access token');
   if (!claims.sub || !ALL_ROLES.includes(claims.role)) {
     return unauthorized(res, 'invalid_token', 'Token is missing required claims');
   }
@@ -62,6 +56,7 @@ function authenticate(req, res, next) {
     patients: Array.isArray(claims.patients) ? claims.patients.map(String) : [],
     scope: claims.scope ? String(claims.scope).split(' ') : [],
   };
+  req.tokenClaims = claims; // jti / sid / exp, used by POST /oauth/logout
   return next();
 }
 

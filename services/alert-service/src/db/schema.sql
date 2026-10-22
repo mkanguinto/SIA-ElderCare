@@ -110,3 +110,37 @@ CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events (next_attempt_at)
 -- exactly once. sending_started_at lets a redelivery tell "in flight" from "crashed mid-send".
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMPTZ;
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS alert_type TEXT;
+
+-- ------------------------------------------------------------------------------------------
+-- v2 Batch 2: admin-managed alert rules (GET/POST/PATCH/DELETE /api/alerts/rules).
+-- A weather rule = trigger_condition (metric/operator/value) x vulnerability_target (conditions,
+-- mobility) -> action (severity, cooldown, clinic item). channels / min_severity keep their columns
+-- because the notifier already reads them. The weather mashup reads its thresholds from here.
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS hazard               TEXT CHECK (hazard IN ('heat','storm'));
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS trigger_condition    JSONB;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS vulnerability_target JSONB;
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS action               JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS created_at           TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS updated_at           TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS updated_by           TEXT;
+
+-- Move the v1 hard-coded weather thresholds into the rules (only once: trigger_condition IS NULL).
+UPDATE alert_rules SET
+    hazard = 'heat',
+    trigger_condition = jsonb_build_object('metric', 'heat_index_c', 'operator', '>', 'value', coalesce((config->>'heatIndexThresholdC')::numeric, 40)),
+    vulnerability_target = '{"conditions":["hypertension","cardiovascular","heart_disease","diabetes","kidney_disease","copd"]}',
+    action = '{"severity":"high","create_clinic_item":true,"cooldown_hours":24}'
+  WHERE code = 'WEATHER_HEAT' AND trigger_condition IS NULL;
+UPDATE alert_rules SET
+    hazard = 'storm',
+    trigger_condition = '{"metric":"wind_ms","operator":">=","value":17.2,"include_advisories":true}',
+    vulnerability_target = '{"mobility_restricted":true}',
+    action = '{"severity":"high","create_clinic_item":true,"cooldown_hours":6}'
+  WHERE code = 'WEATHER_STORM' AND trigger_condition IS NULL;
+-- v1 escalated heat warnings to critical at heat index >= 52 C (PAGASA "extreme danger"): now a rule tier.
+INSERT INTO alert_rules (code, description, min_severity, channels, hazard, trigger_condition, vulnerability_target, action) VALUES
+  ('WEATHER_HEAT_EXTREME', 'Extreme danger heat index (>= 52 C) for at-risk patients', 'moderate', '{sms,in_app}', 'heat',
+   '{"metric":"heat_index_c","operator":">=","value":52}',
+   '{"conditions":["hypertension","cardiovascular","heart_disease","diabetes","kidney_disease","copd"]}',
+   '{"severity":"critical","create_clinic_item":true,"cooldown_hours":24}')
+ON CONFLICT (code) DO NOTHING;

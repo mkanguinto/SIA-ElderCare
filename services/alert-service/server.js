@@ -8,6 +8,7 @@
  * notification.sms.requested (transactional outbox -> RabbitMQ topic exchange eldercare.events).
  */
 require('dotenv').config();
+require('./src/lib/secrets').loadFileSecrets(); // *_FILE Docker secrets, before anything reads process.env
 process.env.SERVICE_NAME = process.env.SERVICE_NAME || 'alert-service';
 
 const express = require('express');

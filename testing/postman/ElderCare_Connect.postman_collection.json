@@ -249,7 +249,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"New access token\", () => pm.expect(pm.response.json().access_token).to.be.a(\"string\"));"
+                  "const j = pm.response.json();",
+                  "pm.test(\"New access token\", () => pm.expect(j.access_token).to.be.a(\"string\"));",
+                  "pm.test(\"Refresh token rotated\", () => pm.expect(j.refresh_token).to.not.eql(pm.collectionVariables.get(\"refreshToken\")));",
+                  "pm.collectionVariables.set(\"refreshToken\", j.refresh_token); // the old one is spent now"
                 ]
               }
             }
@@ -1973,6 +1976,1333 @@
           }
         }
       ]
+    },
+    {
+      "name": "7. v2 Batch 2 - Alert rules, pagination, token security",
+      "item": [
+        {
+          "name": "Alert rules CRUD",
+          "item": [
+            {
+              "name": "GET /api/alerts/rules?type=weather (clinic staff)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const heat = pm.response.json().rules.find(r => r.code === \"WEATHER_HEAT\");",
+                      "pm.test(\"rule has trigger_condition, vulnerability_target, action\", () => { pm.expect(heat.trigger_condition).to.include({ metric: \"heat_index_c\" }); pm.expect(heat.vulnerability_target.conditions).to.include(\"hypertension\"); pm.expect(heat.action.channels).to.include(\"sms\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules?type=weather",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ],
+                  "query": [
+                    {
+                      "key": "type",
+                      "value": "weather"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Family -> alert rules is 403",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{familyToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Cleanup: DELETE POSTMAN_HEAT (204 or 404)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"204 or 404\", () => pm.expect(pm.response.code).to.be.oneOf([204, 404]));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/POSTMAN_HEAT",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "POSTMAN_HEAT"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Clinic staff cannot create rules (403)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"POSTMAN_HEAT\",\n  \"description\": \"Postman test heat rule\",\n  \"hazard\": \"heat\",\n  \"enabled\": false,\n  \"trigger_condition\": {\n    \"metric\": \"heat_index_c\",\n    \"operator\": \">=\",\n    \"value\": 45\n  },\n  \"vulnerability_target\": {\n    \"conditions\": [\n      \"copd\",\n      \"hypertension\"\n    ]\n  },\n  \"action\": {\n    \"severity\": \"high\",\n    \"channels\": [\n      \"in_app\"\n    ],\n    \"create_clinic_item\": false,\n    \"cooldown_hours\": 12\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST /api/alerts/rules - admin creates a rule (201)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                      "const r = pm.response.json();",
+                      "pm.test(\"created as sent\", () => { pm.expect(r.code).to.eql(\"POSTMAN_HEAT\"); pm.expect(r.type).to.eql(\"weather\"); pm.expect(r.action.cooldown_hours).to.eql(12); pm.expect(r.updated_by).to.be.a(\"string\"); });",
+                      "pm.test(\"Location header\", () => pm.expect(pm.response.headers.get(\"Location\")).to.eql(\"/api/alerts/rules/POSTMAN_HEAT\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"POSTMAN_HEAT\",\n  \"description\": \"Postman test heat rule\",\n  \"hazard\": \"heat\",\n  \"enabled\": false,\n  \"trigger_condition\": {\n    \"metric\": \"heat_index_c\",\n    \"operator\": \">=\",\n    \"value\": 45\n  },\n  \"vulnerability_target\": {\n    \"conditions\": [\n      \"copd\",\n      \"hypertension\"\n    ]\n  },\n  \"action\": {\n    \"severity\": \"high\",\n    \"channels\": [\n      \"in_app\"\n    ],\n    \"create_clinic_item\": false,\n    \"cooldown_hours\": 12\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST duplicate code (409)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"POSTMAN_HEAT\",\n  \"description\": \"Postman test heat rule\",\n  \"hazard\": \"heat\",\n  \"enabled\": false,\n  \"trigger_condition\": {\n    \"metric\": \"heat_index_c\",\n    \"operator\": \">=\",\n    \"value\": 45\n  },\n  \"vulnerability_target\": {\n    \"conditions\": [\n      \"copd\",\n      \"hypertension\"\n    ]\n  },\n  \"action\": {\n    \"severity\": \"high\",\n    \"channels\": [\n      \"in_app\"\n    ],\n    \"create_clinic_item\": false,\n    \"cooldown_hours\": 12\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST invalid rule (422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                      "pm.test(\"explains every problem\", () => pm.expect(pm.response.json().details.length).to.be.at.least(3));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"POSTMAN_BAD\",\n  \"description\": \"Postman test heat rule\",\n  \"hazard\": \"heat\",\n  \"enabled\": false,\n  \"trigger_condition\": {\n    \"metric\": \"rain\",\n    \"operator\": \"=\",\n    \"value\": \"hot\"\n  },\n  \"vulnerability_target\": {\n    \"conditions\": [\n      \"copd\",\n      \"hypertension\"\n    ]\n  },\n  \"action\": {\n    \"severity\": \"high\",\n    \"channels\": [\n      \"in_app\"\n    ],\n    \"create_clinic_item\": false,\n    \"cooldown_hours\": 12\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "GET /api/alerts/rules/:code",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/POSTMAN_HEAT",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "POSTMAN_HEAT"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH /api/alerts/rules/:code - change threshold",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const r = pm.response.json();",
+                      "pm.test(\"threshold updated, action kept\", () => { pm.expect(r.trigger_condition.value).to.eql(38); pm.expect(r.enabled).to.eql(true); pm.expect(r.action.cooldown_hours).to.eql(12); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/POSTMAN_HEAT",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "POSTMAN_HEAT"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"trigger_condition\": {\n    \"metric\": \"heat_index_c\",\n    \"operator\": \">\",\n    \"value\": 38\n  },\n  \"enabled\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "PATCH system rule trigger (422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/HEALTH_ANOMALY",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "HEALTH_ANOMALY"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"trigger_condition\": {\n    \"metric\": \"wind_ms\",\n    \"operator\": \">\",\n    \"value\": 1\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "DELETE system rule (409)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/HEALTH_ANOMALY",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "HEALTH_ANOMALY"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE /api/alerts/rules/:code (204)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/rules/POSTMAN_HEAT",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "rules",
+                    "POSTMAN_HEAT"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagination",
+          "item": [
+            {
+              "name": "GET /api/patients?page=1&pageSize=2",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"pagination envelope\", () => { const p = pm.response.json().pagination; pm.expect(p).to.include({ page: 1, pageSize: 2 }); pm.expect(p.totalItems).to.be.a(\"number\"); pm.expect(p).to.have.property(\"hasNext\"); });",
+                      "pm.test(\"at most pageSize items\", () => pm.expect(pm.response.json().patients.length).to.be.at.most(2));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/patients?page=1&pageSize=2",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "patients"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "2"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET /api/patients?pageSize=0 (422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/patients?pageSize=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "patients"
+                  ],
+                  "query": [
+                    {
+                      "key": "pageSize",
+                      "value": "0"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET /api/patients/:id/history?page=1&pageSize=5",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"pagination envelope\", () => { const p = pm.response.json().pagination; pm.expect(p).to.include({ page: 1, pageSize: 5 }); pm.expect(p.totalItems).to.be.a(\"number\"); pm.expect(p).to.have.property(\"hasNext\"); });",
+                      "pm.test(\"trends cover all check-ins in the period\", () => { const j = pm.response.json(); pm.expect(j.pagination.totalItems).to.eql(j.trends.totalCheckins); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{familyToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/patients/P-1001/history?page=1&pageSize=5",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "patients",
+                    "P-1001",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "5"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET /api/alerts/notifications?page=1&pageSize=5",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"pagination envelope\", () => { const p = pm.response.json().pagination; pm.expect(p).to.include({ page: 1, pageSize: 5 }); pm.expect(p.totalItems).to.be.a(\"number\"); pm.expect(p).to.have.property(\"hasNext\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{familyToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/alerts/notifications?patientId=P-1001&page=1&pageSize=5",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "alerts",
+                    "notifications"
+                  ],
+                  "query": [
+                    {
+                      "key": "patientId",
+                      "value": "P-1001"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "5"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET /api/clinic/queue?page=1&pageSize=10",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"pagination envelope\", () => { const p = pm.response.json().pagination; pm.expect(p).to.include({ page: 1, pageSize: 10 }); pm.expect(p.totalItems).to.be.a(\"number\"); pm.expect(p).to.have.property(\"hasNext\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/clinic/queue?page=1&pageSize=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "clinic",
+                    "queue"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET /api/clinic/queue/history?page=1&pageSize=10",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.test(\"pagination envelope\", () => { const p = pm.response.json().pagination; pm.expect(p).to.include({ page: 1, pageSize: 10 }); pm.expect(p.totalItems).to.be.a(\"number\"); pm.expect(p).to.have.property(\"hasNext\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{nurseToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/clinic/queue/history?page=1&pageSize=10",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "clinic",
+                    "queue",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "10"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token revocation, rotation, logout, keys",
+          "item": [
+            {
+              "name": "Login (session A)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.collectionVariables.set(\"secRefreshOld\", j.refresh_token);",
+                      "pm.collectionVariables.set(\"secRefresh\", j.refresh_token);",
+                      "pm.test(\"kid in token header\", () => pm.expect(JSON.parse(atob(j.access_token.split(\".\")[0].replace(/-/g, \"+\").replace(/_/g, \"/\"))).kid).to.be.a(\"string\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Refresh rotates the refresh token",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test(\"new refresh token\", () => pm.expect(j.refresh_token).to.not.eql(pm.collectionVariables.get(\"secRefreshOld\")));",
+                      "pm.collectionVariables.set(\"secRefresh\", j.refresh_token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{secRefresh}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Refresh again (token #3)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "pm.collectionVariables.set(\"secAccess\", pm.response.json().access_token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{secRefresh}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Reuse of spent token #1 -> session revoked (400)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                      "pm.test(\"reuse detected\", () => pm.expect(pm.response.json().error_description).to.include(\"already used\"));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{secRefreshOld}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Session A access token is dead (401)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{secAccess}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/clinic/queue",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "clinic",
+                    "queue"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Login (session B)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.collectionVariables.set(\"secAccess\", j.access_token);",
+                      "pm.collectionVariables.set(\"secRefresh\", j.refresh_token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST /oauth/revoke - access token (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/revoke",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "revoke"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{secAccess}}\",\n  \"token_type_hint\": \"access_token\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Revoked access token -> 401 (jti deny-list)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{secAccess}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/clinic/queue",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "clinic",
+                    "queue"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Session B still refreshes",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.collectionVariables.set(\"secAccess\", j.access_token);",
+                      "pm.collectionVariables.set(\"secRefresh\", j.refresh_token);"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{secRefresh}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST /oauth/logout (204)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 204\", () => pm.response.to.have.status(204));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{secAccess}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "logout"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Refresh after logout -> 400",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/token",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grant_type\": \"refresh_token\",\n  \"refresh_token\": \"{{secRefresh}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "POST /oauth/revoke - garbage token is still 200 (RFC 7009)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/oauth/revoke",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "oauth",
+                    "revoke"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"not-a-token\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "GET /api/admin/security - key ids + rotation schedule",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json().jwt;",
+                      "pm.test(\"active kid + rotation info, no key material\", () => { pm.expect(j.access.activeKid).to.be.a(\"string\"); pm.expect(j.rotation.intervalDays).to.be.a(\"number\"); pm.expect(JSON.stringify(j)).to.not.include(\"secret\"); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/admin/security",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "admin",
+                    "security"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -2030,6 +3360,18 @@
     },
     {
       "key": "visitDate",
+      "value": ""
+    },
+    {
+      "key": "secRefreshOld",
+      "value": ""
+    },
+    {
+      "key": "secRefresh",
+      "value": ""
+    },
+    {
+      "key": "secAccess",
       "value": ""
     }
   ]

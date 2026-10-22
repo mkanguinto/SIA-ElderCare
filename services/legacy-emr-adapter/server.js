@@ -8,6 +8,7 @@
  *   POST /legacy/translate              -> translates a raw GetPatientHistory SOAP response (testing / SoapUI)
  */
 require('dotenv').config();
+require('./src/lib/secrets').loadFileSecrets(); // *_FILE Docker secrets, before anything reads process.env
 process.env.SERVICE_NAME = process.env.SERVICE_NAME || 'legacy-emr-adapter';
 
 const express = require('express');

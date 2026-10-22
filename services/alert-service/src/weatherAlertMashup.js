@@ -7,7 +7,8 @@
  *
  *   1. fetchWeatherByZip()      OpenWeatherMap current weather for a zip code (+ optional One Call alerts)
  *   2. getWeatherForZip()       cache-aware wrapper: 1 h fresh cache, up to 24 h stale fallback on outage
- *   3. exceedsHeatThreshold()   heat index > 40 deg C ?
+ *   3. loadWeatherRules()       admin-managed thresholds (alert_rules: trigger_condition x vulnerability_target -> action)
+ *      exceedsHeatThreshold()   heat index > threshold ? (CLI demo)
  *   4. sendHeatWarningSms()     -> notification.sms.requested events -> RabbitMQ -> TextBee SMS worker + in-app fallback
  *   5. createClinicTriageItem() -> weather.risk_detected event -> RabbitMQ -> Clinic Risk Queue Service
  *      (4 and 5 are written in ONE transaction through the outbox, so the family warning and the clinic
@@ -27,6 +28,7 @@ const { internalHeaders } = require('./lib/internalAuth');
 const { pool } = require('./db');
 const events = require('./events');
 const risk = require('./weatherRisk');
+const rules = require('./alertRules');
 
 const OWM_BASE = process.env.OPENWEATHER_BASE_URL || 'https://api.openweathermap.org';
 const CACHE_TTL_MIN = Number(process.env.WEATHER_CACHE_TTL_MINUTES || 60); //   Risk 5: cache 1 hour
@@ -120,8 +122,19 @@ async function getWeatherForZip(zipCode, countryCode = 'PH', coords = {}) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 3. Threshold check                                                   */
+/* 3. Thresholds: admin-managed alert rules                             */
 /* ------------------------------------------------------------------ */
+/** Enabled weather rules, most severe first (so the first match per hazard is the one that fires). */
+async function loadWeatherRules() {
+  const { rows } = await pool.query(
+    `SELECT * FROM alert_rules WHERE enabled AND hazard IS NOT NULL AND trigger_condition IS NOT NULL ORDER BY code`,
+  );
+  const rank = (r) => ['low', 'moderate', 'high', 'critical'].indexOf((r.action && r.action.severity) || 'high');
+  return rows.sort((a, b) => rank(b) - rank(a));
+}
+
+const ALERT_TYPE_BY_HAZARD = { heat: 'HEATWAVE_DEHYDRATION_WARNING', storm: 'TYPHOON_MOBILITY_WARNING' };
+
 function exceedsHeatThreshold(profile, thresholdC = risk.HEAT_INDEX_THRESHOLD_C) {
   return typeof profile.heatIndexC === 'number' && profile.heatIndexC > thresholdC;
 }
@@ -145,33 +158,41 @@ function stormMessage(patient, reasons) {
  * notifier.dispatchAlert() writes the in-app alert and one notification.sms.requested outbox event per
  * subscriber; the RabbitMQ SMS worker calls smsSender.sendSms() -> TextBee (your Android phone).
  */
-async function sendHeatWarningSms(patient, profile, client) {
+/** At most one warning per patient per rule per cooldown window (action.cooldown_hours). */
+function dedupeKeyFor(rule, patient) {
+  const hours = (rule.action && rule.action.cooldown_hours) || 24;
+  return `weather:${rule.code}:${patient.id}:${Math.floor(Date.now() / (hours * 3600 * 1000))}`;
+}
+
+async function sendHeatWarningSms(patient, profile, client, rule) {
   // eslint-disable-next-line global-require
   const { dispatchAlert } = require('./notifier');
   return dispatchAlert({
     patientId: patient.id,
     source: 'weather',
-    ruleCode: 'WEATHER_HEAT',
-    severity: profile.heatIndexC >= 52 ? 'critical' : 'high',
+    ruleCode: rule.code,
+    alertType: ALERT_TYPE_BY_HAZARD.heat,
+    severity: (rule.action && rule.action.severity) || 'high',
     title: `Heat index ${profile.heatIndexC}C`,
     message: heatMessage(patient, profile),
-    metadata: { hazard: 'heat', heatIndexC: profile.heatIndexC, zipCode: patient.zipCode, observedAt: profile.observedAt, cache: profile.cache },
-    dedupeKey: `heat:${patient.id}:${new Date().toISOString().slice(0, 10)}`, // at most once per patient per day
+    metadata: { hazard: 'heat', rule: rule.code, heatIndexC: profile.heatIndexC, zipCode: patient.zipCode, observedAt: profile.observedAt, cache: profile.cache },
+    dedupeKey: dedupeKeyFor(rule, patient),
   }, client);
 }
 
-async function sendStormWarningSms(patient, profile, reasons, client) {
+async function sendStormWarningSms(patient, profile, reasons, client, rule) {
   // eslint-disable-next-line global-require
   const { dispatchAlert } = require('./notifier');
   return dispatchAlert({
     patientId: patient.id,
     source: 'weather',
-    ruleCode: 'WEATHER_STORM',
-    severity: 'high',
+    ruleCode: rule.code,
+    alertType: ALERT_TYPE_BY_HAZARD.storm,
+    severity: (rule.action && rule.action.severity) || 'high',
     title: 'Severe weather advisory',
     message: stormMessage(patient, reasons),
-    metadata: { hazard: 'storm', reasons, windMs: profile.windMs, zipCode: patient.zipCode, observedAt: profile.observedAt },
-    dedupeKey: `storm:${patient.id}:${Math.floor(Date.now() / (6 * 3600 * 1000))}`, // at most once per patient per 6-hour window
+    metadata: { hazard: 'storm', rule: rule.code, reasons, windMs: profile.windMs, zipCode: patient.zipCode, observedAt: profile.observedAt },
+    dedupeKey: dedupeKeyFor(rule, patient),
   }, client);
 }
 
@@ -182,23 +203,27 @@ async function sendStormWarningSms(patient, profile, reasons, client) {
 async function createClinicTriageItem(patient, hazard, profile, details, client) {
   const event = await events.outbox.enqueue(client, 'weather.risk_detected', {
     patient: { id: patient.id, fullName: patient.fullName, zipCode: patient.zipCode, conditions: patient.conditions, mobilityRestricted: patient.mobilityRestricted, assignedClinic: patient.assignedClinic },
-    environment: { hazard, heatIndexC: profile.heatIndexC, windMs: profile.windMs, level: details.level || null, reasons: details.reasons || [], observedAt: profile.observedAt },
+    environment: { hazard, heatIndexC: profile.heatIndexC, windMs: profile.windMs, level: details.level || null, reasons: details.reasons || [], observedAt: profile.observedAt, ruleCode: details.ruleCode || null },
   });
   return { queued: true, created: true, eventId: event.eventId };
 }
 
 /** SMS warning + clinic triage signal in one local transaction (outbox), then publish. */
-async function warnPatient(patient, hazard, profile, details) {
+async function warnPatient(patient, rule, profile, details) {
+  const hazard = rule.hazard;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const sms = hazard === 'heat'
-      ? await sendHeatWarningSms(patient, profile, client)
-      : await sendStormWarningSms(patient, profile, details.reasons, client);
-    const clinic = sms.suppressed ? { skipped: true } : await createClinicTriageItem(patient, hazard, profile, details, client);
+      ? await sendHeatWarningSms(patient, profile, client, rule)
+      : await sendStormWarningSms(patient, profile, details.reasons, client, rule);
+    const wantsClinic = !rule.action || rule.action.create_clinic_item !== false;
+    const clinic = sms.suppressed || !wantsClinic
+      ? { skipped: true }
+      : await createClinicTriageItem(patient, hazard, profile, { ...details, ruleCode: rule.code }, client);
     await client.query('COMMIT');
     events.outbox.kick();
-    return { patientId: patient.id, hazard, sms, clinic };
+    return { patientId: patient.id, hazard, rule: rule.code, sms, clinic };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -221,29 +246,50 @@ async function getPatientsInZip(zipCode) {
  * Runs the full mashup for one location.
  * @param {{zipCode:string, countryCode?:string, lat?:number, lon?:number}} location
  */
-async function runMashupForZip(location) {
+async function runMashupForZip(location, weatherRules) {
   const { zipCode, countryCode = 'PH', lat, lon } = location;
   const profile = await getWeatherForZip(zipCode, countryCode, { lat, lon });
-  const assessment = risk.evaluateWeatherRisk(profile);
-  const summary = { zipCode, locationName: profile.locationName, temperatureC: profile.temperatureC, humidity: profile.humidity, heatIndexC: profile.heatIndexC, windMs: profile.windMs, cache: profile.cache, heat: assessment.heat, storm: assessment.storm, actions: [] };
-
-  if (!assessment.heat.triggered && !assessment.storm.triggered) return summary;
+  const ruleSet = weatherRules || await loadWeatherRules();
+  const evaluated = ruleSet.map((rule) => ({ rule, ...rules.evaluateRule(rule, profile) }));
+  const fired = evaluated.filter((e) => e.triggered);
+  const hazardSummary = (hazard) => {
+    const hit = fired.find((e) => e.rule.hazard === hazard);
+    const first = evaluated.find((e) => e.rule.hazard === hazard);
+    return hazard === 'heat'
+      ? { triggered: Boolean(hit), heatIndexC: profile.heatIndexC, thresholdC: first ? first.rule.trigger_condition.value : null, level: profile.heatIndexC !== null ? risk.heatLevel(profile.heatIndexC) : null, rule: hit ? hit.rule.code : null }
+      : { triggered: Boolean(hit), reasons: hit ? hit.reasons : [], rule: hit ? hit.rule.code : null };
+  };
+  const summary = {
+    zipCode, locationName: profile.locationName, temperatureC: profile.temperatureC, humidity: profile.humidity, heatIndexC: profile.heatIndexC, windMs: profile.windMs, cache: profile.cache,
+    heat: hazardSummary('heat'),
+    storm: hazardSummary('storm'),
+    rules: evaluated.map((e) => ({ code: e.rule.code, hazard: e.rule.hazard, triggered: e.triggered, value: e.value, reasons: e.reasons })),
+    actions: [],
+  };
+  if (!fired.length) return summary;
 
   const patients = await getPatientsInZip(zipCode);
   for (const patient of patients) {
-    if (assessment.heat.triggered && risk.isHeatVulnerable(patient)) summary.actions.push(await warnPatient(patient, 'heat', profile, assessment.heat));
-    if (assessment.storm.triggered && risk.isStormVulnerable(patient)) summary.actions.push(await warnPatient(patient, 'storm', profile, assessment.storm));
+    // Rules are sorted most severe first: per hazard, only the most severe matching rule warns the patient.
+    const warned = new Set();
+    for (const e of fired) {
+      if (warned.has(e.rule.hazard) || !rules.matchesTarget(e.rule, patient)) continue;
+      warned.add(e.rule.hazard);
+      const details = e.rule.hazard === 'heat' ? { level: summary.heat.level, reasons: e.reasons } : { reasons: e.reasons };
+      summary.actions.push(await warnPatient(patient, e.rule, profile, details));
+    }
   }
-  logger.info('weather mashup run', { zipCode, heatIndexC: profile.heatIndexC, heat: assessment.heat.triggered, storm: assessment.storm.triggered, actions: summary.actions.length });
+  logger.info('weather mashup run', { zipCode, heatIndexC: profile.heatIndexC, rulesFired: fired.map((e) => e.rule.code), actions: summary.actions.length });
   return summary;
 }
 
 async function runMashupForAllLocations() {
   const res = await request('checkin-service', { method: 'GET', url: `${CHECKIN_URL()}/internal/locations`, headers: internalHeaders() }, { retries: 2 });
+  const weatherRules = await loadWeatherRules(); // one read per run, shared by every location
   const results = [];
   for (const loc of res.data.locations || []) {
     try {
-      results.push(await runMashupForZip(loc));
+      results.push(await runMashupForZip(loc, weatherRules));
     } catch (err) {
       logger.error('mashup failed for location', { zipCode: loc.zipCode, error: err.message });
       results.push({ zipCode: loc.zipCode, error: err.message });
@@ -269,6 +315,7 @@ function startScheduler() {
 module.exports = {
   fetchWeatherByZip,
   getWeatherForZip,
+  loadWeatherRules,
   exceedsHeatThreshold,
   sendHeatWarningSms,
   sendStormWarningSms,

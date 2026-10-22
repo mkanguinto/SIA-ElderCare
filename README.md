@@ -10,6 +10,7 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 
 ### Documentation
 - `docs/MESSAGING.md` – RabbitMQ topology, event catalogue + JSON Schemas, DLQ, idempotency (v2 · Batch 1)
+- `docs/SECURITY.md` – token revocation, refresh rotation + reuse detection, `kid` key rotation, Docker secrets (v2 · Batch 2)
 - `docs/EVALUATION_RESPONSE.md` – each item of the professor's evaluation → where it is addressed
 - `docs/PROPOSAL_TRACEABILITY.md` – every proposal section mapped to code and verification evidence
 - `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
@@ -184,21 +185,33 @@ If PowerShell refuses to run `npm` ("running scripts is disabled"), run this onc
 
 All `/api/*` routes need `Authorization: Bearer <access_token>`.
 
+**Pagination (v2 · Batch 2).** List endpoints (patient list, check-in history, notifications, clinic queue,
+case history, alert rules) take `?page=1&pageSize=50` and return the items plus
+`"pagination": {"page", "pageSize", "totalItems", "totalPages", "hasNext", "hasPrev"}`. `limit=` still
+works as an alias for `pageSize`; invalid `page` / `pageSize` values return `422`.
+
 | Method | Path | Roles | Service | Notes |
 |---|---|---|---|---|
-| POST | `/oauth/token` | public | gateway | `grant_type=password` or `refresh_token` (RFC 6749) |
+| POST | `/oauth/token` | public | gateway | `grant_type=password` or `refresh_token` (RFC 6749); refresh tokens rotate, reuse revokes the session |
+| POST | `/oauth/revoke` | token holder | gateway | `{token, token_type_hint?}` (RFC 7009) – always 200 |
+| POST | `/oauth/logout` | any signed-in user | gateway | ends the session: access + refresh tokens stop working → 204 |
 | POST | `/api/checkins` | caregiver (assigned patient) | Check-In | 201 + anomalies; 422 validation; `idempotencyKey` for offline replay |
-| GET | `/api/patients/:id/history?days=30&limit=100` | caregiver, family (own), clinic, admin | Check-In | check-ins + trends + baseline |
+| GET | `/api/patients/:id/history?days=30&page=&pageSize=` | caregiver, family (own), clinic, admin | Check-In | check-ins + trends + baseline |
 | GET | `/api/patients/:id` | same as above | Check-In | profile |
 | POST | `/api/alerts/dispatch` | clinic, admin | Alert | `{patientId, message, severity?, title?, channels?}` → 202 |
 | GET | `/api/alerts/notifications?patientId=` | family, caregiver | Alert | in-app alert feed for own patients |
-| POST | `/api/alerts/weather-check` | clinic, admin | Alert | run weather mashup now (`{zipCode?}`) |
+| POST | `/api/alerts/weather-check` | clinic, admin | Alert | run weather mashup now (`{zipCode?}`); result lists every rule evaluated |
+| GET | `/api/alerts/rules?type=weather\|system&hazard=&enabled=` | clinic, admin | Alert | **alert rules** the weather mashup applies |
+| GET | `/api/alerts/rules/:code` | clinic, admin | Alert | one rule |
+| POST | `/api/alerts/rules` | admin | Alert | `{code, description, hazard, trigger_condition, vulnerability_target, action, enabled?}` → 201 (+ `Location`), 409 duplicate, 422 field errors |
+| PATCH | `/api/alerts/rules/:code` | admin | Alert | partial update; system rules: only `description`, `enabled`, `action` |
+| DELETE | `/api/alerts/rules/:code` | admin | Alert | 204; system rules → 409 (disable them instead) |
 | GET | `/api/clinic/queue?status=&priority=&clinic=` | clinic, admin | Clinic | prioritised triage queue |
 | PATCH | `/api/clinic/queue/:itemId` | clinic | Clinic | `{status?, notes?, assignedTo?}` with transition rules |
 | GET | `/api/clinic/patients/:id/emr-history` | clinic, admin | Clinic → Adapter → SOAP EMR | translated legacy history; boosts risk score |
 | GET | `/api/admin/health` | admin | gateway | health of every service + circuit breakers |
 | GET | `/api/admin/users` | admin | gateway | user accounts and roles (never password hashes) |
-| GET | `/api/patients?search=&limit=` | clinic, admin | Check-In | patient list for the clinic (with last check-in) |
+| GET | `/api/patients?search=&page=&pageSize=` | clinic, admin | Check-In | patient list for the clinic (with last check-in) |
 | POST | `/api/patients` | clinic, admin | Check-In | **onboard a patient** (+ optional medicines); 422 field errors, 409 duplicate name + birth date |
 | GET | `/api/patients/:id/medications?includeInactive=` | caregiver, family (own), clinic, admin | Check-In | **prescribed medicines** + today's dose schedule |
 | POST / PATCH | `/api/patients/:id/medications[/:medId]` | clinic | Check-In | prescribe / change / stop (`active:false`) |
@@ -213,6 +226,8 @@ All `/api/*` routes need `Authorization: Bearer <access_token>`.
 | POST | `/webhooks/textbee` | TextBee (HMAC-verified) | Alert | delivery receipts + inbound SMS check-ins |
 | GET | `/api/admin/messaging` | admin | gateway → services | RabbitMQ connection, queue + **DLQ depths**, outbox counts |
 | POST | `/api/admin/messaging/replay` | admin | gateway → service | `{service, queue, limit?}` replay parked DLQ messages |
+| GET | `/api/admin/security` | admin | gateway | active / verify-only key ids, rotation due date, token-store counters (no key material) |
+| POST | `/api/admin/users/:id/revoke-sessions` | admin | gateway | sign a user out everywhere |
 
 Example check-in body:
 ```json
@@ -227,6 +242,21 @@ Example check-in body:
   "notes": "Slept poorly"
 }
 ```
+
+Example alert rule (`POST /api/alerts/rules`):
+```json
+{
+  "code": "HEAT_SENIOR_CENTER",
+  "description": "Heat index above 38 C for COPD and heart patients",
+  "hazard": "heat",
+  "trigger_condition":   { "metric": "heat_index_c", "operator": ">", "value": 38 },
+  "vulnerability_target": { "conditions": ["copd", "cardiovascular"], "mobility_restricted": null },
+  "action": { "severity": "high", "channels": ["sms", "in_app"], "create_clinic_item": true, "cooldown_hours": 24 }
+}
+```
+`metric`: `heat_index_c`, `temperature_c`, `humidity`, `wind_ms`; `operator`: `>`, `>=`, `<`, `<=`;
+`include_advisories: true` (storm rules) also fires on official typhoon advisories and severe weather codes.
+An empty `vulnerability_target` targets everyone in the area.
 
 Errors are JSON: `{ "error": "<code>", "message": "..." }` (+ `details[]` for 422, `requestId` for 5xx).
 Every response carries `X-Request-Id`, which appears in every service's structured logs.
@@ -262,11 +292,12 @@ Every queue item gets a total score (0–100) from health (latest check-in), env
 ## 5. Security (Section 12)
 
 - **OAuth 2.0 + JWT:** short-lived access tokens (15 min default) and refresh tokens signed with a separate secret. HS256 by default; set `JWT_ALGORITHM=RS256` + `JWT_PUBLIC_KEY` to verify tokens from an external IdP (Keycloak, Auth0, Cognito).
-- **Strict verification:** algorithm whitelist (blocks `alg=none`), issuer, audience, expiry, token type (`refresh` tokens can't call APIs), known role.
+- **Strict verification:** algorithm whitelist (blocks `alg=none`), key chosen by the header's `kid`, issuer, audience, expiry, token type (`refresh` tokens can't call APIs), known role.
+- **Revocation and rotation (Batch 2, [docs/SECURITY.md](docs/SECURITY.md)):** `jti` deny-list, `POST /oauth/revoke` and `/oauth/logout`, refresh-token rotation with reuse detection (a replayed refresh token ends the session), admin "sign out everywhere", `kid`-based signing keys with a 90-day rotation schedule.
 - **RBAC at the gateway** (`roleMiddleware.js`) + **patient scoping** for caregivers/families from the `patients` claim. Services re-check scope as defence in depth.
 - **Internal trust:** services accept requests only with `X-Internal-Token`; client-supplied `X-User-*` headers are stripped and replaced by the gateway.
 - **Brute-force protection:** 20 failed logins / 15 min per IP; 300 API requests / min per IP (tune `RATE_LIMIT_*`).
-- **Secrets only in env vars:** `OPENWEATHER_API_KEY`, `TEXTBEE_*`, `RABBITMQ_PASSWORD`, JWT secrets, DB passwords. `.env` is git-ignored. Logs redact `authorization`, `password`, `token`, `phone`, `appid`.
+- **Secrets outside the code:** `OPENWEATHER_API_KEY`, `TEXTBEE_*`, `RABBITMQ_PASSWORD`, JWT secrets, DB passwords come from env vars or **Docker secrets** (`NAME_FILE=/run/secrets/name`, `docker-compose.secrets.yml`, `npm run secrets:generate`). `.env` and `secrets/` are git-ignored. Logs redact `authorization`, `password`, `token`, `phone`, `appid`.
 - **Transport/at rest:** terminate TLS at the load balancer in front of the gateway; set `DB_SSL=true` for managed Postgres (e.g. AWS RDS with storage encryption = AES-256).
 - **Helmet** security headers and CORS allow-list (`CORS_ORIGINS`).
 
@@ -279,8 +310,11 @@ Every queue item gets a total score (0–100) from health (latest check-in), env
 1. Every `WEATHER_POLL_INTERVAL_MINUTES` the alert service asks the check-in service for the distinct monitored zip codes.
 2. `fetchWeatherByZip(zip, 'PH')` calls OpenWeatherMap current weather (falls back to patient coordinates if OWM has no record for the zip; optional One Call 3.0 advisories with `OPENWEATHER_ONECALL_ENABLED=true`).
 3. The response is normalised into an internal risk profile; heat index = max(OWM `feels_like`, NOAA heat index from temp + humidity).
-4. **Heat:** heat index **> 40 °C** → patients in that zip with hypertension / cardiovascular / diabetes / kidney disease / COPD get a dehydration-warning SMS (once per patient per day) **and** a preventive Clinic Risk Queue item.
-5. **Storm:** typhoon/storm advisory, severe condition code, or wind ≥ 17.2 m/s → mobility-restricted patients get an evacuation-prep SMS and a triage item.
+4. The thresholds are **alert rules** managed by admins (`/api/alerts/rules`). Each enabled weather rule is evaluated against the profile; for each hazard, a patient gets only the most severe matching rule's warning (SMS + in-app, once per `cooldown_hours`) and, if `create_clinic_item`, a preventive Clinic Risk Queue item. Seeded rules:
+   * `WEATHER_HEAT`: heat index **> 40 °C** → hypertension / cardiovascular / heart disease / diabetes / kidney disease / COPD, severity high, once per day.
+   * `WEATHER_HEAT_EXTREME`: heat index **≥ 52 °C** (PAGASA *extreme danger*) → same patients, severity critical.
+   * `WEATHER_STORM`: wind ≥ 17.2 m/s, typhoon/storm advisory or severe condition code → mobility-restricted patients, evacuation-prep SMS, every 6 h.
+5. Change a threshold without redeploying: `PATCH /api/alerts/rules/WEATHER_HEAT {"trigger_condition": {"metric": "heat_index_c", "operator": ">", "value": 38}}`.
 6. **Resilience:** results cached per zip for 60 min (rate limits); if OWM is down, the last cached data up to 24 h old is used and the outage is logged.
 
 Try it without a database:
@@ -364,7 +398,11 @@ Every service has a `.env.example`. Most important:
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `JWT_SECRET`, `JWT_REFRESH_SECRET` | gateway | token signing (≥ 32 random chars) |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET` | gateway | token signing (≥ 32 random chars); `*_FILE` variants for Docker secrets |
+| `JWT_KID`, `JWT_PREVIOUS_KEYS`, `JWT_REFRESH_KID`, `JWT_PREVIOUS_REFRESH_KEYS` | gateway | active signing key id + verify-only keys during a rotation (docs/SECURITY.md) |
+| `JWT_KEY_ROTATED_AT`, `JWT_KEY_ROTATION_DAYS` | gateway | rotation schedule shown by `GET /api/admin/security` (default every 90 days) |
+| `REFRESH_REUSE_GRACE_SECONDS` | gateway | parallel refreshes within this window are not treated as token theft (default 10) |
+| `TOKEN_STORE_FILE` | gateway | revoked tokens + refresh sessions (Docker: `gateway-state` volume); `memory` = not persisted |
 | `INTERNAL_SERVICE_TOKEN` | all | gateway ↔ service trust (same value everywhere) |
 | `DATABASE_URL` | checkin, alert, clinic | own PostgreSQL database |
 | `OPENWEATHER_API_KEY` | alert | weather mashup |
@@ -377,7 +415,6 @@ Every service has a `.env.example`. Most important:
 | `SMS_RECIPIENT_ALLOWLIST` | alert | numbers that may get **real** texts; empty outside production = all simulated |
 | `SMS_DAILY_LIMIT` | alert | real SMS per day (default 40; TextBee free plan is 50/day) |
 | `SMS_DRY_RUN` | alert | `true` = log instead of send |
-| `HEAT_INDEX_THRESHOLD_C` | alert | default 40 |
 | `ENV_RISK_TTL_HOURS`, `RECENT_VISIT_DAYS`, `VISIT_TZ_OFFSET` | clinic | weather-risk expiry (24), Recent Visits window (30), visit time zone (+08:00) |
 | `LEGACY_EMR_URL` | adapter | partner RHU SOAP endpoint |
 | `ANOMALY_*` | checkin | clinical thresholds – have the partner RHU physician approve them |

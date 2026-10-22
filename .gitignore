@@ -6,3 +6,5 @@ dist/
 testing/jmeter/results/
 .DS_Store
 scripts/.local-db-isolation.sql
+api-gateway/data/token-store.json
+secrets/
