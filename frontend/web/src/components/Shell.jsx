@@ -9,9 +9,10 @@ const CLINIC_NAV = [
   { to: '/clinic/visits', label: 'Visits' },
   { to: '/clinic/history', label: 'Case history' },
   { to: '/clinic/patients/new', label: 'Add patient' },
+  { to: '/clinic/alert-rules', label: 'Alert rules' },
 ];
 const NAV = {
-  caregiver: [{ to: '/caregiver', label: 'Daily check-in' }],
+  caregiver: [{ to: '/caregiver', label: 'Daily check-in' }, { to: '/caregiver/duties', label: 'Care duties' }],
   family_member: [{ to: '/family', label: 'My family member' }],
   clinic_staff: CLINIC_NAV,
   system_admin: [{ to: '/admin', label: 'System status' }, ...CLINIC_NAV],

@@ -3303,6 +3303,1037 @@
           ]
         }
       ]
+    },
+    {
+      "name": "8. v2 Batch 3 - TextBee SMS router (Node-RED)",
+      "item": [
+        {
+          "name": "Unsigned webhook -> 401 at the gateway",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_RECEIVED\",\"sender\":\"+639175550102\",\"message\":\"SOS\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "HELP -> help reply",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Signs the body like TextBee does (HMAC-SHA256 hex in X-Signature) when textbeeSecret is set.",
+                  "const secret = pm.variables.get(\"textbeeSecret\");",
+                  "pm.variables.set(\"smsId\", \"pm\" + Date.now() + Math.floor(Math.random() * 1000));",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "if (secret) pm.request.headers.upsert({ key: \"X-Signature\", value: CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex) });",
+                  "else pm.request.headers.remove(\"X-Signature\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.variables.get(\"textbeeSecret\")) {",
+                  "  pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"routed to help\", () => pm.expect(pm.response.json().route).to.eql(\"help\"));",
+                  "} else {",
+                  "  pm.test(\"unsigned webhook rejected (set textbeeSecret to the gateway's TEXTBEE_WEBHOOK_SECRET)\", () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_RECEIVED\",\"sender\":\"+639175550102\",\"message\":\"HELP\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "CHECKIN by SMS -> check-in saga",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Signs the body like TextBee does (HMAC-SHA256 hex in X-Signature) when textbeeSecret is set.",
+                  "const secret = pm.variables.get(\"textbeeSecret\");",
+                  "pm.variables.set(\"smsId\", \"pm\" + Date.now() + Math.floor(Math.random() * 1000));",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "if (secret) pm.request.headers.upsert({ key: \"X-Signature\", value: CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex) });",
+                  "else pm.request.headers.remove(\"X-Signature\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.variables.get(\"textbeeSecret\")) {",
+                  "  pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"routed to checkin\", () => pm.expect(pm.response.json().route).to.eql(\"checkin\"));",
+                  "} else {",
+                  "  pm.test(\"unsigned webhook rejected (set textbeeSecret to the gateway's TEXTBEE_WEBHOOK_SECRET)\", () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_RECEIVED\",\"sender\":\"+639175550102\",\"message\":\"CHECKIN P-1002 BP 126/80 HR 72 MED Y\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Bare vitals count as a check-in",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Signs the body like TextBee does (HMAC-SHA256 hex in X-Signature) when textbeeSecret is set.",
+                  "const secret = pm.variables.get(\"textbeeSecret\");",
+                  "pm.variables.set(\"smsId\", \"pm\" + Date.now() + Math.floor(Math.random() * 1000));",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "if (secret) pm.request.headers.upsert({ key: \"X-Signature\", value: CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex) });",
+                  "else pm.request.headers.remove(\"X-Signature\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.variables.get(\"textbeeSecret\")) {",
+                  "  pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"routed to checkin\", () => pm.expect(pm.response.json().route).to.eql(\"checkin\"));",
+                  "} else {",
+                  "  pm.test(\"unsigned webhook rejected (set textbeeSecret to the gateway's TEXTBEE_WEBHOOK_SECRET)\", () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_RECEIVED\",\"sender\":\"+639175550102\",\"message\":\"BP 124/78 HR 70\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unknown text -> help text",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Signs the body like TextBee does (HMAC-SHA256 hex in X-Signature) when textbeeSecret is set.",
+                  "const secret = pm.variables.get(\"textbeeSecret\");",
+                  "pm.variables.set(\"smsId\", \"pm\" + Date.now() + Math.floor(Math.random() * 1000));",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "if (secret) pm.request.headers.upsert({ key: \"X-Signature\", value: CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex) });",
+                  "else pm.request.headers.remove(\"X-Signature\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.variables.get(\"textbeeSecret\")) {",
+                  "  pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"routed to unknown\", () => pm.expect(pm.response.json().route).to.eql(\"unknown\"));",
+                  "} else {",
+                  "  pm.test(\"unsigned webhook rejected (set textbeeSecret to the gateway's TEXTBEE_WEBHOOK_SECRET)\", () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_RECEIVED\",\"sender\":\"+639175550102\",\"message\":\"hello po\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delivery receipt -> status update",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Signs the body like TextBee does (HMAC-SHA256 hex in X-Signature) when textbeeSecret is set.",
+                  "const secret = pm.variables.get(\"textbeeSecret\");",
+                  "pm.variables.set(\"smsId\", \"pm\" + Date.now() + Math.floor(Math.random() * 1000));",
+                  "const raw = pm.variables.replaceIn(pm.request.body.raw);",
+                  "if (secret) pm.request.headers.upsert({ key: \"X-Signature\", value: CryptoJS.HmacSHA256(raw, secret).toString(CryptoJS.enc.Hex) });",
+                  "else pm.request.headers.remove(\"X-Signature\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.variables.get(\"textbeeSecret\")) {",
+                  "  pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"routed to delivery_status\", () => pm.expect(pm.response.json().route).to.eql(\"delivery_status\"));",
+                  "} else {",
+                  "  pm.test(\"unsigned webhook rejected (set textbeeSecret to the gateway's TEXTBEE_WEBHOOK_SECRET)\", () => pm.response.to.have.status(401));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/webhooks/textbee",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "webhooks",
+                "textbee"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"webhookEvent\":\"MESSAGE_DELIVERED\",\"smsId\":\"{{smsId}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. v2 Batch 4 - Care plan (caregiver duties)",
+      "item": [
+        {
+          "name": "GET /api/care/categories",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"eight duty categories with suggestions\", () => { const c = pm.response.json().categories; pm.expect(c).to.have.length(8); c.forEach((x) => pm.expect(x.suggestions.length).to.be.above(0)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "categories"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /api/patients/:id/care-plan (caregiver)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"plan with goals and tasks\", () => { pm.expect(j.plan.goals).to.be.a(\"string\"); pm.expect(j.tasks.length).to.be.above(3); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Family -> other patient's care plan is 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1002/care-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1002",
+                "care-plan"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET checklist (today)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"summary + items + as-needed list\", () => { pm.expect(j.summary.total).to.eql(j.items.length); pm.expect(j.asNeeded).to.be.an(\"array\"); });",
+                  "const meds = j.items.find((i) => i.title === \"Give morning medicines\");",
+                  "pm.collectionVariables.set(\"careTaskId\", meds.taskId);",
+                  "pm.collectionVariables.set(\"careDate\", j.date);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan/checklist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan",
+                "checklist"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caregiver ticks off a duty (201, or 200 when already ticked)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 or 200\", () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test(\"done\", () => pm.expect(pm.response.json().status).to.eql(\"done\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{careTaskId}}/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{careTaskId}}",
+                "completions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slot\": \"08:00\",\n  \"status\": \"done\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ticking again updates the same record (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{careTaskId}}/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{careTaskId}}",
+                "completions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slot\": \"08:00\",\n  \"status\": \"done\",\n  \"note\": \"after breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Skip without a reason (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{careTaskId}}/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{careTaskId}}",
+                "completions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slot\": \"08:00\",\n  \"status\": \"skipped\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Family cannot tick off duties (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{careTaskId}}/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{careTaskId}}",
+                "completions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Caregiver cannot change the plan (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan",
+                "tasks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"emotional_social\",\n  \"title\": \"Postman: listen to the radio together\",\n  \"frequency\": \"daily\",\n  \"times\": [\n    \"16:00\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Clinic adds a duty (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"newCareTaskId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan",
+                "tasks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"emotional_social\",\n  \"title\": \"Postman: listen to the radio together\",\n  \"frequency\": \"daily\",\n  \"times\": [\n    \"16:00\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Weekly duty without days (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan",
+                "tasks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"emotional_social\",\n  \"title\": \"Postman: listen to the radio together\",\n  \"frequency\": \"weekly\",\n  \"times\": [\n    \"16:00\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Clinic changes the duty (PATCH 200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"two times\", () => pm.expect(pm.response.json().times).to.eql([\"10:00\", \"16:00\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{newCareTaskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{newCareTaskId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"times\": [\n    \"10:00\",\n    \"16:00\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Clinic retires the duty (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{newCareTaskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{newCareTaskId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Retired duty cannot be ticked off (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/care/tasks/{{newCareTaskId}}/completions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "care",
+                "tasks",
+                "{{newCareTaskId}}",
+                "completions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slot\": \"16:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "History + adherence (family, paged)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"adherence per category + pagination\", () => { pm.expect(j.adherence.categories).to.be.an(\"array\"); pm.expect(j.pagination.pageSize).to.eql(5); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/care-plan/history?page=1&pageSize=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "care-plan",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -3372,6 +4403,22 @@
     },
     {
       "key": "secAccess",
+      "value": ""
+    },
+    {
+      "key": "careTaskId",
+      "value": ""
+    },
+    {
+      "key": "careDate",
+      "value": ""
+    },
+    {
+      "key": "newCareTaskId",
+      "value": ""
+    },
+    {
+      "key": "smsId",
       "value": ""
     }
   ]

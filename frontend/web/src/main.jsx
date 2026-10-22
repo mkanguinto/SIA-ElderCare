@@ -13,12 +13,16 @@ import AddPatient from './pages/AddPatient';
 import ClinicVisits from './pages/ClinicVisits';
 import CaseHistory from './pages/CaseHistory';
 import AdminView from './pages/AdminView';
+import CareDuties from './pages/CareDuties';
+import AlertRules from './pages/AlertRules';
 import './styles.css';
 
 export const HOME = { caregiver: '/caregiver', family_member: '/family', clinic_staff: '/clinic', system_admin: '/admin' };
 const CLINIC = ['clinic_staff', 'system_admin'];
 const ROUTES = {
   '/caregiver': { roles: ['caregiver'], page: CaregiverCheckIn, title: 'Daily check-in' },
+  '/caregiver/duties': { roles: ['caregiver'], page: CareDuties, title: 'Care duties' },
+  '/clinic/alert-rules': { roles: CLINIC, page: AlertRules, title: 'Alert rules' },
   '/family': { roles: ['family_member'], page: FamilyDashboard, title: 'Family dashboard' },
   '/clinic': { roles: CLINIC, page: ClinicQueue, title: 'Risk queue' },
   '/clinic/visits': { roles: CLINIC, page: ClinicVisits, title: 'Visits' },

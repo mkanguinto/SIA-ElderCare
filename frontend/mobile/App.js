@@ -1,6 +1,8 @@
 // ElderCare Connect - Caregiver mobile check-in app (React Native / Expo)
 // Offline-first (Risk 3): check-ins that fail for network reasons are saved on the device and
 // synced later. Each check-in carries an idempotencyKey, so a replay never creates a duplicate.
+// Duties tab (Batch 5): today's care-plan checklist. Ticking a scheduled duty is an upsert on the
+// server (one record per task + day + time), so ticks made offline are queued and replayed the same way.
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -33,12 +35,19 @@ async function refreshTokens() {
 }
 
 /** Returns {ok, status, data}; throws only on network failure (=> queue offline). */
-async function postCheckin(body, retried = false) {
-  const res = await fetch(`${API}/api/checkins`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokens.access}` }, body: JSON.stringify(body) });
-  if (res.status === 401 && !retried && (await refreshTokens())) return postCheckin(body, true);
+async function call(method, path, body, retried = false) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), Authorization: `Bearer ${tokens.access}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 && !retried && (await refreshTokens())) return call(method, path, body, true);
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
+const postCheckin = (body) => call('POST', '/api/checkins', body);
+// Offline queue items: check-in bodies (v1 format) or { kind: 'duty', taskId, body }.
+const replay = (item) => (item.kind === 'duty' ? call('POST', `/api/care/tasks/${item.taskId}/completions`, item.body) : postCheckin(item));
 
 async function readQueue() { try { return JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch { return []; } }
 async function writeQueue(q) { await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
@@ -55,6 +64,36 @@ export default function App() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(0);
+  const [tab, setTab] = useState('checkin');
+  const [duties, setDuties] = useState(null);
+
+  const loadDuties = useCallback(async (pid) => {
+    if (!pid) return;
+    setDuties(null);
+    try {
+      const r = await call('GET', `/api/patients/${encodeURIComponent(pid)}/care-plan/checklist`);
+      setDuties(r.ok ? r.data : { error: r.data.message || `Error ${r.status}` });
+    } catch {
+      setDuties({ error: 'No connection. Duties load when you are back online.' });
+    }
+  }, []);
+  useEffect(() => { if (user && tab === 'duties') loadDuties(patientId); }, [user, tab, patientId, loadDuties]);
+
+  async function tickDuty(item) {
+    const body = { date: duties.date, slot: item.slot, status: 'done' };
+    // Optimistic: show it done at once; the server keeps one record per task + day + time.
+    setDuties({ ...duties, items: duties.items.map((i) => (i === item ? { ...i, status: 'done' } : i)) });
+    try {
+      const r = await call('POST', `/api/care/tasks/${item.taskId}/completions`, body);
+      if (!r.ok) { setMsg({ kind: 'err', text: (r.data.details && r.data.details.join('\n')) || r.data.message || `Error ${r.status}` }); loadDuties(patientId); }
+    } catch {
+      const q = await readQueue();
+      q.push({ kind: 'duty', taskId: item.taskId, body });
+      await writeQueue(q);
+      setPending(q.length);
+      setMsg({ kind: 'warn', text: 'No connection. Saved on this phone; it will sync automatically.' });
+    }
+  }
 
   const sync = useCallback(async () => {
     if (!tokens) return;
@@ -62,13 +101,13 @@ export default function App() {
     const left = [];
     for (const item of q) {
       try {
-        const r = await postCheckin(item);
+        const r = await replay(item);
         if (!r.ok && r.status >= 500) left.push(item); // server issue - try later; 4xx = drop (invalid)
       } catch { left.push(item); }
     }
     await writeQueue(left);
     setPending(left.length);
-    if (q.length && left.length < q.length) setMsg({ kind: 'ok', text: `Synced ${q.length - left.length} saved check-in(s).` });
+    if (q.length && left.length < q.length) setMsg({ kind: 'ok', text: `Synced ${q.length - left.length} saved item(s).` });
   }, []);
 
   useEffect(() => {
@@ -144,13 +183,45 @@ export default function App() {
       <StatusBar style="auto" />
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <Text style={s.title}>Hi, {user.name.split(' ')[0]}</Text>
-        {pending > 0 && <Pressable onPress={sync}><Text style={[s.msg, s.warn]}>{pending} check-in(s) waiting to sync — tap to retry</Text></Pressable>}
+        {pending > 0 && <Pressable onPress={sync}><Text style={[s.msg, s.warn]}>{pending} item(s) waiting to sync — tap to retry</Text></Pressable>}
+        <View style={s.row}>
+          {[['checkin', 'Check-in'], ['duties', 'Duties']].map(([k, l]) => (
+            <Pressable key={k} onPress={() => { setTab(k); setMsg(null); }} style={[s.chip, tab === k && s.chipOn]}><Text style={tab === k ? s.chipTextOn : null}>{l}</Text></Pressable>
+          ))}
+        </View>
         <Text style={s.label}>Patient</Text>
         <View style={s.row}>
           {user.patients.map((p) => (
             <Pressable key={p} onPress={() => setPatientId(p)} style={[s.chip, patientId === p && s.chipOn]}><Text style={patientId === p ? s.chipTextOn : null}>{p}</Text></Pressable>
           ))}
         </View>
+        {tab === 'duties' && (
+          <View>
+            {!duties && <ActivityIndicator style={{ marginTop: 16 }} />}
+            {duties && duties.error && <Text style={[s.msg, s.err]}>{duties.error}</Text>}
+            {duties && duties.items && (
+              <>
+                <Text style={s.muted}>{duties.summary.done} of {duties.summary.total} done today{duties.summary.overdue ? ` · ${duties.summary.overdue} overdue` : ''}</Text>
+                {duties.items.length === 0 && <Text style={s.muted}>No duties planned for today.</Text>}
+                {duties.items.map((i) => (
+                  <View key={`${i.taskId}|${i.slot}`} style={[s.duty, i.status === 'overdue' && s.dutyLate]}>
+                    <Text style={s.dutyTime}>{i.slot === 'any' ? 'Today' : i.slot}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.dutyTitle, i.status === 'done' && s.dutyDone]}>{i.title}</Text>
+                      {i.instructions ? <Text style={s.muted}>{i.instructions}</Text> : null}
+                    </View>
+                    {i.status === 'done'
+                      ? <Text style={s.doneMark}>✓</Text>
+                      : <Pressable style={s.smallButton} onPress={() => tickDuty(i)}><Text style={s.buttonText}>Done</Text></Pressable>}
+                  </View>
+                ))}
+              </>
+            )}
+            {msg && <Text style={[s.msg, s[msg.kind]]}>{msg.text}</Text>}
+            <Pressable style={[s.button, s.buttonQuiet]} onPress={() => loadDuties(patientId)}><Text style={s.buttonQuietText}>Refresh</Text></Pressable>
+          </View>
+        )}
+        {tab === 'checkin' && (<>
         <View style={s.row}>{field('systolic', 'Systolic')}{field('diastolic', 'Diastolic')}</View>
         <View style={s.row}>{field('heartRate', 'Heart rate')}{field('temperatureC', 'Temp °C', 'decimal-pad')}{field('spo2', 'SpO₂ %')}</View>
         <View style={s.row}>
@@ -161,6 +232,7 @@ export default function App() {
         <TextInput style={[s.input, { height: 80 }]} multiline value={form.notes} onChangeText={(v) => setForm({ ...form, notes: v })} />
         {msg && <Text style={[s.msg, s[msg.kind]]}>{msg.text}</Text>}
         <Pressable style={s.button} onPress={submit} disabled={busy || !patientId}>{busy ? <ActivityIndicator color="#fff" /> : <Text style={s.buttonText}>Submit check-in</Text>}</Pressable>
+        </>)}
       </ScrollView>
     </SafeAreaView>
   );
@@ -185,4 +257,13 @@ const s = StyleSheet.create({
   ok: { backgroundColor: '#e3f2e8', color: '#2f7d4f' },
   warn: { backgroundColor: '#fdf1d8', color: '#8a6512' },
   err: { backgroundColor: '#fbe4e2', color: '#b3261e' },
+  duty: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e3e1da' },
+  dutyLate: { backgroundColor: '#fdf1d8' },
+  dutyTime: { width: 52, fontWeight: '700', color: '#4a5a62' },
+  dutyTitle: { fontSize: 16, color: '#1c2b33' },
+  dutyDone: { textDecorationLine: 'line-through', color: '#6a716d' },
+  doneMark: { fontSize: 20, color: '#2f7d4f', paddingHorizontal: 12 },
+  smallButton: { backgroundColor: '#1f6f5c', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  buttonQuiet: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#1f6f5c' },
+  buttonQuietText: { color: '#1f6f5c', fontWeight: '600', fontSize: 16 },
 });
