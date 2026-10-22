@@ -7,6 +7,7 @@ const logger = require('./lib/logger');
 const { request } = require('./lib/resilientHttp');
 const { requireInternalToken, internalHeaders } = require('./lib/internalAuth');
 const { validateVisit, validateVisitClose } = require('./visitValidation');
+const { parsePagination, pageInfo } = require('./lib/pagination');
 
 const router = express.Router();
 router.use(requireInternalToken);
@@ -156,24 +157,31 @@ async function upsertQueueItem(patient, signal, reason, options = {}) {
 /* ---------------------------- GET /api/clinic/queue -------------------------- */
 router.get('/api/clinic/queue', async (req, res, next) => {
   try {
+    const pg = parsePagination(req.query, { defaultPageSize: 50, maxPageSize: 200 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
     const statuses = String(req.query.status || 'open,in_review,scheduled').split(',').filter((s) => score.VALID_TRANSITIONS[s]);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-    const params = [statuses.length ? statuses : ACTIVE, limit];
+    const params = [statuses.length ? statuses : ACTIVE];
     let clinicFilter = '';
     if (req.query.clinic) { params.push(req.query.clinic); clinicFilter = `AND assigned_clinic = $${params.length}`; }
     if (req.query.priority) { params.push(String(req.query.priority).split(',')); clinicFilter += ` AND priority = ANY($${params.length})`; }
     if (req.query.category) { params.push(String(req.query.category).split(',')); clinicFilter += ` AND category = ANY($${params.length})`; }
     if (req.query.patientId) { params.push(String(req.query.patientId)); clinicFilter += ` AND patient_id = $${params.length}`; }
 
-    const [{ rows }, { rows: counts }] = await Promise.all([
-      pool.query(`SELECT * FROM risk_queue WHERE status = ANY($1) ${clinicFilter} ORDER BY priority ASC, total_score DESC, last_event_at DESC LIMIT $2`, params),
+    const [{ rows }, { rows: counts }, { rows: [{ total }] }] = await Promise.all([
+      pool.query(
+        `SELECT * FROM risk_queue WHERE status = ANY($1) ${clinicFilter}
+          ORDER BY priority ASC, total_score DESC, last_event_at DESC, id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, pg.pageSize, pg.offset],
+      ),
       pool.query(`SELECT priority, count(*)::int AS n FROM risk_queue WHERE status = ANY($1) GROUP BY priority`, [ACTIVE]),
+      pool.query(`SELECT count(*)::int AS total FROM risk_queue WHERE status = ANY($1) ${clinicFilter}`, params),
     ]);
     res.json({
       generatedAt: new Date().toISOString(),
       summary: { P1: 0, P2: 0, P3: 0, P4: 0, ...Object.fromEntries(counts.map((c) => [c.priority, c.n])) },
       thresholds: score.THRESHOLDS,
       items: rows.map(toDto),
+      pagination: pageInfo(pg, total),
     });
   } catch (err) {
     next(err);
@@ -392,11 +400,12 @@ router.patch('/api/clinic/visits/:visitId', async (req, res, next) => {
 
 /* ---------------------------- Resolved case history ---------------------------- */
 
-// GET /api/clinic/queue/history?patientId=&outcome=resolved|dismissed&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=
+// GET /api/clinic/queue/history?patientId=&outcome=resolved|dismissed&from=YYYY-MM-DD&to=YYYY-MM-DD&page=&pageSize=
 router.get('/api/clinic/queue/history', async (req, res, next) => {
   try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-    const params = [limit];
+    const pg = parsePagination(req.query, { defaultPageSize: 50, maxPageSize: 200 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
+    const params = [];
     const where = [`q.status IN ('resolved','dismissed')`];
     if (['resolved', 'dismissed'].includes(req.query.outcome)) { params.push(req.query.outcome); where.push(`q.status = $${params.length}`); }
     if (req.query.patientId) { params.push(String(req.query.patientId)); where.push(`q.patient_id = $${params.length}`); }
@@ -416,9 +425,10 @@ router.get('/api/clinic/queue/history', async (req, res, next) => {
                  (SELECT id, visit_type, visit_date, to_char(visit_time, 'HH24:MI') AS visit_time, destination, status, outcome, completed_at, scheduled_for
                     FROM scheduled_visits WHERE queue_item_id = q.id) v), '[]') AS visits
          FROM risk_queue q WHERE ${where.join(' AND ')}
-        ORDER BY q.resolved_at DESC NULLS LAST LIMIT $1`,
-      params,
+        ORDER BY q.resolved_at DESC NULLS LAST, q.id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pg.pageSize, pg.offset],
     );
+    const { rows: [{ total }] } = await pool.query(`SELECT count(*)::int AS total FROM risk_queue q WHERE ${where.join(' AND ')}`, params);
     const { rows: [counts] } = await pool.query(
       `SELECT count(*) FILTER (WHERE status = 'resolved')::int AS resolved, count(*) FILTER (WHERE status = 'dismissed')::int AS dismissed,
               count(*) FILTER (WHERE status IN ('resolved','dismissed') AND resolved_at >= now() - interval '30 days')::int AS last30days
@@ -433,6 +443,7 @@ router.get('/api/clinic/queue/history', async (req, res, next) => {
         followUps: r.followups,
         visits: r.visits,
       })),
+      pagination: pageInfo(pg, total),
     });
   } catch (err) {
     return next(err);

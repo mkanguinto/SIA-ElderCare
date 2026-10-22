@@ -1,6 +1,8 @@
 // API client for the ElderCare Connect API Gateway.
 // Tokens live in memory + sessionStorage (cleared when the tab closes). On a 401 the access
 // token is refreshed once with the refresh token; if that fails the session ends.
+// The gateway rotates refresh tokens and treats a reused one as theft, so concurrent 401s share ONE
+// refresh request, and signing out revokes the session on the server (POST /oauth/revoke).
 
 const BASE = import.meta.env.VITE_API_BASE_URL || ''; // '' => same origin (Vite proxy in dev)
 const KEY = 'eldercare.session';
@@ -59,7 +61,15 @@ async function tokenRequest(body) {
 }
 
 export const login = (username, password) => tokenRequest({ grant_type: 'password', username, password });
-export const logout = () => save(null);
+export function logout() {
+  const refreshToken = session && session.refreshToken;
+  save(null);
+  // Best effort: end the server-side session so the tokens stop working everywhere (RFC 7009).
+  if (refreshToken) {
+    fetch(`${BASE}/oauth/revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: refreshToken, token_type_hint: 'refresh_token' }) })
+      .catch(() => {});
+  }
+}
 
 /**
  * Switches to another account in one step: the old tokens are discarded before the new sign-in,
@@ -67,18 +77,19 @@ export const logout = () => save(null);
  * left signed out (never half-switched).
  */
 export async function switchAccount(username, password) {
-  save(null);
+  logout();
   return login(username, password);
 }
 
-async function refresh() {
-  if (!session || !session.refreshToken) return false;
-  try {
-    await tokenRequest({ grant_type: 'refresh_token', refresh_token: session.refreshToken });
-    return true;
-  } catch {
-    return false;
+let refreshing = null;
+function refresh() {
+  if (!session || !session.refreshToken) return Promise.resolve(false);
+  if (!refreshing) {
+    refreshing = tokenRequest({ grant_type: 'refresh_token', refresh_token: session.refreshToken })
+      .then(() => true, () => false)
+      .finally(() => { refreshing = null; });
   }
+  return refreshing;
 }
 
 export async function api(path, { method = 'GET', body } = {}, retried = false) {

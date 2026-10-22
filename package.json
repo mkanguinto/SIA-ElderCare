@@ -11,6 +11,7 @@
     "test": "node scripts/run-all.js test",
     "smoke": "node testing/e2e-smoke.mjs",
     "sync-shared": "node scripts/sync-shared.js",
+    "secrets:generate": "node scripts/generate-secrets.js",
     "up": "docker compose up --build",
     "up:cloud": "docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build",
     "down": "docker compose down",

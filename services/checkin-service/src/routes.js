@@ -8,6 +8,7 @@ const outbox = require('./outbox');
 const logger = require('./lib/logger');
 const { requireInternalToken } = require('./lib/internalAuth');
 const { validatePatient, validateMedication } = require('./patientValidation');
+const { parsePagination, pageInfo } = require('./lib/pagination');
 
 const router = express.Router();
 router.use(requireInternalToken);
@@ -190,28 +191,35 @@ router.post('/internal/checkins', async (req, res, next) => {
 
 /* ------------------------- Patients: list + onboarding ------------------------- */
 
-// GET /api/patients?search=&limit=   (clinic staff / admin; RBAC at the gateway, re-checked here)
+// GET /api/patients?search=&page=&pageSize=   (clinic staff / admin; RBAC at the gateway, re-checked here)
 router.get('/api/patients', async (req, res, next) => {
   try {
     if (!requireRole(req, res, CLINIC_ROLES)) return undefined;
+    const pg = parsePagination(req.query, { defaultPageSize: 100, maxPageSize: 500 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
     const search = String(req.query.search || '').trim().slice(0, 60);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
-    const params = [limit];
+    const params = [];
     let where = '';
     if (search) {
       params.push(`%${search.toLowerCase()}%`);
-      where = `WHERE lower(p.full_name) LIKE $2 OR lower(p.id) LIKE $2 OR p.zip_code LIKE $2`;
+      where = `WHERE lower(p.full_name) LIKE $1 OR lower(p.id) LIKE $1 OR p.zip_code LIKE $1`;
     }
-    const { rows } = await pool.query(
-      `SELECT p.*, c.last_checkin_at, c.last_severity
-         FROM patients p
-         LEFT JOIN LATERAL (SELECT recorded_at AS last_checkin_at, severity AS last_severity
-                              FROM checkins WHERE patient_id = p.id ORDER BY recorded_at DESC LIMIT 1) c ON TRUE
-         ${where}
-        ORDER BY p.created_at DESC, p.id LIMIT $1`,
-      params,
-    );
-    return res.json({ patients: rows.map((r) => ({ ...toPatientDto(r), lastCheckinAt: r.last_checkin_at, lastSeverity: r.last_severity })) });
+    const [{ rows }, { rows: [{ total }] }] = await Promise.all([
+      pool.query(
+        `SELECT p.*, c.last_checkin_at, c.last_severity
+           FROM patients p
+           LEFT JOIN LATERAL (SELECT recorded_at AS last_checkin_at, severity AS last_severity
+                                FROM checkins WHERE patient_id = p.id ORDER BY recorded_at DESC LIMIT 1) c ON TRUE
+           ${where}
+          ORDER BY p.created_at DESC, p.id LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, pg.pageSize, pg.offset],
+      ),
+      pool.query(`SELECT count(*)::int AS total FROM patients p ${where}`, params),
+    ]);
+    return res.json({
+      patients: rows.map((r) => ({ ...toPatientDto(r), lastCheckinAt: r.last_checkin_at, lastSeverity: r.last_severity })),
+      pagination: pageInfo(pg, total),
+    });
   } catch (err) {
     return next(err);
   }
@@ -343,7 +351,9 @@ router.get('/api/patients/:id/history', async (req, res, next) => {
     const patientId = req.params.id;
     if (!assertPatientScope(req, res, patientId)) return undefined;
     const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+    // Trends cover the whole period; only the check-in list is paged (?page=&pageSize=, limit= still accepted).
+    const pg = parsePagination(req.query, { defaultPageSize: 100, maxPageSize: 500 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
 
     const { rows: pr } = await pool.query('SELECT * FROM patients WHERE id = $1', [patientId]);
     if (!pr.length) return res.status(404).json({ error: 'not_found', message: 'Patient not found' });
@@ -351,8 +361,8 @@ router.get('/api/patients/:id/history', async (req, res, next) => {
     const [{ rows: checkins }, { rows: [trend] }] = await Promise.all([
       pool.query(
         `SELECT * FROM checkins WHERE patient_id = $1 AND recorded_at >= now() - ($2 || ' days')::interval
-          ORDER BY recorded_at DESC LIMIT $3`,
-        [patientId, String(days), limit],
+          ORDER BY recorded_at DESC, id LIMIT $3 OFFSET $4`,
+        [patientId, String(days), pg.pageSize, pg.offset],
       ),
       pool.query(
         `SELECT count(*)::int AS total,
@@ -383,6 +393,7 @@ router.get('/api/patients/:id/history', async (req, res, next) => {
       },
       baseline: patient.baseline,
       checkins: checkins.map(toCheckinDto),
+      pagination: pageInfo(pg, trend.total),
     });
   } catch (err) {
     return next(err);

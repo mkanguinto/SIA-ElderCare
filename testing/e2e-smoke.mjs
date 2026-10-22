@@ -89,4 +89,64 @@ ok(r.s === 200 && r.j.users.length >= 1, 'clinic can list caregiver accounts for
 r = await call('GET', '/api/alerts/subscribers?patientId=P-1001', nurse);
 ok(r.s === 200 && Array.isArray(r.j.subscribers) && r.j.sms && typeof r.j.sms.live === 'boolean', `SMS contacts + mode: ${r.j.sms && r.j.sms.reason}`);
 
+// ------------------------------------------------------------------ v2 Batch 2: API design + security
+// Alert rules CRUD (admin), read by the weather mashup
+r = await call('GET', '/api/alerts/rules?type=weather', nurse);
+const heat = r.j && r.j.rules.find((x) => x.code === 'WEATHER_HEAT');
+ok(r.s === 200 && heat && heat.trigger_condition.metric === 'heat_index_c' && heat.vulnerability_target.conditions.includes('hypertension') && heat.action.channels.includes('sms'),
+  `alert rules listed with trigger_condition / vulnerability_target / action (${r.j && r.j.rules.map((x) => x.code).join(',')})`);
+ok((await call('GET', '/api/alerts/rules', fam)).s === 403, 'family cannot read alert rules (403)');
+const testRule = { code: 'SMOKE_TEST_HEAT', description: 'Smoke test heat rule', hazard: 'heat', enabled: false,
+  trigger_condition: { metric: 'heat_index_c', operator: '>=', value: 45 }, vulnerability_target: { conditions: ['copd'] },
+  action: { severity: 'high', channels: ['in_app'], create_clinic_item: false, cooldown_hours: 12 } };
+await call('DELETE', `/api/alerts/rules/${testRule.code}`, admin); // leftover from an earlier run
+ok((await call('POST', '/api/alerts/rules', nurse, testRule)).s === 403, 'clinic staff cannot create rules (403)');
+r = await call('POST', '/api/alerts/rules', admin, testRule);
+ok(r.s === 201 && r.j.code === testRule.code && r.j.action.cooldown_hours === 12 && r.j.updated_by, 'admin creates a weather rule (201)');
+ok((await call('POST', '/api/alerts/rules', admin, testRule)).s === 409, 'duplicate rule code (409)');
+r = await call('POST', '/api/alerts/rules', admin, { ...testRule, code: 'SMOKE_BAD', trigger_condition: { metric: 'rain', operator: '=', value: 'x' } });
+ok(r.s === 422 && r.j.details.length >= 3, `invalid trigger_condition rejected (422: ${r.j.details && r.j.details[0]})`);
+r = await call('PATCH', `/api/alerts/rules/${testRule.code}`, admin, { trigger_condition: { metric: 'heat_index_c', operator: '>', value: 38 } });
+ok(r.s === 200 && r.j.trigger_condition.value === 38 && r.j.action.cooldown_hours === 12, 'admin updates the threshold (PATCH 200)');
+ok((await call('PATCH', '/api/alerts/rules/HEALTH_ANOMALY', admin, { trigger_condition: { metric: 'wind_ms', operator: '>', value: 1 } })).s === 422, 'system rule trigger cannot be changed (422)');
+ok((await call('DELETE', '/api/alerts/rules/HEALTH_ANOMALY', admin)).s === 409, 'system rule cannot be deleted (409)');
+ok((await call('DELETE', `/api/alerts/rules/${testRule.code}`, admin)).s === 204 && (await call('GET', `/api/alerts/rules/${testRule.code}`, nurse)).s === 404, 'admin deletes the rule (204, then 404)');
+r = await call('POST', '/api/alerts/weather-check', admin, { zipCode: '1012' });
+if (r.s === 200) ok(r.j.results[0].rules.some((x) => x.code === 'WEATHER_HEAT'), `weather mashup evaluated the rules (${r.j.results[0].rules.map((x) => `${x.code}:${x.triggered}`).join(' ')})`);
+
+// Pagination envelope on the batch history endpoints
+const isPage = (p, page, size) => p && p.page === page && p.pageSize === size && typeof p.totalItems === 'number' && p.totalPages >= 1 && typeof p.hasNext === 'boolean';
+const [p1, p2] = [await call('GET', '/api/patients?page=1&pageSize=2', nurse), await call('GET', '/api/patients?page=2&pageSize=2', nurse)];
+ok(p1.s === 200 && p1.j.patients.length === 2 && isPage(p1.j.pagination, 1, 2) && p1.j.pagination.hasNext && p2.j.pagination.hasPrev
+  && !p2.j.patients.some((x) => p1.j.patients.some((y) => y.id === x.id)), `patient list pages do not overlap (${p1.j.pagination && p1.j.pagination.totalItems} patients)`);
+ok((await call('GET', '/api/patients?pageSize=0', nurse)).s === 422, 'invalid pageSize rejected (422)');
+r = await call('GET', '/api/patients/P-1001/history?page=1&pageSize=3', fam);
+ok(r.s === 200 && r.j.checkins.length <= 3 && isPage(r.j.pagination, 1, 3) && r.j.pagination.totalItems === r.j.trends.totalCheckins, 'check-in history is paged, trends cover the whole period');
+r = await call('GET', '/api/alerts/notifications?patientId=P-1001&page=1&pageSize=2', fam);
+ok(r.s === 200 && r.j.notifications.length <= 2 && isPage(r.j.pagination, 1, 2), `notifications paged (${r.j.pagination && r.j.pagination.totalItems} total)`);
+r = await call('GET', '/api/clinic/queue?pageSize=1', nurse);
+ok(r.s === 200 && r.j.items.length <= 1 && isPage(r.j.pagination, 1, 1) && r.j.summary, 'clinic queue paged, summary still covers the whole queue');
+r = await call('GET', '/api/clinic/queue/history?page=1&pageSize=1', nurse);
+ok(r.s === 200 && r.j.cases.length <= 1 && isPage(r.j.pagination, 1, 1), 'case history paged');
+ok((await call('GET', '/api/patients/P-1001/history?limit=2', fam)).j.pagination.pageSize === 2, 'legacy limit= still works');
+
+// JWT: refresh rotation + reuse detection, revocation, logout, key status
+const tok = async (u) => (await call('POST', '/oauth/token', null, { grant_type: 'password', username: u, password: 'ElderCare@2026' })).j;
+const refreshWith = (rt) => call('POST', '/oauth/token', null, { grant_type: 'refresh_token', refresh_token: rt });
+const s1 = await tok('nurse.ana');
+const s2 = (await refreshWith(s1.refresh_token)).j;
+const s3 = await refreshWith(s2.refresh_token);
+ok(s2.refresh_token && s2.refresh_token !== s1.refresh_token && s3.s === 200, 'refresh token rotates on every use');
+r = await refreshWith(s1.refresh_token); // two rotations old: theft, not a race
+ok(r.s === 400 && /already used/.test(r.j.error_description) && (await call('GET', '/api/clinic/queue', s3.j.access_token)).s === 401,
+  'reused refresh token revokes the whole session');
+const s4 = await tok('nurse.ana');
+ok((await call('POST', '/oauth/revoke', null, { token: s4.access_token, token_type_hint: 'access_token' })).s === 200
+  && (await call('GET', '/api/clinic/queue', s4.access_token)).s === 401 && (await refreshWith(s4.refresh_token)).s === 200, 'revoked access token is deny-listed (jti), session survives');
+const s5 = await tok('family.jose');
+ok((await call('POST', '/oauth/logout', s5.access_token)).s === 204 && (await call('GET', '/api/alerts/notifications', s5.access_token)).s === 401
+  && (await refreshWith(s5.refresh_token)).s === 400, 'logout ends the session (access + refresh)');
+r = await call('GET', '/api/admin/security', admin);
+ok(r.s === 200 && r.j.jwt.access.activeKid && r.j.jwt.store.persistent === true, `key status: kid ${r.j.jwt && r.j.jwt.access.activeKid}, next rotation ${r.j.jwt && r.j.jwt.rotation.nextRotationDue}`);
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

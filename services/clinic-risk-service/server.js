@@ -6,6 +6,7 @@
  * Reachable only through the API Gateway (public routes) or peer services (/internal routes).
  */
 require('dotenv').config();
+require('./src/lib/secrets').loadFileSecrets(); // *_FILE Docker secrets, before anything reads process.env
 process.env.SERVICE_NAME = process.env.SERVICE_NAME || 'clinic-risk-service';
 
 const express = require('express');

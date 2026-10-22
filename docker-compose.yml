@@ -85,12 +85,24 @@ services:
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env}"
       JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}"
       JWT_ACCESS_TTL: "${JWT_ACCESS_TTL:-15m}"
+      JWT_REFRESH_TTL: "${JWT_REFRESH_TTL:-7d}"
+      # kid-based key rotation (docs/SECURITY.md): active kid signs, JWT_PREVIOUS_KEYS only verify
+      JWT_KID: "${JWT_KID:-k1}"
+      JWT_PREVIOUS_KEYS: "${JWT_PREVIOUS_KEYS:-}"
+      JWT_REFRESH_KID: "${JWT_REFRESH_KID:-r1}"
+      JWT_PREVIOUS_REFRESH_KEYS: "${JWT_PREVIOUS_REFRESH_KEYS:-}"
+      JWT_KEY_ROTATED_AT: "${JWT_KEY_ROTATED_AT:-}"
+      JWT_KEY_ROTATION_DAYS: "${JWT_KEY_ROTATION_DAYS:-90}"
+      REFRESH_REUSE_GRACE_SECONDS: "${REFRESH_REUSE_GRACE_SECONDS:-10}"
+      # revoked tokens + refresh sessions survive gateway restarts
+      TOKEN_STORE_FILE: /app/state/token-store.json
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN in .env}"
       CHECKIN_SERVICE_URL: http://checkin-service:4001
       ALERT_SERVICE_URL: http://alert-service:4002
       CLINIC_SERVICE_URL: http://clinic-risk-service:4003
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
+    volumes: ["gateway-state:/app/state"]
     depends_on: [checkin-service, alert-service, clinic-risk-service]
     networks: [internal, public]
 
@@ -128,7 +140,7 @@ services:
       OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY:-}"
       OPENWEATHER_ONECALL_ENABLED: "${OPENWEATHER_ONECALL_ENABLED:-false}"
       WEATHER_POLL_INTERVAL_MINUTES: "${WEATHER_POLL_INTERVAL_MINUTES:-30}"
-      HEAT_INDEX_THRESHOLD_C: "${HEAT_INDEX_THRESHOLD_C:-40}"
+      # heat / storm thresholds are alert rules now: GET/PATCH /api/alerts/rules (admin)
       SMS_DRY_RUN: "${SMS_DRY_RUN:-true}"
       SMS_PROVIDER: "${SMS_PROVIDER:-}"
       TEXTBEE_API_KEY: "${TEXTBEE_API_KEY:-}"
@@ -193,3 +205,4 @@ volumes:
   alert-data: {}
   clinic-data: {}
   rabbitmq-data: {}
+  gateway-state: {}

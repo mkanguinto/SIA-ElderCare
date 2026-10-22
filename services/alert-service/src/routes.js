@@ -12,6 +12,8 @@ const { processOnce } = require('./lib/idempotency');
 const events = require('./events');
 const { request } = require('./lib/resilientHttp');
 const { parseSmsCheckin, HELP_TEXT: SMS_HELP_TEXT } = require('./smsCheckinParser');
+const { parsePagination, pageInfo } = require('./lib/pagination');
+const alertRules = require('./alertRules');
 
 const router = express.Router();
 router.use(requireInternalToken);
@@ -56,29 +58,148 @@ router.post('/api/alerts/dispatch', async (req, res, next) => {
 
 /* ---------------------- GET /api/alerts/notifications ------------------------ */
 // Family Dashboard / Caregiver App in-app feed, limited to the caller's patients.
+// ?patientId=&page=&pageSize= (limit= still accepted)
 router.get('/api/alerts/notifications', async (req, res, next) => {
   try {
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const pg = parsePagination(req.query, { defaultPageSize: 50, maxPageSize: 200 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
     let patients = req.user ? req.user.patients : [];
     if (req.query.patientId) {
       if (!patients.includes(req.query.patientId)) return res.status(403).json({ error: 'forbidden', message: 'Not your patient' });
       patients = [req.query.patientId];
     }
-    if (!patients.length) return res.json({ notifications: [] });
-    const { rows } = await pool.query(
-      `SELECT a.id, a.patient_id, a.source, a.rule_code, a.severity, a.title, a.message, a.metadata, a.created_at,
-              coalesce(json_agg(json_build_object('channel', n.channel, 'status', n.status, 'note', n.note, 'provider', n.provider)) FILTER (WHERE n.id IS NOT NULL), '[]') AS delivery
-         FROM alerts a LEFT JOIN notification_log n ON n.alert_id = a.id
-        WHERE a.patient_id = ANY($1)
-        GROUP BY a.id ORDER BY a.created_at DESC LIMIT $2`,
-      [patients, limit],
-    );
+    if (!patients.length) return res.json({ notifications: [], pagination: pageInfo(pg, 0) });
+    const [{ rows }, { rows: [{ total }] }] = await Promise.all([
+      pool.query(
+        `SELECT a.id, a.patient_id, a.source, a.rule_code, a.severity, a.title, a.message, a.metadata, a.created_at,
+                coalesce(json_agg(json_build_object('channel', n.channel, 'status', n.status, 'note', n.note, 'provider', n.provider)) FILTER (WHERE n.id IS NOT NULL), '[]') AS delivery
+           FROM alerts a LEFT JOIN notification_log n ON n.alert_id = a.id
+          WHERE a.patient_id = ANY($1)
+          GROUP BY a.id ORDER BY a.created_at DESC, a.id LIMIT $2 OFFSET $3`,
+        [patients, pg.pageSize, pg.offset],
+      ),
+      pool.query('SELECT count(*)::int AS total FROM alerts WHERE patient_id = ANY($1)', [patients]),
+    ]);
     return res.json({
+      pagination: pageInfo(pg, total),
       notifications: rows.map((r) => ({
         id: r.id, patientId: r.patient_id, source: r.source, rule: r.rule_code, severity: r.severity,
         title: r.title, message: r.message, metadata: r.metadata, createdAt: r.created_at, delivery: r.delivery,
       })),
     });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/* --------------------------- Alert rules (CRUD) --------------------------- */
+// Heatwave / typhoon rules the weather mashup evaluates, plus the event-driven system rules.
+// Read: clinic staff + admin. Write: admin only (RBAC at the gateway, re-checked here).
+const RULE_CODE_RE = /^[A-Z][A-Z0-9_]{2,39}$/;
+const isAdmin = (req) => req.user && req.user.role === 'system_admin';
+const canReadRules = (req) => req.user && ['clinic_staff', 'system_admin'].includes(req.user.role);
+
+/** Splits the API's action object into the action JSONB + the channels / min_severity columns. */
+function ruleColumns(value) {
+  const cols = { ...value };
+  if (value.action) {
+    const { channels, min_severity: minSeverity, ...rest } = value.action;
+    cols.action = rest;
+    if (channels) cols.channels = channels;
+    if (minSeverity) cols.min_severity = minSeverity;
+  }
+  return cols;
+}
+
+router.get('/api/alerts/rules', async (req, res, next) => {
+  try {
+    if (!canReadRules(req)) return res.status(403).json({ error: 'forbidden' });
+    const pg = parsePagination(req.query, { defaultPageSize: 50, maxPageSize: 200 });
+    if (pg.errors.length) return res.status(422).json({ error: 'validation_failed', details: pg.errors });
+    const where = [];
+    const params = [];
+    if (req.query.type === 'weather') where.push('hazard IS NOT NULL');
+    else if (req.query.type === 'system') where.push('hazard IS NULL');
+    if (['heat', 'storm'].includes(req.query.hazard)) { params.push(req.query.hazard); where.push(`hazard = $${params.length}`); }
+    if (['true', 'false'].includes(req.query.enabled)) { params.push(req.query.enabled === 'true'); where.push(`enabled = $${params.length}`); }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const [{ rows }, { rows: [{ total }] }] = await Promise.all([
+      pool.query(`SELECT * FROM alert_rules ${clause} ORDER BY hazard NULLS LAST, code LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, pg.pageSize, pg.offset]),
+      pool.query(`SELECT count(*)::int AS total FROM alert_rules ${clause}`, params),
+    ]);
+    return res.json({ rules: rows.map(alertRules.toRuleDto), pagination: pageInfo(pg, total) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/api/alerts/rules/:code', async (req, res, next) => {
+  try {
+    if (!canReadRules(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!RULE_CODE_RE.test(req.params.code)) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    const { rows } = await pool.query('SELECT * FROM alert_rules WHERE code = $1', [req.params.code]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    return res.json(alertRules.toRuleDto(rows[0]));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/api/alerts/rules', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'forbidden', message: 'Only administrators can manage alert rules' });
+    const { errors, value } = alertRules.validateRule(req.body);
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    const c = ruleColumns(value);
+    const { rows } = await pool.query(
+      `INSERT INTO alert_rules (code, description, enabled, hazard, trigger_condition, vulnerability_target, action, channels, min_severity, updated_by)
+       VALUES ($1, $2, coalesce($3::boolean, TRUE), $4, $5, $6, $7, coalesce($8::text[], '{sms,in_app}'), coalesce($9::text, 'moderate'), $10)
+       ON CONFLICT (code) DO NOTHING RETURNING *`,
+      [c.code, c.description, c.enabled ?? null, c.hazard, c.trigger_condition, c.vulnerability_target, c.action, c.channels || null, c.min_severity || null, req.user.id],
+    );
+    if (!rows.length) return res.status(409).json({ error: 'conflict', message: `Rule ${c.code} already exists` });
+    logger.info('alert rule created', { code: c.code, by: req.user.id });
+    return res.status(201).location(`/api/alerts/rules/${c.code}`).json(alertRules.toRuleDto(rows[0]));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.patch('/api/alerts/rules/:code', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'forbidden', message: 'Only administrators can manage alert rules' });
+    if (!RULE_CODE_RE.test(req.params.code)) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    const { rows: [existing] } = await pool.query('SELECT * FROM alert_rules WHERE code = $1', [req.params.code]);
+    if (!existing) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    const { errors, value } = alertRules.validateRule(req.body, { partial: true, existing });
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    const c = ruleColumns(value);
+    const cols = ['description', 'enabled', 'hazard', 'trigger_condition', 'vulnerability_target', 'action', 'channels', 'min_severity'].filter((k) => c[k] !== undefined);
+    const params = [existing.code, ...cols.map((k) => c[k]), req.user.id];
+    const { rows } = await pool.query(
+      `UPDATE alert_rules SET ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')}, updated_by = $${params.length}, updated_at = now()
+        WHERE code = $1 RETURNING *`,
+      params,
+    );
+    logger.info('alert rule updated', { code: existing.code, fields: cols, by: req.user.id });
+    return res.json(alertRules.toRuleDto(rows[0]));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.delete('/api/alerts/rules/:code', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: 'forbidden', message: 'Only administrators can manage alert rules' });
+    if (alertRules.SYSTEM_RULES.includes(req.params.code)) {
+      return res.status(409).json({ error: 'conflict', message: 'System rules cannot be deleted; disable them with PATCH {"enabled": false}' });
+    }
+    if (!RULE_CODE_RE.test(req.params.code)) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    // Past alerts keep their rule_code as plain text (no FK), so history stays readable.
+    const { rowCount } = await pool.query('DELETE FROM alert_rules WHERE code = $1', [req.params.code]);
+    if (!rowCount) return res.status(404).json({ error: 'not_found', message: 'Rule not found' });
+    logger.info('alert rule deleted', { code: req.params.code, by: req.user.id });
+    return res.status(204).end();
   } catch (err) {
     return next(err);
   }

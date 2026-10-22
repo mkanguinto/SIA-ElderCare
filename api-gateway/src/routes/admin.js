@@ -6,6 +6,8 @@
  * GET /api/admin/users  : user accounts and role assignments (no password hashes).
  * GET /api/admin/messaging         : RabbitMQ status, queue and dead-letter-queue depths, outbox counts per service.
  * POST /api/admin/messaging/replay : {service, queue, limit?} replay parked DLQ messages after fixing the cause.
+ * GET /api/admin/security          : JWT key ids, rotation schedule, token-store counters (no key material).
+ * POST /api/admin/users/:id/revoke-sessions : sign a user out everywhere (lost phone, role change, offboarding).
  */
 const express = require('express');
 const axios = require('axios');
@@ -14,7 +16,9 @@ const { authenticate } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
 const { breakerSnapshots } = require('../lib/resilientHttp');
-const { listUsers } = require('../auth/userStore');
+const logger = require('../lib/logger');
+const { listUsers, findById } = require('../auth/userStore');
+const { keyStatus, revokeUserSessions } = require('../auth/tokenService');
 
 const router = express.Router();
 
@@ -40,6 +44,21 @@ router.get('/users', authenticate, authorize(ROLES.ADMIN), (req, res) => {
   const users = listUsers();
   const byRole = users.reduce((acc, u) => ({ ...acc, [u.role]: (acc[u.role] || 0) + 1 }), {});
   res.json({ total: users.length, byRole, users });
+});
+
+router.post('/users/:id/revoke-sessions', authenticate, authorize(ROLES.ADMIN), (req, res) => {
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(req.params.id)) return res.status(404).json({ error: 'not_found', message: 'User not found' });
+  // Disabled users can still hold unexpired tokens, so look them up in the raw list too.
+  if (!findById(req.params.id) && !listUsers().some((u) => u.id === req.params.id)) {
+    return res.status(404).json({ error: 'not_found', message: 'User not found' });
+  }
+  const r = revokeUserSessions(req.params.id);
+  logger.warn('all sessions revoked by admin', { requestId: req.id, userId: req.params.id, by: req.user.id, sessions: r.sessions });
+  return res.json({ userId: req.params.id, sessionsRevoked: r.sessions, tokensIssuedBefore: new Date(r.revokedBefore * 1000).toISOString() });
+});
+
+router.get('/security', authenticate, authorize(ROLES.ADMIN), (req, res) => {
+  res.json({ checkedAt: new Date().toISOString(), jwt: keyStatus() });
 });
 
 /* ------------------------------ Messaging (RabbitMQ) ------------------------------ */
