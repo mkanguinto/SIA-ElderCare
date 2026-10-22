@@ -23,7 +23,7 @@ jobs:
           node-version: 20
       - run: node scripts/sync-shared.js
       - name: Shared code and event contracts are in sync
-        run: git diff --exit-code -- services api-gateway
+        run: git diff --exit-code -- services api-gateway integration
       - name: Event contracts are valid JSON
         run: for f in contracts/events/*.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || exit 1; done
 
@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api-gateway, services/checkin-service, services/alert-service, services/clinic-risk-service, services/legacy-emr-adapter]
+        service: [api-gateway, services/checkin-service, services/alert-service, services/clinic-risk-service, services/legacy-emr-adapter, integration/node-red]
     defaults:
       run:
         working-directory: ${{ matrix.service }}
@@ -78,6 +78,8 @@ jobs:
         run: |
           cp .env.example .env
           sed -i 's/^INTERNAL_SERVICE_TOKEN=.*/INTERNAL_SERVICE_TOKEN=ci-internal-token/' .env
+          sed -i 's/^TEXTBEE_WEBHOOK_SECRET=.*/TEXTBEE_WEBHOOK_SECRET=ci-textbee-secret/' .env
+          sed -i 's/^DASHBOARD_PASSWORD=.*/DASHBOARD_PASSWORD=ci-dashboard-password/' .env
           docker compose up -d --build
           for i in $(seq 1 40); do curl -sf http://localhost:8080/health && break; sleep 3; done
           sleep 10
@@ -91,6 +93,10 @@ jobs:
         with:
           node-version: 20
       - name: End-to-end smoke test
+        env:
+          TEXTBEE_WEBHOOK_SECRET: ci-textbee-secret
+          DASHBOARD_PASSWORD: ci-dashboard-password
+          NODE_RED_URL: http://localhost:1880
         run: node testing/e2e-smoke.mjs
       - name: Logs on failure
         if: failure()

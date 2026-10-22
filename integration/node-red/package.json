@@ -1,0 +1,9 @@
+{
+  "name": "eldercare-node-red",
+  "version": "2.0.0",
+  "private": true,
+  "description": "ElderCare Connect EAI flows: TextBee SMS content-based router, weather orchestration, DLQ monitor",
+  "scripts": {
+    "test": "node --test"
+  }
+}

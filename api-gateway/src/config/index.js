@@ -83,6 +83,16 @@ const config = {
     alert: process.env.ALERT_SERVICE_URL || 'http://localhost:4002',
     clinic: process.env.CLINIC_SERVICE_URL || 'http://localhost:4003',
     legacyAdapter: process.env.LEGACY_ADAPTER_URL || 'http://localhost:4004',
+    // Node-RED EAI layer (Batch 3), only when deployed: also shows up in GET /api/admin/health
+    ...(process.env.NODE_RED_URL ? { nodeRed: process.env.NODE_RED_URL } : {}),
+  },
+
+  // TextBee webhooks: "alert" = straight to the alert service (it verifies X-Signature),
+  // "node-red" = gateway verifies X-Signature, then the Node-RED content-based router takes over.
+  textbee: {
+    webhookTarget: process.env.TEXTBEE_WEBHOOK_TARGET || 'alert',
+    webhookSecret: process.env.TEXTBEE_WEBHOOK_SECRET || '',
+    validateWebhook: process.env.TEXTBEE_VALIDATE_WEBHOOK !== 'false',
   },
 
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 5000),
@@ -95,6 +105,9 @@ const config = {
 
   usersFile: process.env.USERS_FILE || require('path').join(__dirname, '../../data/users.json'),
 };
+
+if (!['alert', 'node-red'].includes(config.textbee.webhookTarget)) throw new Error('TEXTBEE_WEBHOOK_TARGET must be alert or node-red');
+if (config.textbee.webhookTarget === 'node-red' && !config.services.nodeRed) throw new Error('TEXTBEE_WEBHOOK_TARGET=node-red needs NODE_RED_URL');
 
 for (const [kid] of Object.entries(config.jwt.previousKeys)) {
   if (kid === config.jwt.kid) throw new Error(`JWT_PREVIOUS_KEYS must not contain the active JWT_KID "${kid}"`);

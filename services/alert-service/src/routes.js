@@ -328,6 +328,132 @@ async function handleSmsCheckin({ from, body, messageId, requestId }) {
   return `Not saved: ${why}`;
 }
 
+/* ------------------- SMS actions for the Node-RED content-based router ------------------- */
+// Node-RED (integration/node-red) classifies each TextBee webhook and calls exactly one of these.
+// Each inbound route is idempotent on TextBee's smsId and texts its own reply to the sender.
+
+/** false if this inbound SMS was already handled (TextBee retries webhooks). */
+async function claimInboundSms(smsId) {
+  if (!smsId) return true;
+  const { rowCount } = await pool.query('INSERT INTO alert_dedupe (dedupe_key) VALUES ($1) ON CONFLICT DO NOTHING', [`textbee-in:${smsId}`]);
+  return rowCount === 1;
+}
+
+/** Applies a TextBee delivery receipt to notification_log. */
+async function applyDeliveryStatus({ id, status, error }) {
+  const { rowCount } = await pool.query(
+    `UPDATE notification_log SET status = $2, updated_at = now(), error = CASE WHEN $2 = 'failed' THEN coalesce($3, 'TextBee reported failure') ELSE error END
+      WHERE provider_sid = $1 AND channel = 'sms'`,
+    [id, status, error || null],
+  );
+  return rowCount;
+}
+
+async function replySms(to, text) {
+  try {
+    await sendSms({ to, body: `[ElderCare] ${text}` });
+    return true;
+  } catch (err) {
+    logger.error('sms reply failed', { error: err.message });
+    return false;
+  }
+}
+
+async function patientName(patientId, requestId) {
+  try {
+    const r = await request('checkin-service', {
+      method: 'GET', url: `${process.env.CHECKIN_SERVICE_URL || 'http://localhost:4001'}/internal/patients/${encodeURIComponent(patientId)}`, headers: internalHeaders(requestId),
+    }, { retries: 0, timeoutMs: 2000 });
+    return (r.data && (r.data.fullName || (r.data.patient && r.data.patient.fullName))) || patientId;
+  } catch {
+    return patientId;
+  }
+}
+
+/** SOS from a registered caregiver: critical alert to every other contact of their patients. */
+async function handleSmsEmergency({ from, body, smsId, requestId }) {
+  const phone = normalizePhone(from);
+  const { rows: links } = phone ? await pool.query(
+    `SELECT DISTINCT user_id, patient_id FROM subscribers WHERE phone_e164 = $1 AND relation = 'caregiver' AND user_id IS NOT NULL`, [phone],
+  ) : { rows: [] };
+  if (!links.length) return 'This number is not registered as an ElderCare caregiver. In an emergency call 911.';
+  const note = body.replace(/^\s*(SOS|EMERGENCY|EMERGENCIA|SAKLOLO)\b[:\s-]*/i, '').slice(0, 200);
+  const names = [];
+  for (const link of links) {
+    const name = await patientName(link.patient_id, requestId);
+    names.push(name);
+    await dispatchAlert({
+      patientId: link.patient_id,
+      source: 'sms_sos',
+      ruleCode: 'SMS_SOS',
+      severity: 'critical',
+      title: 'SOS from caregiver',
+      message: `SOS for ${name}: the caregiver texted ${phone}${note ? ` ("${note}")` : ''}. Call the caregiver now; if you cannot reach them, call 911.`,
+      metadata: { from: phone, caregiverId: link.user_id, smsId, note },
+      excludePhones: [phone],
+      createdBy: link.user_id,
+      dedupeKey: smsId ? `sos:${smsId}:${link.patient_id}` : undefined,
+    });
+  }
+  logger.warn('caregiver SOS', { caregiverId: links[0].user_id, patients: links.map((l) => l.patient_id) });
+  return `SOS received. The family of ${names.join(', ')} has been alerted. If life is in danger, call 911 now.`;
+}
+
+/** STOP / START: turn SMS alerts off or on for every patient this number follows. */
+async function setSmsEnabled(from, enabled) {
+  const phone = normalizePhone(from);
+  if (!phone) return 0;
+  const { rowCount } = await pool.query('UPDATE subscribers SET sms_enabled = $2 WHERE phone_e164 = $1', [phone, enabled]);
+  logger.info(enabled ? 'sms opt-in' : 'sms opt-out', { subscriptions: rowCount });
+  return rowCount;
+}
+
+const SMS_ROUTE_HANDLERS = {
+  checkin: (sms) => handleSmsCheckin({ from: sms.from, body: sms.body, messageId: sms.smsId, requestId: sms.requestId }),
+  emergency: (sms) => handleSmsEmergency(sms),
+  opt_out: async (sms) => ((await setSmsEnabled(sms.from, false))
+    ? 'You will no longer receive ElderCare SMS alerts. Reply START to turn them back on.'
+    : 'This number is not on any ElderCare alert list.'),
+  opt_in: async (sms) => ((await setSmsEnabled(sms.from, true))
+    ? 'ElderCare SMS alerts are on again. Reply STOP to turn them off.'
+    : 'This number is not on any ElderCare alert list. Ask your health center to add it.'),
+  help: async () => `${SMS_HELP_TEXT} In an emergency text SOS.`,
+  unknown: async () => `Sorry, we did not understand that message. ${SMS_HELP_TEXT}`,
+};
+
+router.post('/internal/sms/status', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    if (typeof b.id !== 'string' || !b.id || !['sent', 'delivered', 'failed'].includes(b.status)) {
+      return res.status(422).json({ error: 'validation_failed', details: ['id and status (sent|delivered|failed) are required'] });
+    }
+    return res.json({ matched: await applyDeliveryStatus(b) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post('/internal/sms/:route', async (req, res, next) => {
+  try {
+    const handler = SMS_ROUTE_HANDLERS[req.params.route];
+    if (!handler) return res.status(404).json({ error: 'not_found', message: `Unknown SMS route ${req.params.route}` });
+    const b = req.body || {};
+    const errors = [];
+    if (typeof b.from !== 'string' || !b.from.trim()) errors.push('from is required');
+    if (typeof b.body !== 'string') errors.push('body is required');
+    if (b.smsId !== undefined && b.smsId !== null && !/^[A-Za-z0-9_-]{4,80}$/.test(String(b.smsId))) errors.push('smsId is invalid');
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+
+    if (!(await claimInboundSms(b.smsId))) return res.json({ route: req.params.route, duplicate: true });
+    const sms = { from: b.from.trim(), body: b.body.slice(0, 1000), smsId: b.smsId || null, requestId: req.get('x-request-id') };
+    const reply = await handler(sms);
+    const replySent = await replySms(sms.from, reply);
+    return res.json({ route: req.params.route, reply, replySent });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 /* ----------------------------- POST /webhooks/textbee ----------------------------- */
 // Configure in the TextBee dashboard -> Webhooks: URL https://<your-public-gateway>/webhooks/textbee,
 // events MESSAGE_RECEIVED (SMS check-ins) and MESSAGE_SENT / MESSAGE_DELIVERED / MESSAGE_FAILED (receipts).
@@ -347,12 +473,8 @@ router.post('/webhooks/textbee', async (req, res, next) => {
     if (TEXTBEE_STATUS[event]) {
       const id = evt.smsBatchId || evt.smsId;
       if (id) {
-        const { rowCount } = await pool.query(
-          `UPDATE notification_log SET status = $2, updated_at = now(), error = CASE WHEN $2 = 'failed' THEN coalesce($3, 'TextBee reported failure') ELSE error END
-            WHERE provider_sid = $1 AND channel = 'sms'`,
-          [id, TEXTBEE_STATUS[event], evt.errorMessage || evt.message || null],
-        );
-        logger.info('textbee status update', { event, matched: rowCount });
+        const matched = await applyDeliveryStatus({ id: String(id), status: TEXTBEE_STATUS[event], error: evt.errorMessage || evt.message });
+        logger.info('textbee status update', { event, matched });
       }
       return res.status(200).json({ ok: true });
     }
@@ -360,11 +482,7 @@ router.post('/webhooks/textbee', async (req, res, next) => {
     if (event === 'MESSAGE_RECEIVED') {
       // Acknowledge first (TextBee's 10-second limit), then process and text the reply back.
       res.status(200).json({ ok: true });
-      const dedupe = evt.idempotencyKey || evt.smsId;
-      if (dedupe) {
-        const { rowCount } = await pool.query('INSERT INTO alert_dedupe (dedupe_key) VALUES ($1) ON CONFLICT DO NOTHING', [`textbee-in:${dedupe}`]);
-        if (!rowCount) return undefined;
-      }
+      if (!(await claimInboundSms(evt.idempotencyKey || evt.smsId))) return undefined;
       try {
         const reply = await handleSmsCheckin({ from: evt.sender, body: evt.message, messageId: evt.smsId, requestId: req.get('x-request-id') });
         await sendSms({ to: evt.sender, body: `[ElderCare] ${reply}` });

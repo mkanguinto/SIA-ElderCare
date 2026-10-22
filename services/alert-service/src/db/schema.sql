@@ -144,3 +144,9 @@ INSERT INTO alert_rules (code, description, min_severity, channels, hazard, trig
    '{"conditions":["hypertension","cardiovascular","heart_disease","diabetes","kidney_disease","copd"]}',
    '{"severity":"critical","create_clinic_item":true,"cooldown_hours":24}')
 ON CONFLICT (code) DO NOTHING;
+
+-- ------------------------------------------------------------------------------------------
+-- v2 Batch 3: SOS texted by a caregiver, routed by the Node-RED content-based router.
+INSERT INTO alert_rules (code, description, min_severity, channels) VALUES
+  ('SMS_SOS', 'Caregiver texted SOS / EMERGENCY to the TextBee number', 'low', '{sms,in_app}')
+ON CONFLICT (code) DO NOTHING;

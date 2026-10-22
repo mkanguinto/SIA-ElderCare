@@ -24,6 +24,7 @@ const adminRoutes = require('./src/routes/admin');
 const directoryRoutes = require('./src/routes/directory');
 const apiRoutes = require('./src/routes');
 const { forwardTo } = require('./src/lib/proxy');
+const { verifyTextbeeSignature } = require('./src/middleware/textbeeSignature');
 
 const app = express();
 
@@ -77,9 +78,14 @@ const authLimiter = rateLimit({
 // Public endpoints
 app.get('/health', (req, res) => res.json({ status: 'up', service: 'api-gateway', uptimeSec: Math.round(process.uptime()) }));
 app.use('/oauth', authLimiter, oauthRoutes);
-// TextBee (Android SMS gateway): delivery receipts + incoming SMS check-ins from caregivers without
-// internet (Risk 3). No JWT (TextBee cannot send one); the alert service verifies X-Signature instead.
-app.post('/webhooks/textbee', apiLimiter, forwardTo('alert'));
+// TextBee (Android SMS gateway): delivery receipts + incoming SMS (check-ins, SOS, STOP/START) from
+// caregivers without internet (Risk 3). No JWT (TextBee cannot send one); X-Signature is verified instead:
+// here, before the Node-RED content-based router (Batch 3), or by the alert service in direct mode.
+if (config.textbee.webhookTarget === 'node-red') {
+  app.post('/webhooks/textbee', apiLimiter, verifyTextbeeSignature, forwardTo('nodeRed'));
+} else {
+  app.post('/webhooks/textbee', apiLimiter, forwardTo('alert'));
+}
 
 // Protected endpoints
 app.use('/api', apiLimiter);

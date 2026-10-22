@@ -52,6 +52,10 @@ services:
       SEED_DEMO_DATA: "${SEED_DEMO_DATA:-false}"
     deploy: { resources: { limits: { memory: 256m } } }
 
+  node-red:
+    <<: *prod
+    deploy: { resources: { limits: { memory: 256m } } }
+
   clinic-risk-service:
     <<: *prod
     environment:

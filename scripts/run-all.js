@@ -5,7 +5,7 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 const cmd = process.argv[2];
-const SERVICES = ['api-gateway', 'services/checkin-service', 'services/alert-service', 'services/clinic-risk-service', 'services/legacy-emr-adapter'];
+const SERVICES = ['api-gateway', 'services/checkin-service', 'services/alert-service', 'services/clinic-risk-service', 'services/legacy-emr-adapter', 'integration/node-red'];
 const RUN = { install: 'npm install --no-audit --no-fund', test: 'npm test' };
 if (!RUN[cmd]) { console.error('Usage: node scripts/run-all.js <install|test>'); process.exit(1); }
 

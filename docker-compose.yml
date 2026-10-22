@@ -102,6 +102,11 @@ services:
       CLINIC_SERVICE_URL: http://clinic-risk-service:4003
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
+      # TextBee webhooks: gateway verifies X-Signature, Node-RED routes them by content (alert = direct)
+      NODE_RED_URL: http://node-red:1880
+      TEXTBEE_WEBHOOK_TARGET: "${TEXTBEE_WEBHOOK_TARGET:-node-red}"
+      TEXTBEE_WEBHOOK_SECRET: "${TEXTBEE_WEBHOOK_SECRET:-}"
+      TEXTBEE_VALIDATE_WEBHOOK: "${TEXTBEE_VALIDATE_WEBHOOK:-true}"
     volumes: ["gateway-state:/app/state"]
     depends_on: [checkin-service, alert-service, clinic-risk-service]
     networks: [internal, public]
@@ -140,6 +145,7 @@ services:
       OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY:-}"
       OPENWEATHER_ONECALL_ENABLED: "${OPENWEATHER_ONECALL_ENABLED:-false}"
       WEATHER_POLL_INTERVAL_MINUTES: "${WEATHER_POLL_INTERVAL_MINUTES:-30}"
+      WEATHER_POLL_ENABLED: "false"   # Node-RED's weather orchestration flow runs the schedule
       # heat / storm thresholds are alert rules now: GET/PATCH /api/alerts/rules (admin)
       SMS_DRY_RUN: "${SMS_DRY_RUN:-true}"
       SMS_PROVIDER: "${SMS_PROVIDER:-}"
@@ -186,6 +192,27 @@ services:
       LEGACY_EMR_USERNAME: "${LEGACY_EMR_USERNAME:-}"
       LEGACY_EMR_PASSWORD: "${LEGACY_EMR_PASSWORD:-}"
 
+  # ------------------------------ EAI layer (Batch 3) ------------------------------
+  # Node-RED flows: TextBee SMS content-based router, weather orchestration, DLQ monitor + dashboard.
+  #   dashboard http://localhost:1880/dlq (DASHBOARD_USER / DASHBOARD_PASSWORD)
+  #   editor    http://localhost:1880/admin (admin / NODE_RED_ADMIN_PASSWORD); unset password = disabled
+  node-red:
+    <<: *node-service
+    build: ./integration/node-red
+    ports: ["127.0.0.1:${NODE_RED_PORT:-1880}:1880"]   # dashboard + editor for operators on this host only
+    environment:
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
+      CHECKIN_SERVICE_URL: http://checkin-service:4001
+      ALERT_SERVICE_URL: http://alert-service:4002
+      CLINIC_SERVICE_URL: http://clinic-risk-service:4003
+      DASHBOARD_USER: "${DASHBOARD_USER:-ops}"
+      DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-}"
+      NODE_RED_ADMIN_PASSWORD: "${NODE_RED_ADMIN_PASSWORD:-}"
+      NODE_RED_CREDENTIAL_SECRET: "${NODE_RED_CREDENTIAL_SECRET:-}"
+      TZ: "${TZ:-Asia/Manila}"
+    volumes: ["node-red-data:/data"]
+    depends_on: [checkin-service, alert-service, clinic-risk-service]
+
   mock-legacy-emr:
     <<: *node-service
     build: ./services/mock-legacy-emr
@@ -206,3 +233,4 @@ volumes:
   clinic-data: {}
   rabbitmq-data: {}
   gateway-state: {}
+  node-red-data: {}
