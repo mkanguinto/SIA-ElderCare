@@ -67,7 +67,8 @@ services:
       RABBITMQ_DEFAULT_VHOST: eldercare
     volumes: [rabbitmq-data:/var/lib/rabbitmq]
     ports: ["5672:5672", "15672:15672"]     # dev only: AMQP + management UI
-    healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, timeout: 10s, retries: 12 }
+    # rabbitmq-diagnostics boots an Erlang CLI node, which can take ~20 s on Docker Desktop
+    healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 15s, timeout: 45s, start_period: 90s, retries: 12 }
     networks: [internal]
 
   # ------------------------------ Services -------------------------------
