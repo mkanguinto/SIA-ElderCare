@@ -87,3 +87,19 @@ CREATE TABLE IF NOT EXISTS scheduled_visits (
 CREATE INDEX IF NOT EXISTS idx_visits_patient   ON scheduled_visits (patient_id, scheduled_for DESC);
 CREATE INDEX IF NOT EXISTS idx_visits_upcoming  ON scheduled_visits (scheduled_for) WHERE status = 'scheduled';
 CREATE INDEX IF NOT EXISTS idx_visits_completed ON scheduled_visits (completed_at DESC) WHERE status = 'completed';
+
+-- v2 (RabbitMQ): transactional outbox for events this service publishes (relay -> eldercare.events).
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id               BIGSERIAL PRIMARY KEY,
+  event_id         UUID        NOT NULL,
+  event_type       TEXT        NOT NULL,     -- RabbitMQ routing key
+  target           TEXT        NOT NULL DEFAULT 'broker',
+  payload          JSONB       NOT NULL,
+  status           TEXT        NOT NULL DEFAULT 'pending',   -- pending | delivered | failed
+  attempts         INT         NOT NULL DEFAULT 0,
+  next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error       TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  delivered_at     TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events (next_attempt_at) WHERE status = 'pending';

@@ -3,18 +3,16 @@
 /**
  * Provider-neutral SMS sender with safety rules. Every SMS in the system goes through sendSms().
  *
- *   SMS_PROVIDER            textbee | twilio | none   (default: textbee if TEXTBEE_API_KEY is set,
- *                                                     else twilio if configured, else none)
+ *   SMS_PROVIDER            textbee | none   (default: textbee if TEXTBEE_API_KEY is set, else none)
  *   SMS_DRY_RUN=true        log messages instead of sending (no credit used)
  *   SMS_RECIPIENT_ALLOWLIST comma-separated numbers that may receive REAL texts, e.g. +639171234567,09181234567.
  *                           Outside production this list is REQUIRED for live sending - every other number is
  *                           only simulated. This protects strangers: the demo data uses made-up numbers that
  *                           could belong to real people, and it protects your TextBee daily quota.
- *   SMS_DAILY_LIMIT         max real texts per day (enforced in smsQueue; default 40, TextBee free plan = 50/day)
+ *   SMS_DAILY_LIMIT         max real texts per day (enforced in smsWorker; default 40, TextBee free plan = 50/day)
  */
 const logger = require('./lib/logger');
 const textbee = require('./textbeeClient');
-const twilio = require('./twilioClient');
 
 /** Philippine-friendly normalisation to E.164: 09171234567 -> +639171234567, 639171234567 -> +639171234567. */
 function normalizePhone(raw) {
@@ -28,9 +26,7 @@ function normalizePhone(raw) {
 function provider() {
   const p = String(process.env.SMS_PROVIDER || '').trim().toLowerCase();
   if (p) return p;
-  if (textbee.isConfigured()) return 'textbee';
-  if (twilio.isConfigured()) return 'twilio';
-  return 'none';
+  return textbee.isConfigured() ? 'textbee' : 'none';
 }
 
 function allowlist() {
@@ -45,8 +41,7 @@ function mode() {
   if (process.env.SMS_DRY_RUN === 'true') return { provider: p, live: false, reason: 'SMS_DRY_RUN=true (messages are logged, not sent)', allowlistSize: list.size };
   if (p === 'none') return { provider: p, live: false, reason: 'No SMS provider configured', allowlistSize: list.size };
   if (p === 'textbee' && !textbee.isConfigured()) return { provider: p, live: false, reason: 'TEXTBEE_API_KEY is not set', allowlistSize: list.size };
-  if (p === 'twilio' && !twilio.isConfigured()) return { provider: p, live: false, reason: 'Twilio credentials are not set', allowlistSize: list.size };
-  if (!['textbee', 'twilio'].includes(p)) return { provider: p, live: false, reason: `Unknown SMS_PROVIDER "${p}"`, allowlistSize: list.size };
+  if (p !== 'textbee') return { provider: p, live: false, reason: `Unknown SMS_PROVIDER "${p}"`, allowlistSize: list.size };
   if (!production && list.size === 0) {
     return { provider: p, live: false, reason: 'SMS_RECIPIENT_ALLOWLIST is empty: add your own number(s) to send real texts in development', allowlistSize: 0 };
   }
@@ -77,7 +72,7 @@ async function sendSms({ to, body }) {
     logger.info('SMS simulated: recipient not on SMS_RECIPIENT_ALLOWLIST', { chars: text.length });
     return { ...simulated('Recipient is not on SMS_RECIPIENT_ALLOWLIST'), to: number };
   }
-  const result = m.provider === 'textbee' ? await textbee.sendViaTextbee({ to: number, body: text }) : await twilio.sendViaTwilio({ to: number, body: text });
+  const result = await textbee.sendViaTextbee({ to: number, body: text });
   return { ...result, to: number };
 }
 

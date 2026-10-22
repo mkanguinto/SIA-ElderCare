@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eldercare.connect/contracts/events/notification.sms.requested.schema.json",
+  "title": "notification.sms.requested",
+  "description": "One SMS to one recipient, published by alert-service (transactional outbox) and consumed by its TextBee SMS worker. notificationId is the idempotency key: a redelivered message for an already-sent notification is acknowledged without sending again.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "type",
+    "occurredAt",
+    "source",
+    "notificationId",
+    "alertId",
+    "recipientPhone",
+    "timestamp",
+    "alertType",
+    "severity",
+    "message",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Unique, stable id. Consumers de-duplicate on it (idempotent receiver)."
+    },
+    "type": {
+      "type": "string",
+      "const": "notification.sms.requested"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "correlationId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "notificationId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "alertId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "recipientPhone": {
+      "type": "string",
+      "pattern": "^\\+[1-9][0-9]{7,14}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "alertType": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+      "description": "e.g. HEATWAVE_DEHYDRATION_WARNING, HEALTH_ANOMALY, MISSED_CHECKIN"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "moderate",
+        "high",
+        "critical"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 640
+    },
+    "payload": {
+      "type": "object",
+      "required": [
+        "patientId"
+      ],
+      "properties": {
+        "patientId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "heatIndex": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

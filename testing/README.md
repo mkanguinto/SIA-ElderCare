@@ -71,7 +71,10 @@ Record the thread count at which error rate exceeds 1 % or p95 latency exceeds 2
 |---|---|---|
 | Alert service down | `docker compose stop alert-service`, submit critical check-in, `docker compose start alert-service` | check-in 201; alert appears after restart (outbox retry) |
 | Clinic service down | same with `clinic-risk-service` | gateway returns 503 fast for queue reads (circuit breaker); events delivered after restart |
-| Twilio failing | set wrong `TWILIO_AUTH_TOKEN` with `SMS_DRY_RUN=false` | `notification_log` shows retries then `failed`; in-app alert still visible |
+| TextBee failing | set a wrong `TEXTBEE_API_KEY` with `SMS_DRY_RUN=false` and your number in `SMS_RECIPIENT_ALLOWLIST` | 401 is permanent: `notification_log` = `failed`, message parked in `alert-service.sms-dispatch.dlq`; in-app alert still visible |
+| TextBee down / slow | point `TEXTBEE_BASE_URL` at `testing/mocks/fake-textbee.js` started with failures | 5xx: retried 5 s → 30 s → 2 min then DLQ; timeout: `unconfirmed` + DLQ (no duplicate SMS) |
+| RabbitMQ down | `docker compose stop rabbitmq`, submit a check-in, then `docker compose start rabbitmq` | check-in still 201; outbox row stays `pending`, published automatically when the broker returns |
+| Consumer down | `docker compose stop clinic-risk-service`, submit check-ins, start it again | messages wait in `clinic-risk-service.events` (visible in the RabbitMQ UI) and drain after restart |
 | OpenWeatherMap unreachable | set `OPENWEATHER_BASE_URL=http://10.255.255.1` after one successful run | mashup uses cache, logs "using stale cached weather data" |
 | Slow legacy EMR | `MOCK_EMR_DELAY_MS=8000` on mock-legacy-emr | EMR history returns 502/503, queue keeps working |
 | Flaky legacy EMR | `MOCK_EMR_FAIL_RATE=0.5` | adapter retries once, circuit opens after repeated failures |

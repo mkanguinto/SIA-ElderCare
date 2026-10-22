@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eldercare.connect/contracts/events/weather.risk_detected.schema.json",
+  "title": "weather.risk_detected",
+  "description": "Published by alert-service's OpenWeatherMap x patient-profile mashup. Consumed by clinic-risk-service to open a preventive triage item.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "type",
+    "occurredAt",
+    "source",
+    "patient",
+    "environment"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Unique, stable id. Consumers de-duplicate on it (idempotent receiver)."
+    },
+    "type": {
+      "type": "string",
+      "const": "weather.risk_detected"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "correlationId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "patient": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "zipCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 10
+        },
+        "conditions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "mobilityRestricted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "assignedClinic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "hazard"
+      ],
+      "properties": {
+        "hazard": {
+          "type": "string",
+          "enum": [
+            "heat",
+            "storm"
+          ]
+        },
+        "heatIndexC": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "windMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "level": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "observedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ruleCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

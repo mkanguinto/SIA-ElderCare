@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eldercare.connect/contracts/events/checkin.normal.schema.json",
+  "title": "checkin.normal",
+  "description": "Published by checkin-service for a normal reading. Consumed only by clinic-risk-service to de-escalate an open case.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "type",
+    "occurredAt",
+    "source",
+    "patient",
+    "checkin"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Unique, stable id. Consumers de-duplicate on it (idempotent receiver)."
+    },
+    "type": {
+      "type": "string",
+      "const": "checkin.normal"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "correlationId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "patient": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "zipCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 10
+        },
+        "conditions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "mobilityRestricted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "assignedClinic": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "checkin": {
+      "type": "object",
+      "required": [
+        "id",
+        "recordedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "integer"
+          ]
+        },
+        "recordedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "vitals": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "caregiverId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "anomalies": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "severity": {
+      "const": "none"
+    },
+    "severityScore": {
+      "const": 0
+    }
+  },
+  "additionalProperties": true
+}

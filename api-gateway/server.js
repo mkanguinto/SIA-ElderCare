@@ -46,7 +46,7 @@ app.use(
   }),
 );
 
-// Keep the raw request bytes so webhooks (TextBee X-Signature, Twilio) can be verified downstream.
+// Keep the raw request bytes so TextBee webhooks (X-Signature HMAC) can be verified downstream.
 const keepRaw = (req, res, buf) => { req.rawBody = buf; };
 app.use(express.json({ limit: '100kb', verify: keepRaw }));
 app.use(express.urlencoded({ extended: false, limit: '20kb', verify: keepRaw }));
@@ -77,12 +77,8 @@ const authLimiter = rateLimit({
 // Public endpoints
 app.get('/health', (req, res) => res.json({ status: 'up', service: 'api-gateway', uptimeSec: Math.round(process.uptime()) }));
 app.use('/oauth', authLimiter, oauthRoutes);
-// Twilio delivery-status callback: no JWT (Twilio can't send one); the alert service
-// verifies the X-Twilio-Signature header instead.
-app.post('/webhooks/twilio/status', apiLimiter, forwardTo('alert'));
-// Incoming SMS from caregivers without internet (SMS check-in fallback, Risk 3).
-app.post('/webhooks/twilio/inbound', apiLimiter, forwardTo('alert'));
-// TextBee (Android SMS gateway): delivery receipts + incoming SMS check-ins, verified by X-Signature downstream.
+// TextBee (Android SMS gateway): delivery receipts + incoming SMS check-ins from caregivers without
+// internet (Risk 3). No JWT (TextBee cannot send one); the alert service verifies X-Signature instead.
 app.post('/webhooks/textbee', apiLimiter, forwardTo('alert'));
 
 // Protected endpoints

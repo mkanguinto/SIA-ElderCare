@@ -13,6 +13,7 @@ const helmet = require('helmet');
 const logger = require('./src/lib/logger');
 const { pool, migrate, waitForDb } = require('./src/db');
 const outbox = require('./src/outbox');
+const events = require('./src/events');
 const missedCheckinJob = require('./src/missedCheckinJob');
 const routes = require('./src/routes');
 
@@ -24,12 +25,13 @@ app.use(express.json({ limit: '50kb' }));
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'up', service: 'checkin-service', db: 'up', outbox: await outbox.stats() });
+    res.json({ status: 'up', service: 'checkin-service', db: 'up', outbox: await outbox.stats(), messaging: await events.status() });
   } catch (err) {
     res.status(503).json({ status: 'degraded', service: 'checkin-service', db: 'down', error: err.message });
   }
 });
 
+app.use(events.adminRouter(express, require('./src/lib/internalAuth').requireInternalToken));
 app.use(routes);
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
 // eslint-disable-next-line no-unused-vars
@@ -46,7 +48,7 @@ async function main() {
   missedCheckinJob.start();
   const port = Number(process.env.PORT || 4001);
   const server = app.listen(port, () => logger.info('checkin-service listening', { port }));
-  const shutdown = () => server.close(async () => { await pool.end(); process.exit(0); });
+  const shutdown = () => server.close(async () => { await events.close(); await pool.end(); process.exit(0); });
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }

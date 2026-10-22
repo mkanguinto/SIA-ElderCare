@@ -97,3 +97,6 @@ CREATE TABLE IF NOT EXISTS patient_medications (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_patient_medications_patient ON patient_medications (patient_id, active);
+
+-- v2 (RabbitMQ): one outbox row per event; the broker fans it out by routing key.
+ALTER TABLE outbox_events ALTER COLUMN target SET DEFAULT 'broker';

@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const ENV = { ...process.env };
 function resetEnv(extra = {}) {
-  for (const k of Object.keys(process.env)) if (k.startsWith('SMS_') || k.startsWith('TEXTBEE_') || k.startsWith('TWILIO_') || k === 'NODE_ENV') delete process.env[k];
+  for (const k of Object.keys(process.env)) if (k.startsWith('SMS_') || k.startsWith('TEXTBEE_') || k === 'NODE_ENV') delete process.env[k];
   Object.assign(process.env, extra);
 }
 test.after(() => { process.env = ENV; });

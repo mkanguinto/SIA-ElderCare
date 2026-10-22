@@ -89,6 +89,12 @@ async function logAction(client, itemId, action, from, to, notes, by) {
  */
 async function upsertQueueItem(patient, signal, reason, options = {}) {
   const attempt = () => withTransaction(async (client) => {
+    // Idempotent receiver: the eventId is recorded in the SAME transaction as the queue change,
+    // so a redelivered event is detected and a failed one rolls back together with its key.
+    if (options.eventId) {
+      const ins = await client.query('INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING', [options.eventId]);
+      if (!ins.rowCount) return { item: null, created: false, duplicate: true };
+    }
     const { rows: [existing] } = await client.query(
       `SELECT * FROM risk_queue WHERE patient_id = $1 AND status = ANY($2) FOR UPDATE`, [patient.id, ACTIVE],
     );
@@ -433,79 +439,87 @@ router.get('/api/clinic/queue/history', async (req, res, next) => {
   }
 });
 
-/* --------------------------- POST /internal/events --------------------------- */
-router.post('/internal/events', async (req, res, next) => {
-  const evt = req.body || {};
-  if (!evt.eventId || !evt.type || !evt.patient || !evt.patient.id) {
-    return res.status(400).json({ error: 'bad_request', message: 'eventId, type and patient.id are required' });
+/* ------------------------------ Event consumer ------------------------------ */
+// Consumes checkin.* and weather.risk_detected from RabbitMQ (queue clinic-risk-service.events)
+// or, in EVENT_TRANSPORT=http mode, from POST /internal/events. Idempotent on eventId.
+const HANDLED = ['checkin.normal', 'checkin.anomaly_detected', 'checkin.missed', 'weather.risk_detected'];
+
+/** @returns {Promise<{status:number, body:object}>} throws on failure so the broker retries */
+async function handleEvent(evt) {
+  if (!evt || !evt.eventId || !evt.type || !evt.patient || !evt.patient.id) {
+    const err = new Error('eventId, type and patient.id are required');
+    err.permanent = true;
+    err.status = 400;
+    throw err;
   }
+  if (!HANDLED.includes(evt.type)) return { status: 202, body: { ignored: true } };
+
+  let signal;
+  let reason;
+  let options;
+  switch (evt.type) {
+    case 'checkin.normal': {
+      // Normal vitals de-escalate an OPEN case (health score -> 0). They never open a new case.
+      const v = (evt.checkin && evt.checkin.vitals) || {};
+      const parts = [v.systolic && `BP ${v.systolic}/${v.diastolic}`, v.heartRate && `HR ${v.heartRate}`, v.temperatureC && `${v.temperatureC} °C`, v.spo2 && `SpO2 ${v.spo2}%`].filter(Boolean);
+      signal = { health: 0 };
+      options = { onlyIfActive: true, healthAt: evt.checkin && evt.checkin.recordedAt };
+      reason = {
+        type: 'vitals_normal',
+        at: evt.occurredAt,
+        severity: 'none',
+        detail: `Normal check-in recorded${parts.length ? `: ${parts.join(', ')}` : ''}. Health risk cleared.`,
+        checkinId: evt.checkin ? evt.checkin.id : undefined,
+      };
+      break;
+    }
+    case 'checkin.anomaly_detected':
+    case 'checkin.missed':
+      signal = { health: Number(evt.severityScore) || 0 };
+      reason = {
+        type: evt.type === 'checkin.missed' ? 'missed_checkin' : 'health_anomaly',
+        at: evt.occurredAt,
+        severity: evt.severity,
+        detail: (evt.anomalies || []).map((a) => (a.value !== undefined ? `${a.message} (${a.value})` : a.message)).join('; '),
+        checkinId: evt.checkin ? evt.checkin.id : undefined,
+      };
+      options = { escalation: true, healthAt: evt.checkin ? evt.checkin.recordedAt : evt.occurredAt };
+      break;
+    default: // weather.risk_detected
+      signal = { environment: score.environmentScore(evt.environment) };
+      reason = {
+        type: 'environmental_risk',
+        at: evt.occurredAt,
+        hazard: evt.environment.hazard,
+        detail: evt.environment.hazard === 'heat'
+          ? `Heat index ${evt.environment.heatIndexC} °C in their area (${String(evt.environment.level || '').replace(/_/g, ' ')} level). A preventive check is recommended.`
+          : `Severe weather in their area: ${(evt.environment.reasons || []).join('; ')}. Patient has limited mobility, so check evacuation plans.`,
+      };
+      options = { escalation: true };
+  }
+
+  const r = await upsertQueueItem(evt.patient, signal, reason, { ...options, eventId: evt.eventId });
+  if (r.duplicate) return { status: 200, body: { duplicate: true } };
+  if (r.skipped) return { status: 202, body: { ignored: true, reason: 'no open case for this patient' } };
+  if (r.stale) return { status: 202, body: { ignored: true, reason: 'older than the latest reading' } };
+  logger.info(r.created ? 'triage item created' : 'triage item updated', {
+    itemId: r.item.id, patientId: r.item.patient_id, total: r.item.total_score, priority: r.item.priority, previousPriority: r.previousPriority, eventType: evt.type, eventId: evt.eventId,
+  });
+  return { status: r.created ? 201 : 200, body: { item: toDto(r.item), created: r.created, previousPriority: r.previousPriority || null } };
+}
+
+/* --------------------------- POST /internal/events --------------------------- */
+// HTTP fallback (EVENT_TRANSPORT=http) and manual testing with Postman.
+router.post('/internal/events', async (req, res, next) => {
   try {
-    const ins = await pool.query('INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING', [evt.eventId]);
-    if (!ins.rowCount) return res.status(200).json({ duplicate: true });
-
-    let signal;
-    let reason;
-    let options = { escalation: true };
-    switch (evt.type) {
-      case 'checkin.normal': {
-        // Normal vitals de-escalate an OPEN case (health score -> 0). They never open a new case.
-        const v = (evt.checkin && evt.checkin.vitals) || {};
-        const parts = [v.systolic && `BP ${v.systolic}/${v.diastolic}`, v.heartRate && `HR ${v.heartRate}`, v.temperatureC && `${v.temperatureC} °C`, v.spo2 && `SpO2 ${v.spo2}%`].filter(Boolean);
-        signal = { health: 0 };
-        options = { onlyIfActive: true, healthAt: evt.checkin && evt.checkin.recordedAt };
-        reason = {
-          type: 'vitals_normal',
-          at: evt.occurredAt,
-          severity: 'none',
-          detail: `Normal check-in recorded${parts.length ? `: ${parts.join(', ')}` : ''}. Health risk cleared.`,
-          checkinId: evt.checkin ? evt.checkin.id : undefined,
-        };
-        break;
-      }
-      case 'checkin.anomaly_detected':
-      case 'checkin.missed':
-        signal = { health: Number(evt.severityScore) || 0 };
-        reason = {
-          type: evt.type === 'checkin.missed' ? 'missed_checkin' : 'health_anomaly',
-          at: evt.occurredAt,
-          severity: evt.severity,
-          detail: (evt.anomalies || []).map((a) => (a.value !== undefined ? `${a.message} (${a.value})` : a.message)).join('; '),
-          checkinId: evt.checkin ? evt.checkin.id : undefined,
-        };
-        options = { escalation: true, healthAt: evt.checkin ? evt.checkin.recordedAt : evt.occurredAt };
-        break;
-      case 'weather.risk_detected':
-        signal = { environment: score.environmentScore(evt.environment) };
-        reason = {
-          type: 'environmental_risk',
-          at: evt.occurredAt,
-          hazard: evt.environment.hazard,
-          detail: evt.environment.hazard === 'heat'
-            ? `Heat index ${evt.environment.heatIndexC} °C in their area (${String(evt.environment.level || '').replace(/_/g, ' ')} level). A preventive check is recommended.`
-            : `Severe weather in their area: ${(evt.environment.reasons || []).join('; ')}. Patient has limited mobility, so check evacuation plans.`,
-        };
-        break;
-      default:
-        await pool.query('DELETE FROM processed_events WHERE event_id = $1', [evt.eventId]);
-        return res.status(202).json({ ignored: true });
-    }
-
-    try {
-      const { item, created, skipped, stale, previousPriority } = await upsertQueueItem(evt.patient, signal, reason, options);
-      if (skipped) return res.status(202).json({ ignored: true, reason: 'no open case for this patient' });
-      if (stale) return res.status(202).json({ ignored: true, reason: 'older than the latest reading' });
-      logger.info(created ? 'triage item created' : 'triage item updated', {
-        itemId: item.id, patientId: item.patient_id, total: item.total_score, priority: item.priority, previousPriority, eventType: evt.type,
-      });
-      return res.status(created ? 201 : 200).json({ item: toDto(item), created, previousPriority: previousPriority || null });
-    } catch (err) {
-      await pool.query('DELETE FROM processed_events WHERE event_id = $1', [evt.eventId]).catch(() => {});
-      throw err;
-    }
+    const { status, body } = await handleEvent(req.body);
+    return res.status(status).json(body);
   } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: 'bad_request', message: err.message });
     return next(err);
   }
 });
 
 module.exports = router;
 module.exports.upsertQueueItem = upsertQueueItem;
+module.exports.handleEvent = handleEvent;

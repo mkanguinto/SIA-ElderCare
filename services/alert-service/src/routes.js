@@ -4,11 +4,12 @@ const express = require('express');
 const { pool } = require('./db');
 const { dispatchAlert, SEVERITY_RANK } = require('./notifier');
 const mashup = require('./weatherAlertMashup');
-const { validateWebhook } = require('./twilioClient');
 const { verifyWebhookSignature } = require('./textbeeClient');
 const { sendSms, normalizePhone, mode: smsMode, allowlist } = require('./smsSender');
 const logger = require('./lib/logger');
 const { requireInternalToken, internalHeaders } = require('./lib/internalAuth');
+const { processOnce } = require('./lib/idempotency');
+const events = require('./events');
 const { request } = require('./lib/resilientHttp');
 const { parseSmsCheckin, HELP_TEXT: SMS_HELP_TEXT } = require('./smsCheckinParser');
 
@@ -127,71 +128,50 @@ function anomalyMessage(evt) {
   return `ALERT for ${name}: ${top}. Logged in today's check-in; the health center has been notified.`;
 }
 
-router.post('/internal/events', async (req, res, next) => {
-  const evt = req.body || {};
-  if (!evt.eventId || !evt.type || !evt.patient || !evt.patient.id) {
-    return res.status(400).json({ error: 'bad_request', message: 'eventId, type and patient.id are required' });
-  }
-  if (!['checkin.anomaly_detected', 'checkin.missed'].includes(evt.type)) return res.status(202).json({ ignored: true });
-
-  try {
-    const ins = await pool.query('INSERT INTO processed_events (event_id) VALUES ($1) ON CONFLICT DO NOTHING', [evt.eventId]);
-    if (!ins.rowCount) return res.status(200).json({ duplicate: true });
-
-    try {
-      const result = await dispatchAlert({
-        patientId: evt.patient.id,
-        source: evt.type === 'checkin.missed' ? 'missed_checkin' : 'anomaly',
-        ruleCode: evt.type === 'checkin.missed' ? 'MISSED_CHECKIN' : 'HEALTH_ANOMALY',
-        severity: evt.severity || 'moderate',
-        title: evt.type === 'checkin.missed' ? 'Missed daily check-in' : `${String(evt.severity).charAt(0).toUpperCase()}${String(evt.severity).slice(1)} health alert`,
-        message: anomalyMessage(evt),
-        metadata: { eventId: evt.eventId, checkinId: evt.checkin && evt.checkin.id, anomalies: evt.anomalies, severityScore: evt.severityScore },
-      });
-      return res.status(202).json(result);
-    } catch (err) {
-      // Release the idempotency key so the outbox retry can re-process this event.
-      await pool.query('DELETE FROM processed_events WHERE event_id = $1', [evt.eventId]).catch(() => {});
-      throw err;
-    }
-  } catch (err) {
-    return next(err);
-  }
-});
-
-/* -------------------- POST /webhooks/twilio/status --------------------------- */
-// Twilio delivery-status callbacks (routed through the gateway's public /webhooks path).
-router.post('/webhooks/twilio/status', async (req, res, next) => {
-  try {
-    if (process.env.TWILIO_VALIDATE_WEBHOOK !== 'false') {
-      const ok = validateWebhook(req.get('x-twilio-signature'), process.env.TWILIO_STATUS_CALLBACK_URL, req.body);
-      if (!ok) return res.status(403).json({ error: 'forbidden', message: 'Invalid Twilio signature' });
-    }
-    const { MessageSid, MessageStatus, ErrorCode } = req.body || {};
-    if (MessageSid && MessageStatus) {
-      await pool.query(
-        'UPDATE notification_log SET status = $2, error = coalesce($3, error), updated_at = now() WHERE provider_sid = $1',
-        [MessageSid, MessageStatus, ErrorCode ? `Twilio error ${ErrorCode}` : null],
-      );
-      logger.info('twilio status update', { sid: MessageSid, status: MessageStatus });
-    }
-    return res.status(204).end();
-  } catch (err) {
-    return next(err);
-  }
-});
-
-/* -------------------- POST /webhooks/twilio/inbound -------------------------- */
-// SMS check-in fallback (Section 20, Risk 3): a registered caregiver texts vitals to the Twilio
-// number; we match the phone to the caregiver, parse the text, create the check-in through the
-// check-in service, and reply with TwiML. Configure this URL as the number's "A message comes in" webhook.
-function twiml(message) {
-  const esc = String(message).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`;
-}
+const HANDLED_EVENTS = ['checkin.anomaly_detected', 'checkin.missed'];
 
 /**
- * Shared SMS check-in logic for Twilio and TextBee inbound messages.
+ * Event consumer for queue alert-service.checkin-events (and POST /internal/events in http mode).
+ * processOnce() records the eventId and writes the alert + SMS outbox rows in ONE transaction, so a
+ * redelivered event never alerts the family twice, and a failure rolls everything back for retry.
+ * @returns {Promise<{status:number, body:object}>}
+ */
+async function handleCheckinEvent(evt) {
+  if (!evt || !evt.eventId || !evt.type || !evt.patient || !evt.patient.id) {
+    throw Object.assign(new Error('eventId, type and patient.id are required'), { permanent: true, status: 400 });
+  }
+  if (!HANDLED_EVENTS.includes(evt.type)) return { status: 202, body: { ignored: true } };
+  const missed = evt.type === 'checkin.missed';
+  const r = await processOnce(pool, evt.eventId, (client) => dispatchAlert({
+    patientId: evt.patient.id,
+    source: missed ? 'missed_checkin' : 'anomaly',
+    ruleCode: missed ? 'MISSED_CHECKIN' : 'HEALTH_ANOMALY',
+    severity: evt.severity || 'moderate',
+    title: missed ? 'Missed daily check-in' : `${String(evt.severity).charAt(0).toUpperCase()}${String(evt.severity).slice(1)} health alert`,
+    message: anomalyMessage(evt),
+    metadata: { eventId: evt.eventId, checkinId: evt.checkin && evt.checkin.id, anomalies: evt.anomalies, severityScore: evt.severityScore },
+    correlationId: evt.correlationId || evt.eventId,
+  }, client));
+  if (r.duplicate) return { status: 200, body: { duplicate: true } };
+  events.outbox.kick(); // committed: publish the SMS requests now
+  return { status: 202, body: r.result };
+}
+
+// HTTP fallback (EVENT_TRANSPORT=http) and manual testing with Postman.
+router.post('/internal/events', async (req, res, next) => {
+  try {
+    const { status, body } = await handleCheckinEvent(req.body);
+    return res.status(status).json(body);
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: 'bad_request', message: err.message });
+    return next(err);
+  }
+});
+
+/* ------------------------------ SMS check-in ------------------------------ */
+// SMS check-in fallback (Section 20, Risk 3): a registered caregiver texts vitals to the TextBee phone.
+/**
+ * SMS check-in logic for inbound TextBee messages.
  * @returns {Promise<string>} the reply text for the caregiver
  */
 async function handleSmsCheckin({ from, body, messageId, requestId }) {
@@ -226,22 +206,6 @@ async function handleSmsCheckin({ from, body, messageId, requestId }) {
   const why = (r.data && (r.data.details ? r.data.details.join('; ') : r.data.message)) || 'please try again later';
   return `Not saved: ${why}`;
 }
-
-router.post('/webhooks/twilio/inbound', async (req, res) => {
-  if (process.env.TWILIO_VALIDATE_WEBHOOK !== 'false') {
-    const ok = validateWebhook(req.get('x-twilio-signature'), process.env.TWILIO_INBOUND_WEBHOOK_URL, req.body);
-    if (!ok) return res.status(403).json({ error: 'forbidden', message: 'Invalid Twilio signature' });
-  }
-  const { From, Body, MessageSid } = req.body || {};
-  let reply;
-  try {
-    reply = await handleSmsCheckin({ from: From, body: Body, messageId: MessageSid, requestId: req.get('x-request-id') });
-  } catch (err) {
-    logger.error('sms check-in failed', err);
-    reply = 'Sorry, the check-in could not be saved right now. Please try again.';
-  }
-  return res.type('text/xml').send(twiml(reply));
-});
 
 /* ----------------------------- POST /webhooks/textbee ----------------------------- */
 // Configure in the TextBee dashboard -> Webhooks: URL https://<your-public-gateway>/webhooks/textbee,
@@ -354,3 +318,4 @@ router.delete('/api/alerts/subscribers/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.handleCheckinEvent = handleCheckinEvent;

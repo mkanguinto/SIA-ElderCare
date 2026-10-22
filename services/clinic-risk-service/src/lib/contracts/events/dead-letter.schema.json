@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eldercare.connect/contracts/events/dead-letter.schema.json",
+  "title": "dead-letter",
+  "description": "Shape of every message parked in a *.dlq queue. The original message body is kept byte-for-byte; failure details travel in AMQP headers so the message can be replayed unchanged.",
+  "type": "object",
+  "properties": {
+    "headers": {
+      "type": "object",
+      "required": [
+        "x-death-reason",
+        "x-original-routing-key",
+        "x-original-queue",
+        "x-attempts",
+        "x-failed-at"
+      ],
+      "properties": {
+        "x-death-reason": {
+          "type": "string",
+          "enum": [
+            "schema_invalid",
+            "permanent_error",
+            "max_retries_exceeded",
+            "ambiguous_delivery",
+            "malformed_json"
+          ]
+        },
+        "x-error": {
+          "type": "string"
+        },
+        "x-original-routing-key": {
+          "type": "string"
+        },
+        "x-original-queue": {
+          "type": "string"
+        },
+        "x-attempts": {
+          "type": "integer"
+        },
+        "x-failed-at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "body": {
+      "description": "Original event, unchanged"
+    }
+  }
+}

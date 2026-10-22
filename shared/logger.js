@@ -10,7 +10,7 @@ const SERVICE = process.env.SERVICE_NAME || 'unknown-service';
 const MIN = LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] || LEVELS.info;
 
 // Keys that must never be written to logs (PHI / secrets).
-const REDACT = new Set(['authorization', 'password', 'token', 'access_token', 'phone', 'to', 'apikey', 'appid']);
+const REDACT = new Set(['authorization', 'password', 'token', 'access_token', 'phone', 'to', 'recipientphone', 'phone_e164', 'apikey', 'appid']);
 
 function redact(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 4) return obj;

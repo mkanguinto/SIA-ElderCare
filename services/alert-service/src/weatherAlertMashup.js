@@ -8,28 +8,30 @@
  *   1. fetchWeatherByZip()      OpenWeatherMap current weather for a zip code (+ optional One Call alerts)
  *   2. getWeatherForZip()       cache-aware wrapper: 1 h fresh cache, up to 24 h stale fallback on outage
  *   3. exceedsHeatThreshold()   heat index > 40 deg C ?
- *   4. sendHeatWarningSms()     -> Twilio Programmable Messaging (queued with retry) + in-app fallback
- *   5. createClinicTriageItem() -> preventive item in the Clinic Risk Queue Service
+ *   4. sendHeatWarningSms()     -> notification.sms.requested events -> RabbitMQ -> TextBee SMS worker + in-app fallback
+ *   5. createClinicTriageItem() -> weather.risk_detected event -> RabbitMQ -> Clinic Risk Queue Service
+ *      (4 and 5 are written in ONE transaction through the outbox, so the family warning and the clinic
+ *       triage signal either both happen or neither does)
  *   6. runMashupForZip() / runMashupForAllLocations() / startScheduler()
  *
  * All credentials are read from process.env - never hard-code them:
- *   OPENWEATHER_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER | TWILIO_MESSAGING_SERVICE_SID
+ *   OPENWEATHER_API_KEY, TEXTBEE_API_KEY, TEXTBEE_DEVICE_ID, AMQP_URL
  *
  * Quick CLI check (no database needed):
  *   node src/weatherAlertMashup.js --zip 1012 --country PH
  *   node src/weatherAlertMashup.js --zip 1012 --country PH --send-to +639171234567   (sends a real SMS if heat > 40 deg C)
  */
-const crypto = require('crypto');
 const logger = require('./lib/logger');
 const { request } = require('./lib/resilientHttp');
 const { internalHeaders } = require('./lib/internalAuth');
+const { pool } = require('./db');
+const events = require('./events');
 const risk = require('./weatherRisk');
 
 const OWM_BASE = process.env.OPENWEATHER_BASE_URL || 'https://api.openweathermap.org';
 const CACHE_TTL_MIN = Number(process.env.WEATHER_CACHE_TTL_MINUTES || 60); //   Risk 5: cache 1 hour
 const STALE_MAX_HOURS = Number(process.env.WEATHER_STALE_MAX_HOURS || 24); // Risk 1: keep 1 day
 const CHECKIN_URL = () => process.env.CHECKIN_SERVICE_URL || 'http://localhost:4001';
-const CLINIC_URL = () => process.env.CLINIC_SERVICE_URL || 'http://localhost:4003';
 
 function apiKey() {
   const key = process.env.OPENWEATHER_API_KEY;
@@ -125,7 +127,7 @@ function exceedsHeatThreshold(profile, thresholdC = risk.HEAT_INDEX_THRESHOLD_C)
 }
 
 /* ------------------------------------------------------------------ */
-/* 4. Twilio SMS warnings                                               */
+/* 4. SMS warnings (TextBee via RabbitMQ)                               */
 /* ------------------------------------------------------------------ */
 function heatMessage(patient, profile) {
   return `HEAT WARNING for ${patient.fullName}: heat index ${profile.heatIndexC}C in ${profile.locationName || patient.zipCode}. `
@@ -140,10 +142,10 @@ function stormMessage(patient, reasons) {
 
 /**
  * Dispatches the dehydration / heat warning to the patient's caregivers and family.
- * notifier.dispatchAlert() writes the in-app alert, then enqueues one job per subscriber;
- * the queue worker calls smsSender.sendSms() -> TextBee (your Android phone) or Twilio, per SMS_PROVIDER.
+ * notifier.dispatchAlert() writes the in-app alert and one notification.sms.requested outbox event per
+ * subscriber; the RabbitMQ SMS worker calls smsSender.sendSms() -> TextBee (your Android phone).
  */
-async function sendHeatWarningSms(patient, profile) {
+async function sendHeatWarningSms(patient, profile, client) {
   // eslint-disable-next-line global-require
   const { dispatchAlert } = require('./notifier');
   return dispatchAlert({
@@ -155,10 +157,10 @@ async function sendHeatWarningSms(patient, profile) {
     message: heatMessage(patient, profile),
     metadata: { hazard: 'heat', heatIndexC: profile.heatIndexC, zipCode: patient.zipCode, observedAt: profile.observedAt, cache: profile.cache },
     dedupeKey: `heat:${patient.id}:${new Date().toISOString().slice(0, 10)}`, // at most once per patient per day
-  });
+  }, client);
 }
 
-async function sendStormWarningSms(patient, profile, reasons) {
+async function sendStormWarningSms(patient, profile, reasons, client) {
   // eslint-disable-next-line global-require
   const { dispatchAlert } = require('./notifier');
   return dispatchAlert({
@@ -170,28 +172,38 @@ async function sendStormWarningSms(patient, profile, reasons) {
     message: stormMessage(patient, reasons),
     metadata: { hazard: 'storm', reasons, windMs: profile.windMs, zipCode: patient.zipCode, observedAt: profile.observedAt },
     dedupeKey: `storm:${patient.id}:${Math.floor(Date.now() / (6 * 3600 * 1000))}`, // at most once per patient per 6-hour window
-  });
+  }, client);
 }
 
 /* ------------------------------------------------------------------ */
 /* 5. Preventive triage item in the Clinic Risk Queue                   */
 /* ------------------------------------------------------------------ */
-async function createClinicTriageItem(patient, hazard, profile, details) {
-  const event = {
-    eventId: crypto.randomUUID(),
-    type: 'weather.risk_detected',
-    occurredAt: new Date().toISOString(),
-    source: 'alert-service',
+/** Writes weather.risk_detected to the outbox using the caller's transaction client. */
+async function createClinicTriageItem(patient, hazard, profile, details, client) {
+  const event = await events.outbox.enqueue(client, 'weather.risk_detected', {
     patient: { id: patient.id, fullName: patient.fullName, zipCode: patient.zipCode, conditions: patient.conditions, mobilityRestricted: patient.mobilityRestricted, assignedClinic: patient.assignedClinic },
     environment: { hazard, heatIndexC: profile.heatIndexC, windMs: profile.windMs, level: details.level || null, reasons: details.reasons || [], observedAt: profile.observedAt },
-  };
+  });
+  return { queued: true, created: true, eventId: event.eventId };
+}
+
+/** SMS warning + clinic triage signal in one local transaction (outbox), then publish. */
+async function warnPatient(patient, hazard, profile, details) {
+  const client = await pool.connect();
   try {
-    await request('clinic-service', { method: 'POST', url: `${CLINIC_URL()}/internal/events`, data: event, headers: internalHeaders(event.eventId) }, { retries: 2, timeoutMs: 4000 });
-    return { created: true, eventId: event.eventId };
+    await client.query('BEGIN');
+    const sms = hazard === 'heat'
+      ? await sendHeatWarningSms(patient, profile, client)
+      : await sendStormWarningSms(patient, profile, details.reasons, client);
+    const clinic = sms.suppressed ? { skipped: true } : await createClinicTriageItem(patient, hazard, profile, details, client);
+    await client.query('COMMIT');
+    events.outbox.kick();
+    return { patientId: patient.id, hazard, sms, clinic };
   } catch (err) {
-    // SMS already went out; the clinic item is logged for follow-up rather than blocking the alert.
-    logger.error('failed to create clinic triage item', { patientId: patient.id, hazard, error: err.message });
-    return { created: false, error: err.message };
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -219,16 +231,8 @@ async function runMashupForZip(location) {
 
   const patients = await getPatientsInZip(zipCode);
   for (const patient of patients) {
-    if (assessment.heat.triggered && risk.isHeatVulnerable(patient)) {
-      const sms = await sendHeatWarningSms(patient, profile);
-      const clinic = sms.suppressed ? { skipped: true } : await createClinicTriageItem(patient, 'heat', profile, assessment.heat);
-      summary.actions.push({ patientId: patient.id, hazard: 'heat', sms, clinic });
-    }
-    if (assessment.storm.triggered && risk.isStormVulnerable(patient)) {
-      const sms = await sendStormWarningSms(patient, profile, assessment.storm.reasons);
-      const clinic = sms.suppressed ? { skipped: true } : await createClinicTriageItem(patient, 'storm', profile, assessment.storm);
-      summary.actions.push({ patientId: patient.id, hazard: 'storm', sms, clinic });
-    }
+    if (assessment.heat.triggered && risk.isHeatVulnerable(patient)) summary.actions.push(await warnPatient(patient, 'heat', profile, assessment.heat));
+    if (assessment.storm.triggered && risk.isStormVulnerable(patient)) summary.actions.push(await warnPatient(patient, 'storm', profile, assessment.storm));
   }
   logger.info('weather mashup run', { zipCode, heatIndexC: profile.heatIndexC, heat: assessment.heat.triggered, storm: assessment.storm.triggered, actions: summary.actions.length });
   return summary;
@@ -269,6 +273,7 @@ module.exports = {
   sendHeatWarningSms,
   sendStormWarningSms,
   createClinicTriageItem,
+  warnPatient,
   runMashupForZip,
   runMashupForAllLocations,
   startScheduler,

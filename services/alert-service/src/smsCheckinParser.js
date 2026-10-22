@@ -4,7 +4,7 @@
  * SMS check-in fallback parser (Section 20, Risk 3 - caregivers without mobile internet).
  * Pure function, unit tested in test/smsCheckinParser.test.js.
  *
- * Caregivers text the Twilio number, e.g.
+ * Caregivers text the TextBee gateway phone number, e.g.
  *   CHECKIN P-1001 BP 150/90 HR 80 T 36.8 O2 96 MED Y
  *   checkin bp 120/80 pulse 72 meds no note masakit ang ulo
  *   CHECKIN P-1002 FALL
