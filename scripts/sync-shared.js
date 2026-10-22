@@ -14,6 +14,7 @@ const targets = {
   'services/clinic-risk-service': [...BASE, ...MESSAGING, 'pagination.js'],
   'services/legacy-emr-adapter': BASE,
   'api-gateway': ['logger.js', 'resilientHttp.js', 'secrets.js'],
+  'integration/node-red': ['secrets.js'],
 };
 const contractsSrc = path.join(root, 'contracts', 'events');
 for (const [dir, files] of Object.entries(targets)) {

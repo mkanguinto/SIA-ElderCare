@@ -149,4 +149,66 @@ ok((await call('POST', '/oauth/logout', s5.access_token)).s === 204 && (await ca
 r = await call('GET', '/api/admin/security', admin);
 ok(r.s === 200 && r.j.jwt.access.activeKid && r.j.jwt.store.persistent === true, `key status: kid ${r.j.jwt && r.j.jwt.access.activeKid}, next rotation ${r.j.jwt && r.j.jwt.rotation.nextRotationDue}`);
 
+// ------------------------------------------------------------------ v2 Batch 3: Node-RED EAI layer
+// Needs the same TEXTBEE_WEBHOOK_SECRET as the gateway; DASHBOARD_* + NODE_RED_URL for the dashboard checks.
+const tbSecret = process.env.TEXTBEE_WEBHOOK_SECRET;
+if (!tbSecret) {
+  console.log('SKIP Batch 3 SMS router checks (set TEXTBEE_WEBHOOK_SECRET to the gateway\'s value)');
+} else {
+  const { createHmac } = await import('node:crypto');
+  const textbee = async (payload, { sign = true } = {}) => {
+    const raw = JSON.stringify(payload);
+    const sig = createHmac('sha256', tbSecret).update(raw).digest('hex');
+    const res = await fetch(`${B}/webhooks/textbee`, { method: 'POST', headers: { 'content-type': 'application/json', ...(sign ? { 'x-signature': sig } : {}) }, body: raw });
+    return { s: res.status, j: await res.json().catch(() => null) };
+  };
+  const inbound = (sender, message, smsId = `smoke${Date.now()}${Math.floor(Math.random() * 1e6)}`) => textbee({ webhookEvent: 'MESSAGE_RECEIVED', sender, message, smsId });
+  const until = async (fn, ms = 4000) => { const t = Date.now(); let v; while (Date.now() - t < ms) { v = await fn(); if (v) return v; await wait(150); } return v; };
+  const CAREGIVER = '+639175550102'; const FAMILY = '+639175550101';
+
+  ok((await textbee({ webhookEvent: 'MESSAGE_RECEIVED', sender: CAREGIVER, message: 'SOS' }, { sign: false })).s === 401, 'unsigned TextBee webhook rejected at the gateway (401)');
+  r = await inbound(CAREGIVER, 'HELP');
+  ok(r.s === 200 && r.j.route === 'help', 'Node-RED acknowledges TextBee and routes HELP');
+
+  const before = (await call('GET', '/api/patients/P-1002/history?days=1', nurse)).j.trends.totalCheckins;
+  const smsId = `smoke${Date.now()}`;
+  r = await inbound(CAREGIVER, 'CHECKIN P-1002 BP 128/82 HR 74 T 36.7 O2 97 MED Y', smsId);
+  const after = await until(async () => { const n = (await call('GET', '/api/patients/P-1002/history?days=1', nurse)).j.trends.totalCheckins; return n > before ? n : 0; });
+  ok(r.j && r.j.route === 'checkin' && after === before + 1, `SMS check-in routed to the check-in service (${before} -> ${after})`);
+  await inbound(CAREGIVER, 'CHECKIN P-1002 BP 128/82 HR 74 T 36.7 O2 97 MED Y', smsId); // TextBee retry
+  await wait(1500);
+  ok((await call('GET', '/api/patients/P-1002/history?days=1', nurse)).j.trends.totalCheckins === after, 'redelivered SMS (same smsId) is not saved twice');
+
+  r = await inbound(CAREGIVER, 'SOS nahulog si lola sa banyo');
+  const sos = await until(async () => (await call('GET', '/api/alerts/notifications?patientId=P-1001&pageSize=5', fam)).j.notifications.find((n) => n.rule === 'SMS_SOS' && Date.now() - new Date(n.createdAt) < 60000));
+  ok(r.j && r.j.route === 'emergency' && sos && sos.severity === 'critical' && !sos.delivery.some((d) => d.note && d.note.includes(CAREGIVER)), 'SOS -> critical family alert');
+
+  const familySms = async () => (await call('GET', '/api/alerts/subscribers?patientId=P-1001', nurse)).j.subscribers.find((x) => x.phone === FAMILY).smsEnabled;
+  await inbound(FAMILY, 'STOP');
+  const off = await until(async () => (await familySms()) === false);
+  await inbound(FAMILY, 'START');
+  const on = await until(async () => (await familySms()) === true);
+  ok(off && on, 'STOP turns SMS alerts off, START turns them back on');
+  ok((await textbee({ webhookEvent: 'MESSAGE_DELIVERED', smsId: 'smoke-receipt-1' })).j.route === 'delivery_status', 'delivery receipt routed to status updates');
+
+  const nr = process.env.NODE_RED_URL; const du = process.env.DASHBOARD_USER || 'ops'; const dp = process.env.DASHBOARD_PASSWORD;
+  if (nr && dp) {
+    const auth = { authorization: `Basic ${Buffer.from(`${du}:${dp}`).toString('base64')}` };
+    ok((await fetch(`${nr}/dlq`)).status === 401, 'DLQ dashboard requires sign-in');
+    const page = await fetch(`${nr}/dlq`, { headers: auth });
+    ok(page.status === 200 && (await page.text()).includes('ElderCare DLQ monitor'), 'DLQ dashboard page served');
+    const st = await until(async () => { const j = await (await fetch(`${nr}/dlq/api/status`, { headers: auth })).json(); return j.messaging && j.sms && j.sms.routes.checkin ? j : null; }, 20000);
+    ok(st && st.messaging.services.length === 3 && st.messaging.services.every((x) => x.reachable), `DLQ monitor sees all services (${st && st.messaging.totalDeadLetters} dead letters)`);
+    const rp = await fetch(`${nr}/dlq/api/replay`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ service: 'alert', queue: 'alert-service.sms-dispatch.dlq', limit: 5 }) });
+    ok(rp.status === 200 && typeof (await rp.json()).replayed === 'number', 'replay button moves DLQ messages back (200)');
+    await fetch(`${nr}/dlq/api/weather-run`, { method: 'POST', headers: auth });
+    const wr = await until(async () => { const j = await (await fetch(`${nr}/dlq/api/status`, { headers: auth })).json(); return j.weather && Date.now() - new Date(j.weather.ranAt) < 60000 ? j.weather : null; }, 30000);
+    ok(wr && ['ok', 'not_configured'].includes(wr.status), `weather orchestration run: ${wr && wr.status}, ${wr && wr.locations} locations, rules fired: ${wr && (wr.rulesFired.join(',') || 'none')}`);
+  } else {
+    console.log('SKIP dashboard checks (set NODE_RED_URL and DASHBOARD_PASSWORD)');
+  }
+  r = await call('GET', '/api/admin/health', admin);
+  ok(r.j.services.some((x) => x.name === 'nodeRed' && x.status === 'up'), 'admin health includes Node-RED');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

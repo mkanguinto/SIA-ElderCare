@@ -11,6 +11,7 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 ### Documentation
 - `docs/MESSAGING.md` – RabbitMQ topology, event catalogue + JSON Schemas, DLQ, idempotency (v2 · Batch 1)
 - `docs/SECURITY.md` – token revocation, refresh rotation + reuse detection, `kid` key rotation, Docker secrets (v2 · Batch 2)
+- `docs/NODE_RED.md` – Node-RED EAI flows: TextBee SMS content-based router, weather orchestration, DLQ monitor + replay dashboard (v2 · Batch 3)
 - `docs/EVALUATION_RESPONSE.md` – each item of the professor's evaluation → where it is addressed
 - `docs/PROPOSAL_TRACEABILITY.md` – every proposal section mapped to code and verification evidence
 - `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
@@ -109,6 +110,7 @@ docker compose up --build
 ```
 
 Gateway: <http://localhost:8080> · RabbitMQ UI: <http://localhost:15672> (vhost `eldercare`) · Mock EMR WSDL: <http://localhost:4005/emr?wsdl>
+· Node-RED DLQ dashboard: <http://localhost:1880/dlq> (`DASHBOARD_USER` / `DASHBOARD_PASSWORD`) and editor <http://localhost:1880/admin>
 
 Upgrading an existing v1 stack: run `docker compose down -v` once so the new database init script can create the per-service logins.
 
@@ -351,7 +353,16 @@ SMS_RECIPIENT_ALLOWLIST=+63917XXXXXXX     # your own number(s) while testing
 ```
 Safety: the demo contacts (+63917555010x) are not real people's phones, so outside `NODE_ENV=production` only allow-listed numbers receive real texts; everything else is logged as *Simulated*. `SMS_DAILY_LIMIT` stops sending before the free-plan cap. The clinic profile page shows the current mode under **SMS alert contacts**.
 
-Optional webhook (delivery receipts + caregivers replying by SMS): in the TextBee dashboard add `https://<public gateway>/webhooks/textbee` with a secret and put the same value in `TEXTBEE_WEBHOOK_SECRET`.
+Optional webhook (delivery receipts + caregivers texting in): in the TextBee dashboard add `https://<public gateway>/webhooks/textbee` with a secret and put the same value in `TEXTBEE_WEBHOOK_SECRET`. The gateway verifies the signature and the **Node-RED content-based router** routes each message ([docs/NODE_RED.md](docs/NODE_RED.md)):
+
+| Caregiver / family texts | Result |
+|---|---|
+| `CHECKIN P-1001 BP 150/90 HR 80 T 36.8 O2 96 MED Y` (or just `BP 150/90 …`) | check-in saved (same saga as the app), reply with the result |
+| `SOS …` / `EMERGENCY` / `SAKLOLO` | critical alert to the patient's other contacts, reply "call 911 if life is in danger" |
+| `STOP` / `START` | SMS alerts off / on for that number |
+| `HELP` / `TULONG` / `?` | format help |
+
+A message TextBee delivers twice (same `smsId`) is handled once. `TEXTBEE_WEBHOOK_TARGET=alert` bypasses Node-RED (check-ins and receipts only).
 
 ---
 
@@ -403,6 +414,9 @@ Every service has a `.env.example`. Most important:
 | `JWT_KEY_ROTATED_AT`, `JWT_KEY_ROTATION_DAYS` | gateway | rotation schedule shown by `GET /api/admin/security` (default every 90 days) |
 | `REFRESH_REUSE_GRACE_SECONDS` | gateway | parallel refreshes within this window are not treated as token theft (default 10) |
 | `TOKEN_STORE_FILE` | gateway | revoked tokens + refresh sessions (Docker: `gateway-state` volume); `memory` = not persisted |
+| `TEXTBEE_WEBHOOK_TARGET`, `NODE_RED_URL` | gateway | `node-red` (Docker default: verify signature, route via Node-RED) or `alert` (direct) |
+| `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | node-red | DLQ dashboard sign-in; empty password = dashboard closed |
+| `NODE_RED_ADMIN_PASSWORD`, `NODE_RED_PORT` | node-red | flow editor at `/admin` (empty = editor disabled); host port (default 1880, bound to 127.0.0.1) |
 | `INTERNAL_SERVICE_TOKEN` | all | gateway ↔ service trust (same value everywhere) |
 | `DATABASE_URL` | checkin, alert, clinic | own PostgreSQL database |
 | `OPENWEATHER_API_KEY` | alert | weather mashup |

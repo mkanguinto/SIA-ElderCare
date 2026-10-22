@@ -18,7 +18,7 @@
  * a weather trigger.
  */
 
-const SYSTEM_RULES = ['HEALTH_ANOMALY', 'MISSED_CHECKIN', 'MANUAL'];
+const SYSTEM_RULES = ['HEALTH_ANOMALY', 'MISSED_CHECKIN', 'MANUAL', 'SMS_SOS'];
 const HAZARDS = ['heat', 'storm'];
 const METRICS = {
   heat_index_c: (p) => p.heatIndexC,

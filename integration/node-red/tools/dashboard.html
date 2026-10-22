@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ElderCare DLQ Monitor</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5d6677; --line: #e1e5eb; --ok: #1f7a4d; --warn: #9a5b00; --bad: #b42318; --accent: #2457c5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1c2027; --text: #e7eaf0; --muted: #9aa3b2; --line: #2c323c; --ok: #4cc38a; --warn: #e5a54b; --bad: #f97066; --accent: #7ea2ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; border-bottom: 1px solid var(--line); background: var(--card); }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); max-width: 1400px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  #msg { min-height: 1.4em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ElderCare DLQ monitor</h1>
+  <span id="overall" class="pill muted">loading…</span>
+  <span class="muted">checked <span id="checked">–</span> · refreshes every 10 s</span>
+  <span id="msg" class="muted"></span>
+</header>
+<main>
+  <section class="wide">
+    <h2>Dead-letter queues</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Service</th><th>Queue</th><th class="num">Messages</th><th class="num">Consumers</th><th></th></tr></thead>
+      <tbody id="queues"><tr><td colspan="5" class="muted">waiting for the first poll…</td></tr></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Services</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Service</th><th>Broker</th><th class="num">Published</th><th class="num">Consumed</th><th class="num">Retried</th><th class="num">Dead-lettered</th><th>Outbox</th></tr></thead>
+      <tbody id="services"></tbody>
+    </table></div>
+  </section>
+  <section>
+    <h2>Weather orchestration <button id="runWeather" type="button">Run now</button></h2>
+    <dl id="weather"><dt>last run</dt><dd class="muted">none yet</dd></dl>
+  </section>
+  <section>
+    <h2>TextBee SMS router</h2>
+    <dl id="sms"><dt>routed</dt><dd class="muted">no messages yet</dd></dl>
+  </section>
+  <section>
+    <h2>Replay log</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>When</th><th>Queue</th><th class="num">Moved</th><th>Status</th></tr></thead>
+      <tbody id="replays"><tr><td colspan="4" class="muted">no replays</td></tr></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const time = (iso) => (iso ? new Date(iso).toLocaleTimeString() : '–');
+const say = (text, cls = 'muted') => { $('msg').className = cls; $('msg').textContent = text; };
+
+function dl(el, rows) {
+  el.innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('');
+}
+
+function render(s) {
+  const m = s.messaging;
+  if (m) {
+    $('checked').textContent = time(m.checkedAt);
+    const o = $('overall');
+    o.textContent = m.healthy ? 'healthy' : m.totalDeadLetters ? `${m.totalDeadLetters} dead letter(s)` : 'degraded';
+    o.className = `pill ${m.healthy ? 'ok' : m.totalDeadLetters ? 'bad' : 'warn'}`;
+    const dlqs = m.services.flatMap((svc) => (svc.queues || []).filter((q) => q.dlq).map((q) => ({ svc: svc.service, ...q })));
+    $('queues').innerHTML = dlqs.length ? dlqs.map((q) => `<tr>
+        <td>${esc(q.svc)}</td><td>${esc(q.queue)}</td>
+        <td class="num ${q.messages ? 'bad' : ''}">${q.messages}</td><td class="num">${q.consumers}</td>
+        <td><button type="button" data-service="${esc(q.svc)}" data-queue="${esc(q.queue)}" ${q.messages ? '' : 'disabled'}>Replay</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="muted">no dead-letter queues reported (services in http mode?)</td></tr>';
+    $('services').innerHTML = m.services.map((svc) => svc.reachable ? `<tr>
+        <td>${esc(svc.service)}</td><td class="${svc.connected ? 'ok' : 'bad'}">${svc.connected ? esc(svc.mode || 'connected') : 'disconnected'}</td>
+        <td class="num">${svc.counters.published}</td><td class="num">${svc.counters.consumed}</td><td class="num">${svc.counters.retried}</td>
+        <td class="num ${svc.counters.deadLettered ? 'warn' : ''}">${svc.counters.deadLettered}</td>
+        <td>${esc(Object.entries(svc.outbox || {}).map(([k, v]) => `${k} ${v}`).join(', ') || '–')}</td></tr>`
+      : `<tr><td>${esc(svc.service)}</td><td class="bad" colspan="6">unreachable: ${esc(svc.error)}</td></tr>`).join('');
+  }
+  const w = s.weather;
+  if (w) {
+    dl($('weather'), [
+      ['last run', `${time(w.ranAt)} <span class="pill ${w.status === 'ok' ? 'ok' : w.status === 'partial' ? 'warn' : 'bad'}">${esc(w.status)}</span>`],
+      ['locations', `${w.locations} checked, ${w.failed.length} failed`],
+      ['hottest', w.hottest ? `${esc(w.hottest.zipCode)}: heat index ${w.hottest.heatIndexC} °C` : '–'],
+      ['rules fired', esc(w.rulesFired.join(', ') || 'none')],
+      ['patients warned', `${w.patientsWarned} (already warned: ${w.alreadyWarned})`],
+      ['triage items', String(w.triageItemsCreated)],
+    ]);
+  }
+  const sms = s.sms;
+  if (sms) {
+    dl($('sms'), [
+      ['since', time(sms.since)],
+      ...Object.entries(sms.routes).map(([k, v]) => [k, String(v)]),
+      ['failures', String(sms.failures || 0)],
+      ['last', esc((sms.last[0] && `${sms.last[0].route} → ${sms.last[0].status} at ${time(sms.last[0].at)}`) || '–')],
+    ]);
+  }
+  $('replays').innerHTML = s.replays.length ? s.replays.map((r) => `<tr><td>${time(r.at)}</td><td>${esc(r.queue)}.dlq</td>
+      <td class="num">${esc(r.result ? (r.result.replayed ?? r.result.moved ?? '–') : '–')}</td><td class="${r.status === 200 ? 'ok' : 'bad'}">${esc(r.status)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="muted">no replays</td></tr>';
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/dlq/api/status', { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    render(await r.json());
+  } catch (e) {
+    say(`refresh failed: ${e.message}`, 'bad');
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-queue]');
+  if (!b) return;
+  if (!confirm(`Replay ${b.dataset.queue}? Messages go back to the service for another attempt.`)) return;
+  b.disabled = true;
+  const r = await fetch('/dlq/api/replay', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ service: b.dataset.service, queue: b.dataset.queue }) });
+  const j = await r.json().catch(() => ({}));
+  say(r.ok ? `replayed ${b.dataset.queue}` : `replay failed: ${(j.details || [j.message || r.status]).join('; ')}`, r.ok ? 'ok' : 'bad');
+  refresh();
+});
+
+$('runWeather').addEventListener('click', async () => {
+  $('runWeather').disabled = true;
+  const r = await fetch('/dlq/api/weather-run', { method: 'POST' });
+  say(r.ok ? 'weather run started' : `could not start: HTTP ${r.status}`, r.ok ? 'ok' : 'bad');
+  setTimeout(() => { $('runWeather').disabled = false; refresh(); }, 5000);
+});
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

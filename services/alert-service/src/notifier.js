@@ -23,6 +23,7 @@ const ALERT_TYPES = {
   WEATHER_HEAT: 'HEATWAVE_DEHYDRATION_WARNING',
   WEATHER_STORM: 'TYPHOON_MOBILITY_WARNING',
   MANUAL: 'CLINIC_MESSAGE',
+  SMS_SOS: 'CAREGIVER_SOS',
 };
 function alertTypeFor(ruleCode) {
   return ALERT_TYPES[ruleCode] || String(ruleCode || 'GENERAL_ALERT').toUpperCase().replace(/[^A-Z0-9_]/g, '_');
@@ -69,7 +70,8 @@ async function dispatchInTransaction(client, a) {
 
   if (channels.includes('sms')) {
     const { rows: subs } = await client.query('SELECT * FROM subscribers WHERE patient_id = $1 AND sms_enabled = TRUE', [a.patientId]);
-    for (const s of subs) {
+    // e.g. an SOS is not texted back to the caregiver who sent it
+    for (const s of subs.filter((x) => !(a.excludePhones || []).includes(x.phone_e164))) {
       const { rows: [n] } = await client.query(
         `INSERT INTO notification_log (alert_id, subscriber_id, channel, status, alert_type) VALUES ($1, $2, 'sms', 'queued', $3) RETURNING id`,
         [alert.id, s.id, alertType],
@@ -109,6 +111,7 @@ async function dispatchInTransaction(client, a) {
  * @param {string} [a.createdBy]
  * @param {string} [a.dedupeKey]  suppress duplicates (e.g. same hazard same day)
  * @param {string} [a.alertType]  override the SMS event alertType
+ * @param {string[]} [a.excludePhones]  E.164 numbers that must not get this SMS (e.g. the SOS sender)
  * @param {string} [a.correlationId]
  * @param {import('pg').PoolClient} [client]  join the caller's transaction (e.g. idempotent event consumer)
  */
