@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { PageHeader, SeverityBadge, Empty, ErrorNote, Loading, Chip } from '../components/ui';
 import TrendChart from '../components/TrendChart';
+import { CareToday } from '../components/care';
 import { conditionLabel, relTime, dateTime, age, vitalOf, visitWhen, VISIT_TYPE_LABEL } from '../format';
 
 const PERIODS = [7, 30];
@@ -187,6 +188,14 @@ export default function FamilyDashboard({ user }) {
         )}
         </div>
       </div>
+
+      {patientId && (
+        <section className="panel care-panel">
+          <h2 className="panel-title">Caregiver duties today</h2>
+          <p className="muted small">What the caregiver has done from the care plan the health center set up.</p>
+          <CareToday patientId={patientId} />
+        </section>
+      )}
     </>
   );
 }

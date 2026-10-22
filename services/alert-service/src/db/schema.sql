@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_patient_time ON alerts (patient_id, created_at DESC);
 
--- Per-recipient delivery log (SMS via Twilio).
+-- Per-recipient delivery log (SMS via TextBee, in-app).
 CREATE TABLE IF NOT EXISTS notification_log (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   alert_id      UUID        NOT NULL REFERENCES alerts(id),
@@ -83,7 +83,7 @@ INSERT INTO alert_rules (code, description, min_severity, channels, config) VALU
   ('MANUAL',          'Alert dispatched manually by clinic staff / admin',          'low',      '{sms,in_app}', '{}')
 ON CONFLICT (code) DO NOTHING;
 
--- v1.1: SMS provider tracking (TextBee / Twilio) and safety notes (allow-list, daily limit)
+-- v1.1: SMS provider tracking (TextBee) and safety notes (allow-list, daily limit)
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS provider TEXT;
 ALTER TABLE notification_log ADD COLUMN IF NOT EXISTS note     TEXT;
 ALTER TABLE subscribers      ADD COLUMN IF NOT EXISTS created_by TEXT;

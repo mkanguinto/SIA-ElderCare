@@ -18,14 +18,17 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 - `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
 - `testing/README.md` – Postman, SoapUI, JMeter and failure-test commands
 
-### Verified results (v1.1 local run: PostgreSQL 16, all six services – re-run after the v2 RabbitMQ batches)
+### Verified results (v2 Docker run, 2026-10-22: PostgreSQL 16, RabbitMQ 3.13, Node-RED 4.1, all services)
 | Check | Result |
 |---|---|
-| Unit tests | 38 / 38 passing |
-| End-to-end smoke test | 21 / 21 passing |
-| Check-in → family alert → clinic queue | **~170 ms** (objective ≤ 2.0 s) |
-| Alert service down during a check-in | check-in accepted; event delivered automatically after restart |
-| Heatwave (heat index 46.8 °C) / typhoon (24 m/s) | correct at-risk patients warned; P1 / P2 triage items created |
+| Unit tests | 110 / 110 passing (7 packages) |
+| End-to-end smoke test | 95 / 95 passing (all batches) |
+| Postman collection (Postman CLI) | 95 requests, 157 assertions, 0 failures |
+| SoapUI test cases (replayed) | 4 / 4 passing |
+| Database isolation | every service reaches only its own database (4 × 4 login checks) |
+| Check-in → family alert → clinic queue | **95 ms / 39 ms** (objective ≤ 2.0 s) |
+| Alert service down during a check-in | check-in accepted; event held in RabbitMQ and delivered as soon as the service was back |
+| Heatwave (heat index 46.8 °C) / typhoon (24 m/s) | correct at-risk patients warned; P1 / P2 triage items created (v1.1 fake-OWM run; thresholds are now alert rules) |
 | OpenWeatherMap unreachable | stale cached data used, outage logged |
 | TextBee unreachable | RabbitMQ retry tiers 5 s / 30 s / 2 min, then DLQ; in-app alert kept |
 | Forged TextBee webhook | rejected (401, HMAC `X-Signature`) |

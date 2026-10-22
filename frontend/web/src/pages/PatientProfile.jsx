@@ -6,6 +6,7 @@ import { PageHeader, PriorityTag, StatusPill, SeverityBadge, Empty, ErrorNote, L
 import TrendChart from '../components/TrendChart';
 import { VisitCard } from '../components/visits';
 import { EmrPanel } from './ClinicQueue';
+import { CarePlanEditor, CareToday } from '../components/care';
 import { conditionLabel, age, bp, relTime, dateTime, ROLE_LABEL, STATUS_LABEL } from '../format';
 
 const BLANK_MED = { name: '', dosage: '', frequency: 'Once daily', times: '08:00', instructions: '' };
@@ -310,6 +311,17 @@ export default function PatientProfile({ user, params }) {
             : data.visits.map((v) => <VisitCard key={v.id} visit={v} canAct={canEdit} onChanged={load} />)}
         </section>
         <CareTeam patientId={p.id} canEdit={canEdit} />
+      </div>
+
+      <div className="layout-split">
+        <section className="panel">
+          <h2 className="panel-title">Care plan – caregiver duties</h2>
+          <CarePlanEditor patientId={p.id} readOnly={!canEdit} />
+        </section>
+        <section className="panel">
+          <h2 className="panel-title">Duties today</h2>
+          <CareToday patientId={p.id} compact />
+        </section>
       </div>
 
       <div className="layout-split">

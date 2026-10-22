@@ -128,3 +128,26 @@ export function friendlyError(msg = '') {
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
+
+// Care plan (Batch 4): caregiver duty categories and checklist states
+export const DUTY_CATEGORY_LABEL = {
+  personal_care: 'Personal care',
+  physical_medical: 'Physical and medical care',
+  meals_household: 'Meals and household',
+  transportation: 'Transportation',
+  emotional_social: 'Emotional and social support',
+  home_safety: 'Home safety',
+  communication: 'Communication',
+  records: 'Records',
+};
+export const DUTY_STATUS_LABEL = { done: 'Done', skipped: 'Skipped', pending: 'To do', overdue: 'Overdue', missed: 'Missed' };
+export const FREQUENCY_LABEL = { daily: 'Every day', weekly: 'Weekly', once: 'One time', as_needed: 'As needed' };
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** "Every day at 08:00, 20:00" / "Mon, Thu" / "Due 2026-10-29" / "As needed" */
+export function dutySchedule(t) {
+  if (t.frequency === 'daily') return `Every day at ${t.times.join(', ')}`;
+  if (t.frequency === 'weekly') return `${t.daysOfWeek.map((d) => WEEKDAY_SHORT[d]).join(', ')}${t.times.length ? ` at ${t.times.join(', ')}` : ''}`;
+  if (t.frequency === 'once') return `Due ${t.dueDate}`;
+  return 'As needed';
+}

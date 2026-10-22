@@ -157,6 +157,7 @@ services:
       EVENT_TRANSPORT: rabbitmq
       AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       OPENWEATHER_API_KEY: "${OPENWEATHER_API_KEY:-}"
+      OPENWEATHER_BASE_URL: "${OPENWEATHER_BASE_URL:-https://api.openweathermap.org}"   # demo: http://host.docker.internal:4999 (testing/mocks)
       OPENWEATHER_ONECALL_ENABLED: "${OPENWEATHER_ONECALL_ENABLED:-false}"
       WEATHER_POLL_INTERVAL_MINUTES: "${WEATHER_POLL_INTERVAL_MINUTES:-30}"
       WEATHER_POLL_ENABLED: "false"   # Node-RED's weather orchestration flow runs the schedule

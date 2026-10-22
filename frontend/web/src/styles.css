@@ -531,3 +531,49 @@ h3.first { margin-top: 0; }
 .stats-inline { max-width: 640px; margin-bottom: 16px; }
 .history-table .history-detail td { background: var(--surface-2); }
 .history-table h4 { margin-top: 4px; }
+
+/* ---- v2 Batch 5: pagination, care duties, alert rules ---- */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.pager .btn-row { align-items: center; }
+.text-critical { color: var(--critical); font-weight: 700; }
+.text-high { color: var(--high); }
+.field-inline { margin: 0; grid-auto-flow: column; align-items: center; gap: 8px; }
+.care-panel { margin-top: 20px; }
+.care-goals { margin-bottom: 12px; }
+.care-goals p { margin: 0 0 6px; }
+.duty-subhead { font-size: 1rem; margin: 18px 0 8px; }
+.duty-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.duty { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); }
+.duty-list > .duty:first-child { border-top: 0; }
+.duty-list .duty:not(:has(.duty-time)) { grid-template-columns: minmax(0, 1fr) auto; }
+.duty-time { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); padding-top: 2px; }
+.duty-main { display: grid; gap: 2px; min-width: 0; }
+.duty-side { display: grid; justify-items: end; gap: 6px; }
+.duty-done .duty-main strong { text-decoration: line-through; text-decoration-color: var(--ink-3); color: var(--ink-2); }
+.duty-overdue .duty-time, .duty-missed .duty-time { color: var(--critical); }
+.duty-skip { margin-top: 8px; }
+.duty-skip .field { margin-bottom: 8px; }
+.duty-pill-done { background: var(--ok-soft); color: var(--ok); }
+.duty-pill-skipped { background: var(--moderate-soft); color: var(--moderate); }
+.duty-pill-pending { background: var(--surface-2); color: var(--ink-2); }
+.duty-pill-overdue, .duty-pill-missed { background: var(--critical-soft); color: var(--critical); }
+.adherence-total { margin: 0 0 10px; }
+.adherence-total strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.adherence { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.adherence li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(80px, 1.4fr) 48px; gap: 10px; align-items: center; }
+.adherence-track { height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.adherence-fill { display: block; height: 100%; border-radius: 999px; background: var(--ok); }
+.adherence-fill.is-low { background: var(--high); }
+.adherence-num { text-align: right; font-variant-numeric: tabular-nums; }
+.chip-btn { cursor: pointer; font: inherit; font-size: 0.85rem; }
+.chip-btn:hover { border-color: var(--action); color: var(--action); }
+.rule-form { margin-top: 16px; }
+.rule-part { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 4px; margin: 0 0 14px; }
+.rule-part legend { font-weight: 700; padding: 0 6px; }
+.tabs + .note, .tabs + .panel, .tabs + section { margin-top: 16px; }
+@media (max-width: 640px) {
+  .duty { grid-template-columns: 56px minmax(0, 1fr); }
+  .duty-side { grid-column: 2; justify-items: start; }
+  .adherence li { grid-template-columns: 1fr 48px; }
+  .adherence-track { grid-column: 1 / -1; grid-row: 2; }
+}

@@ -4,12 +4,19 @@ Start the full stack first: `docker compose up --build` (from the project root).
 
 ## Unit tests (no services needed)
 ```bash
-cd api-gateway && npm install && npm test
-cd services/checkin-service && npm install && npm test
-cd services/alert-service && npm install && npm test
-cd services/clinic-risk-service && npm install && npm test
-cd services/legacy-emr-adapter && npm install && npm test
+npm run install:all && npm test      # all 7 packages (110 tests), or per package:
+cd api-gateway && npm test
+cd services/care-plan-service && npm test
+cd integration/node-red && npm test  # SMS router rules, aggregators, flows.json wiring
 ```
+
+## End-to-end smoke test
+```bash
+npm run smoke
+# with the Batch 3 checks (signed TextBee webhooks, DLQ dashboard):
+TEXTBEE_WEBHOOK_SECRET=<gateway value> DASHBOARD_PASSWORD=<value> NODE_RED_URL=http://localhost:1880 npm run smoke
+```
+95 checks across all batches. Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
 
 ## Postman – functional, security and integration
 1. Postman → Import → `postman/ElderCare_Connect.postman_collection.json` and `postman/ElderCare_Connect.local.postman_environment.json`.
@@ -28,6 +35,16 @@ Folder **5. Integration** is the end-to-end chain from Section 4's objective:
 caregiver check-in → Family Alert raised + SMS queued → Clinic Risk Queue item (P1/P2) → legacy EMR history via SOAP adapter → nurse updates triage status. The console prints the observed end-to-end time.
 
 Folder **6. v1.1** covers the QA fixes: normal vitals lower an urgent case, schedule visit validation (422) and save (201), family sees the visit, completing it fills Recent Visits and Case history, caregiver medicines, onboarding (201 first run, 409 after), RBAC. Run the whole collection in order: folder 6 uses the case from folder 5.
+
+v2 folders:
+- **7. Batch 2** – alert rules CRUD, pagination envelopes, token revocation, refresh rotation + reuse detection, logout, key status.
+- **8. Batch 3** – TextBee webhooks through the gateway to the Node-RED router. Set the environment variable
+  `textbeeSecret` to the gateway's `TEXTBEE_WEBHOOK_SECRET` to sign them (pre-request script, HMAC-SHA256);
+  left empty, the requests go unsigned and the tests expect `401`.
+- **9. Batch 4** – care plan: categories, plan, checklist, tick off / upsert / skip rules, clinic add / edit / retire, adherence.
+
+Postman CLI: `postman collection run postman/ElderCare_Connect.postman_collection.json -e postman/ElderCare_Connect.local.postman_environment.json --env-var textbeeSecret=<secret>`
+(last run on the v2 stack: 95 requests, 157 assertions, 0 failures).
 
 ## SoapUI – legacy SOAP integration
 1. Make sure the mock EMR (`:4005`) and the adapter (`:4004`) are running (both are published by docker compose).
@@ -69,7 +86,9 @@ Record the thread count at which error rate exceeds 1 % or p95 latency exceeds 2
 ## Failure testing
 | Scenario | How | Expected |
 |---|---|---|
-| Alert service down | `docker compose stop alert-service`, submit critical check-in, `docker compose start alert-service` | check-in 201; alert appears after restart (outbox retry) |
+| Alert service down | `docker compose stop alert-service`, submit critical check-in, `docker compose start alert-service` | check-in 201; the event waits in `alert-service.checkin-events`; alert appears as soon as the service is back (verified on v2) |
+| Node-RED down | `docker compose stop node-red`, send `node mocks/send-sms.mjs … HELP` | gateway answers 502/503; TextBee retries the webhook later; switch `TEXTBEE_WEBHOOK_TARGET=alert` to bypass Node-RED |
+| Message in a DLQ | stop a consumer's dependency until retries run out, or use the fake TextBee with failures | the DLQ dashboard (`http://localhost:1880/dlq`) shows it; **Replay** moves it back once the cause is fixed |
 | Clinic service down | same with `clinic-risk-service` | gateway returns 503 fast for queue reads (circuit breaker); events delivered after restart |
 | TextBee failing | set a wrong `TEXTBEE_API_KEY` with `SMS_DRY_RUN=false` and your number in `SMS_RECIPIENT_ALLOWLIST` | 401 is permanent: `notification_log` = `failed`, message parked in `alert-service.sms-dispatch.dlq`; in-app alert still visible |
 | TextBee down / slow | point `TEXTBEE_BASE_URL` at `testing/mocks/fake-textbee.js` started with failures | 5xx: retried 5 s → 30 s → 2 min then DLQ; timeout: `unconfirmed` + DLQ (no duplicate SMS) |

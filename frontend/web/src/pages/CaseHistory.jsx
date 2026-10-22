@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { navigate } from '../router';
 import { PageHeader, PriorityTag, Empty, ErrorNote, Loading } from '../components/ui';
+import Pager from '../components/Pager';
 import { STATUS_LABEL, REASON_LABEL, VISIT_TYPE_LABEL, dateTime, relTime } from '../format';
 
 function duration(h) {
@@ -18,15 +19,17 @@ export default function CaseHistory() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(() => {
-    const q = new URLSearchParams({ limit: '100' });
+    const q = new URLSearchParams({ page: String(page), pageSize: '25' });
     if (outcome) q.set('outcome', outcome);
     if (from) q.set('from', from);
     if (to) q.set('to', to);
     return api(`/api/clinic/queue/history?${q}`).then((r) => { setData(r); setError(''); }).catch((e) => setError(e.message));
-  }, [outcome, from, to]);
+  }, [outcome, from, to, page]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [outcome, from, to]);
 
   return (
     <>
@@ -84,6 +87,7 @@ export default function CaseHistory() {
               ))}
             </tbody>
           </table>
+          <Pager pagination={data.pagination} onPage={setPage} label="cases" />
         </section>
       )}
     </>
