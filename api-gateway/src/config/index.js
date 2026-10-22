@@ -83,6 +83,7 @@ const config = {
     alert: process.env.ALERT_SERVICE_URL || 'http://localhost:4002',
     clinic: process.env.CLINIC_SERVICE_URL || 'http://localhost:4003',
     legacyAdapter: process.env.LEGACY_ADAPTER_URL || 'http://localhost:4004',
+    care: process.env.CARE_SERVICE_URL || 'http://localhost:4006',
     // Node-RED EAI layer (Batch 3), only when deployed: also shows up in GET /api/admin/health
     ...(process.env.NODE_RED_URL ? { nodeRed: process.env.NODE_RED_URL } : {}),
   },

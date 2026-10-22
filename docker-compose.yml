@@ -6,7 +6,7 @@
 #
 # Data isolation (Section 9 / Section 18, professor's evaluation):
 #   one PostgreSQL container per microservice, and inside each one a dedicated NON-superuser login
-#   (checkin_svc / alert_svc / clinic_svc) created by infra/postgres/10-app-role.sh. Services never see
+#   (checkin_svc / alert_svc / clinic_svc / care_svc) created by infra/postgres/10-app-role.sh. Services never see
 #   the admin password or another service's password.  Verify: npm run verify:db-isolation
 #   (Upgrading from v1? run `docker compose down -v` once so the init script can create the roles.)
 
@@ -55,6 +55,19 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U clinic_admin -d clinic_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
+  care-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: care_db
+      POSTGRES_USER: care_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${CARE_DB_ADMIN_PASSWORD:-care_admin_pass}"
+      APP_DB_USER: care_svc                         # the only login the care-plan service has
+      APP_DB_PASSWORD: "${CARE_DB_PASSWORD:-care_pass}"
+    volumes: ["care-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
+    ports: ["5436:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U care_admin -d care_db"], interval: 5s, retries: 10 }
+    networks: [internal]
+
   # ------------------------------ Middleware ------------------------------
   # RabbitMQ: topic exchange eldercare.events, per-service durable queues, retry tiers and DLQs
   # (declared by the services on start-up - see docs/MESSAGING.md).
@@ -101,6 +114,7 @@ services:
       ALERT_SERVICE_URL: http://alert-service:4002
       CLINIC_SERVICE_URL: http://clinic-risk-service:4003
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
+      CARE_SERVICE_URL: http://care-plan-service:4006
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
       # TextBee webhooks: gateway verifies X-Signature, Node-RED routes them by content (alert = direct)
       NODE_RED_URL: http://node-red:1880
@@ -108,7 +122,7 @@ services:
       TEXTBEE_WEBHOOK_SECRET: "${TEXTBEE_WEBHOOK_SECRET:-}"
       TEXTBEE_VALIDATE_WEBHOOK: "${TEXTBEE_VALIDATE_WEBHOOK:-true}"
     volumes: ["gateway-state:/app/state"]
-    depends_on: [checkin-service, alert-service, clinic-risk-service]
+    depends_on: [checkin-service, alert-service, clinic-risk-service, care-plan-service]
     networks: [internal, public]
 
   checkin-service:
@@ -180,6 +194,20 @@ services:
       clinic-db: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
 
+  # Care Plan Service (Batch 4): caregiver duties checklist, own database (care_db / care_svc)
+  care-plan-service:
+    <<: *node-service
+    build: ./services/care-plan-service
+    environment:
+      PORT: 4006
+      SERVICE_NAME: care-plan-service
+      DATABASE_URL: "postgres://care_svc:${CARE_DB_PASSWORD:-care_pass}@care-db:5432/care_db"
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
+      INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
+      CARE_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"
+    depends_on:
+      care-db: { condition: service_healthy }
+
   legacy-emr-adapter:
     <<: *node-service
     build: ./services/legacy-emr-adapter
@@ -231,6 +259,7 @@ volumes:
   checkin-data: {}
   alert-data: {}
   clinic-data: {}
+  care-data: {}
   rabbitmq-data: {}
   gateway-state: {}
   node-red-data: {}

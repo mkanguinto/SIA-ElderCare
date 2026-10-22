@@ -211,4 +211,40 @@ if (!tbSecret) {
   ok(r.j.services.some((x) => x.name === 'nodeRed' && x.status === 'up'), 'admin health includes Node-RED');
 }
 
+// ------------------------------------------------------------------ v2 Batch 4: care-plan service (caregiver duties)
+r = await call('GET', '/api/care/categories', fam);
+ok(r.s === 200 && r.j.categories.length === 8 && r.j.categories.every((c) => c.suggestions.length), `duty categories: ${r.j && r.j.categories.map((c) => c.code).join(', ')}`);
+r = await call('GET', '/api/patients/P-1001/care-plan', cg);
+ok(r.s === 200 && r.j.plan && r.j.tasks.length >= 5 && r.j.byCategory.length === 8, `caregiver reads the care plan (${r.j && r.j.tasks.length} tasks)`);
+ok((await call('GET', '/api/patients/P-1002/care-plan', fam)).s === 403, 'family cannot read another patient\'s care plan (403)');
+let checklist = (await call('GET', '/api/patients/P-1001/care-plan/checklist', cg)).j;
+const meds = checklist.items.find((i) => i.title === 'Give morning medicines');
+ok(meds && checklist.summary.total >= 5 && checklist.asNeeded.length >= 2, `today's checklist: ${JSON.stringify(checklist.summary)}`);
+r = await call('POST', `/api/care/tasks/${meds.taskId}/completions`, cg, { slot: '08:00', status: 'done', note: 'after breakfast' });
+const second = await call('POST', `/api/care/tasks/${meds.taskId}/completions`, cg, { slot: '08:00', status: 'done' });
+ok([200, 201].includes(r.s) && second.s === 200 && second.j.id === r.j.id, 'ticking a duty twice updates it instead of duplicating');
+checklist = (await call('GET', '/api/patients/P-1001/care-plan/checklist', cg)).j;
+ok(checklist.items.find((i) => i.taskId === meds.taskId && i.slot === '08:00').status === 'done', 'checklist shows the duty as done');
+ok((await call('POST', `/api/care/tasks/${meds.taskId}/completions`, cg, { slot: '08:00', status: 'skipped' })).s === 422, 'skipping needs a reason (422)');
+ok((await call('POST', `/api/care/tasks/${meds.taskId}/completions`, cg, { slot: '09:15' })).s === 422, 'unscheduled slot rejected (422)');
+ok((await call('POST', `/api/care/tasks/${meds.taskId}/completions`, cg, { date: '2099-01-01' })).s === 422, 'future date rejected (422)');
+ok((await call('POST', `/api/care/tasks/${meds.taskId}/completions`, fam, {})).s === 403, 'family cannot tick off duties (403)');
+const prn = checklist.asNeeded[0];
+const l1 = await call('POST', `/api/care/tasks/${prn.taskId}/completions`, cg, { note: 'logged by smoke test' });
+const l2 = await call('POST', `/api/care/tasks/${prn.taskId}/completions`, cg, {});
+ok(l1.s === 201 && l2.s === 201 && l1.j.id !== l2.j.id, 'as-needed duty can be logged several times a day');
+const newTask = { category: 'emotional_social', title: 'Smoke test: read the newspaper together', frequency: 'daily', times: ['15:00'] };
+ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', cg, newTask)).s === 403, 'caregiver cannot change the plan (403)');
+ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, { ...newTask, frequency: 'weekly' })).s === 422, 'weekly task without days rejected (422)');
+r = await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, newTask);
+const addedId = r.j && r.j.id;
+ok(r.s === 201 && r.j.category === 'emotional_social', 'clinic staff add a duty (201)');
+r = await call('PATCH', `/api/care/tasks/${addedId}`, nurse, { times: ['15:00', '19:00'] });
+ok(r.s === 200 && r.j.times.length === 2, 'clinic staff change a duty (PATCH 200)');
+ok((await call('DELETE', `/api/care/tasks/${addedId}`, nurse)).s === 204 && (await call('POST', `/api/care/tasks/${addedId}/completions`, cg, { slot: '15:00' })).s === 409, 'retired duty can no longer be ticked off (409)');
+r = await call('GET', '/api/patients/P-1001/care-plan/history?page=1&pageSize=5', fam);
+ok(r.s === 200 && typeof r.j.adherence.scheduled === 'number' && r.j.adherence.categories.length && r.j.pagination.pageSize === 5 && r.j.completions.length >= 1,
+  `family sees adherence: ${r.j.adherence && r.j.adherence.rate}% of ${r.j.adherence && r.j.adherence.scheduled} scheduled duties this week`);
+ok((await call('GET', '/api/admin/health', admin)).j.services.some((x) => x.name === 'care' && x.status === 'up'), 'admin health includes the care-plan service');
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

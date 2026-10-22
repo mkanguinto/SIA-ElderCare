@@ -21,6 +21,7 @@ const APPS = [
   { name: 'emr', dir: 'services/mock-legacy-emr', port: 4005, color: 90 },
   { name: 'adapter', dir: 'services/legacy-emr-adapter', port: 4004, color: 35 },
   { name: 'clinic', dir: 'services/clinic-risk-service', port: 4003, color: 33 },
+  { name: 'care', dir: 'services/care-plan-service', port: 4006, color: 94 },
   { name: 'alert', dir: 'services/alert-service', port: 4002, color: 31 },
   { name: 'checkin', dir: 'services/checkin-service', port: 4001, color: 32 },
   { name: 'gateway', dir: 'api-gateway', port: 8080, color: 36 },
@@ -36,7 +37,7 @@ const problems = [];
 for (const a of APPS) {
   const dir = path.join(root, a.dir);
   if (a.name !== 'emr' && !fs.existsSync(path.join(dir, 'node_modules'))) problems.push(`${a.dir}: packages missing -> run "npm run install:all"`);
-  if (['clinic', 'alert', 'checkin', 'gateway', 'adapter'].includes(a.name) && !fs.existsSync(path.join(dir, '.env'))) {
+  if (['clinic', 'alert', 'checkin', 'care', 'gateway', 'adapter'].includes(a.name) && !fs.existsSync(path.join(dir, '.env'))) {
     problems.push(`${a.dir}: .env missing -> run node scripts/setup-local.js "YourPostgresPassword"`);
   }
 }

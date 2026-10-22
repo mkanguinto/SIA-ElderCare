@@ -21,7 +21,7 @@ Twilio and BullMQ/Redis were removed. Work is delivered in batches; each batch i
 | Lesson | Applied in |
 |---|---|
 | Topic 1–3 Enterprise architecture, EA modeling | README architecture (AS-IS/TO-BE), corrected inbound EMR flow |
-| Topic 5 Microservices | database-per-service with isolated logins, independent deploys |
+| Topic 5 Microservices | database-per-service with isolated logins, independent deploys; Care Plan Service with its own `care_db` / `care_svc` (Batch 4) |
 | Topic 6 Data representation | JSON Schema event contracts, SOAP/XML → JSON adapter |
 | Topic 7 REST / web services | gateway API, pagination + rules CRUD (Batch 2), SOAP/WSDL |
 | Topic 8 Testing | unit tests for bus/DLQ/idempotency, Postman, SoapUI, JMeter (updated in Batch 5) |

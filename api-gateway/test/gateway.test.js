@@ -27,6 +27,7 @@ const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}`;
 process.env.CHECKIN_SERVICE_URL = upstreamUrl;
 process.env.ALERT_SERVICE_URL = upstreamUrl;
 process.env.CLINIC_SERVICE_URL = upstreamUrl;
+process.env.CARE_SERVICE_URL = upstreamUrl;
 
 const jwt = require('jsonwebtoken');
 const app = require('../server');
@@ -199,4 +200,18 @@ test('webhook bodies are forwarded byte-for-byte (needed for TextBee signatures)
   const body = await res.json();
   assert.strictEqual(body.headers['content-length'], String(Buffer.byteLength(raw)));
   assert.strictEqual(body.headers['x-signature'], 'abc');
+});
+
+test('care plan routes: patient scope at the gateway, clinic-only plan changes, caregiver-only completions', async () => {
+  const cg = (await login('caregiver.maria')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const nurse = (await login('nurse.ana')).access_token;
+  assert.strictEqual((await call('GET', '/api/care/categories', { token: fam })).status, 200);
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/care-plan/checklist?date=2026-10-22', { token: fam })).body.path, '/api/patients/P-1001/care-plan/checklist?date=2026-10-22');
+  assert.strictEqual((await call('GET', '/api/patients/P-1002/care-plan', { token: fam })).status, 403);
+  assert.strictEqual((await call('GET', '/api/patients/P-1003/care-plan/history', { token: cg })).status, 403);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/care-plan/tasks', { token: cg, body: {} })).status, 403);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/care-plan/tasks', { token: nurse, body: {} })).status, 200);
+  assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: nurse, body: {} })).status, 403);
+  assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: cg, body: {} })).status, 200);
 });

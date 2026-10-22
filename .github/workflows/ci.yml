@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [api-gateway, services/checkin-service, services/alert-service, services/clinic-risk-service, services/legacy-emr-adapter, integration/node-red]
+        service: [api-gateway, services/checkin-service, services/alert-service, services/clinic-risk-service, services/legacy-emr-adapter, services/care-plan-service, integration/node-red]
     defaults:
       run:
         working-directory: ${{ matrix.service }}

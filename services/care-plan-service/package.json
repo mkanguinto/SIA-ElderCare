@@ -1,0 +1,20 @@
+{
+  "name": "eldercare-care-plan-service",
+  "version": "1.0.0",
+  "description": "ElderCare Connect - Care Plan Service (caregiver duties checklist)",
+  "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "helmet": "^8.0.0",
+    "pg": "^8.13.0"
+  }
+}

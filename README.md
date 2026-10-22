@@ -12,6 +12,7 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 - `docs/MESSAGING.md` – RabbitMQ topology, event catalogue + JSON Schemas, DLQ, idempotency (v2 · Batch 1)
 - `docs/SECURITY.md` – token revocation, refresh rotation + reuse detection, `kid` key rotation, Docker secrets (v2 · Batch 2)
 - `docs/NODE_RED.md` – Node-RED EAI flows: TextBee SMS content-based router, weather orchestration, DLQ monitor + replay dashboard (v2 · Batch 3)
+- `docs/CARE_PLAN.md` – Care Plan Service: caregiver duties by category, daily checklist, adherence (v2 · Batch 4)
 - `docs/EVALUATION_RESPONSE.md` – each item of the professor's evaluation → where it is addressed
 - `docs/PROPOSAL_TRACEABILITY.md` – every proposal section mapped to code and verification evidence
 - `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
@@ -53,6 +54,7 @@ flowchart TB
   GW --> CK[Daily Check-In Logger :4001]
   GW --> AL[Family Alert & Notification :4002]
   GW --> CL[Clinic Risk Queue :4003]
+  GW --> CPS[Care Plan :4006<br/>caregiver duties]
   CK -- "checkin.* (outbox)" --> MQ[[RabbitMQ<br/>exchange eldercare.events<br/>retry tiers · DLQs]]
   AL -- "weather.risk_detected<br/>notification.sms.requested" --> MQ
   MQ -- alert-service.checkin-events --> AL
@@ -61,8 +63,13 @@ flowchart TB
   CK --- CKDB[(checkin_db<br/>login checkin_svc)]
   AL --- ALDB[(alert_db<br/>login alert_svc)]
   CL --- CLDB[(clinic_db<br/>login clinic_svc)]
+  CPS --- CPDB[(care_db<br/>login care_svc)]
   AL -->|REST| OWM[OpenWeatherMap API]
   SW -->|REST| TB[TextBee SMS gateway<br/>Android phone]
+  TB -->|webhook, X-Signature| GW
+  GW -->|verified webhook| NR[Node-RED EAI :1880<br/>SMS router · weather orchestration · DLQ monitor]
+  NR -->|/internal/sms/*, weather-check, DLQ replay| AL
+  NR -.->|/internal/messaging| CK & CL
   EMR[Legacy Clinic EMR<br/>mock :4005] ==>|"SOAP 1.1 XML (inbound data)"| AD[Legacy Integration Layer :4004<br/>SOAP/XML → JSON adapter]
   AD ==>|"JSON patient history"| CL
 ```
@@ -73,6 +80,8 @@ flowchart TB
 | Daily Check-In Logger | `services/checkin-service/` | patients, check-ins, vital trends, baselines, outbox |
 | Family Alert & Notification | `services/alert-service/` | alert rules, alerts, notification logs, subscribers, weather cache |
 | Clinic Risk Queue | `services/clinic-risk-service/` | risk scores, triage items, follow-up actions |
+| Care Plan | `services/care-plan-service/` | care plans, caregiver duty tasks, task completions (Batch 4) |
+| Node-RED EAI layer | `integration/node-red/` | none (flows): SMS content-based router, weather orchestration, DLQ dashboard (Batch 3) |
 | Legacy EMR Adapter | `services/legacy-emr-adapter/` | none (stateless translator) |
 | Mock Legacy EMR | `services/mock-legacy-emr/` | demo data for SoapUI / dev (zero dependencies) |
 | Web dashboards | `frontend/web/` | React (Vite) – caregiver, family, clinic, admin views |
@@ -80,7 +89,7 @@ flowchart TB
 | Test assets | `testing/` | Postman, JMeter, SoapUI |
 
 **Data ownership rule:** each service talks only to its own database, with its **own non-superuser login**
-(`checkin_svc`, `alert_svc`, `clinic_svc`); another service's credentials are refused by PostgreSQL itself
+(`checkin_svc`, `alert_svc`, `clinic_svc`, `care_svc`); another service's credentials are refused by PostgreSQL itself
 (`npm run verify:db-isolation`). Cross-service data moves over REST (`/internal/*` endpoints) or RabbitMQ
 events – never by reading another service's tables.
 
@@ -228,6 +237,14 @@ works as an alias for `pageSize`; invalid `page` / `pageSize` values return `422
 | POST | `/webhooks/textbee` | TextBee (HMAC-verified) | Alert | delivery receipts + inbound SMS check-ins |
 | GET | `/api/admin/messaging` | admin | gateway → services | RabbitMQ connection, queue + **DLQ depths**, outbox counts |
 | POST | `/api/admin/messaging/replay` | admin | gateway → service | `{service, queue, limit?}` replay parked DLQ messages |
+| GET | `/api/care/categories` | all roles | Care Plan | 8 duty categories with suggested tasks |
+| GET | `/api/patients/:id/care-plan` | caregiver, family (own), clinic, admin | Care Plan | goals, notes and duty tasks |
+| PUT | `/api/patients/:id/care-plan` | clinic | Care Plan | `{goals?, notes?}` |
+| POST | `/api/patients/:id/care-plan/tasks` | clinic | Care Plan | `{category, title, frequency: daily\|weekly\|once\|as_needed, times?, daysOfWeek?, dueDate?, instructions?}` → 201 |
+| PATCH / DELETE | `/api/care/tasks/:taskId` | clinic | Care Plan | change / retire a duty (history kept) |
+| GET | `/api/patients/:id/care-plan/checklist?date=` | caregiver, family (own), clinic, admin | Care Plan | the day's duties: done / skipped / pending / overdue / missed + as-needed list |
+| POST | `/api/care/tasks/:taskId/completions` | caregiver (own patient) | Care Plan | `{slot?, status: done\|skipped, note?, date?}` – ticking again corrects it |
+| GET | `/api/patients/:id/care-plan/history?from=&to=&page=&pageSize=` | caregiver, family (own), clinic, admin | Care Plan | adherence per category + completions (max 31 days) |
 | GET | `/api/admin/security` | admin | gateway | active / verify-only key ids, rotation due date, token-store counters (no key material) |
 | POST | `/api/admin/users/:id/revoke-sessions` | admin | gateway | sign a user out everywhere |
 

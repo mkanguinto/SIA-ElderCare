@@ -22,7 +22,7 @@ function readEnv(file) {
 
 function targets() {
   if (process.argv.includes('--local')) {
-    return ['checkin-service', 'alert-service', 'clinic-risk-service'].map((s) => {
+    return ['checkin-service', 'alert-service', 'clinic-risk-service', 'care-plan-service'].map((s) => {
       const url = new URL(readEnv(path.join(root, 'services', s, '.env')).DATABASE_URL);
       return { service: s, user: decodeURIComponent(url.username), password: decodeURIComponent(url.password), host: url.hostname, port: Number(url.port || 5432), db: url.pathname.slice(1) };
     });
@@ -32,6 +32,7 @@ function targets() {
     { service: 'checkin-service', user: 'checkin_svc', password: env.CHECKIN_DB_PASSWORD || 'checkin_pass', port: 5433, db: 'checkin_db' },
     { service: 'alert-service', user: 'alert_svc', password: env.ALERT_DB_PASSWORD || 'alert_pass', port: 5434, db: 'alert_db' },
     { service: 'clinic-risk-service', user: 'clinic_svc', password: env.CLINIC_DB_PASSWORD || 'clinic_pass', port: 5435, db: 'clinic_db' },
+    { service: 'care-plan-service', user: 'care_svc', password: env.CARE_DB_PASSWORD || 'care_pass', port: 5436, db: 'care_db' },
   ].map((t) => ({ host: 'localhost', ...t }));
 }
 

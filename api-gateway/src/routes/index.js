@@ -31,6 +31,13 @@
  * | GET    | /api/alerts/rules[/:code]           | clinic, admin                       | Family Alert & Notif.  |
  * | POST/PATCH/DELETE | /api/alerts/rules[/:code] | admin                              | Family Alert & Notif.  |
  * List endpoints accept ?page=&pageSize= and return a `pagination` envelope (limit= still works).
+ * v2 Batch 4 (Care Plan Service - caregiver duties):
+ * | GET    | /api/care/categories                | all roles                           | Care Plan              |
+ * | GET    | /api/patients/:id/care-plan[/checklist|/history] | caregiver, family (own), clinic, admin | Care Plan |
+ * | PUT    | /api/patients/:id/care-plan         | clinic                              | Care Plan              |
+ * | POST   | /api/patients/:id/care-plan/tasks   | clinic                              | Care Plan              |
+ * | PATCH/DELETE | /api/care/tasks/:taskId       | clinic                              | Care Plan              |
+ * | POST   | /api/care/tasks/:taskId/completions | caregiver (service checks the task's patient) | Care Plan    |
  */
 const express = require('express');
 const { authenticate } = require('../middleware/authMiddleware');
@@ -83,6 +90,19 @@ router.get(
     return `/api/clinic/visits?patientId=${encodeURIComponent(req.params.id)}&view=${view}`;
   }),
 );
+
+/* ---------------------------- Care Plan (caregiver duties) ---------------------------- */
+const ANY_ROLE = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN];
+router.get('/care/categories', authorize(...ANY_ROLE), forwardTo('care'));
+router.get('/patients/:id/care-plan', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-plan/checklist', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-plan/history', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
+router.put('/patients/:id/care-plan', authorize(ROLES.CLINIC), forwardTo('care'));
+router.post('/patients/:id/care-plan/tasks', authorize(ROLES.CLINIC), forwardTo('care'));
+router.patch('/care/tasks/:taskId', authorize(ROLES.CLINIC), forwardTo('care'));
+router.delete('/care/tasks/:taskId', authorize(ROLES.CLINIC), forwardTo('care'));
+// The task id does not name the patient: the care service checks the task's patient against X-User-Patients.
+router.post('/care/tasks/:taskId/completions', authorize(ROLES.CAREGIVER), forwardTo('care'));
 
 router.get(
   '/patients/:id',
