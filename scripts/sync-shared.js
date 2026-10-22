@@ -12,6 +12,7 @@ const targets = {
   'services/checkin-service': [...BASE, ...MESSAGING, 'pagination.js'],
   'services/alert-service': [...BASE, ...MESSAGING, 'pagination.js'],
   'services/clinic-risk-service': [...BASE, ...MESSAGING, 'pagination.js'],
+  'services/care-plan-service': [...BASE, 'pagination.js'],
   'services/legacy-emr-adapter': BASE,
   'api-gateway': ['logger.js', 'resilientHttp.js', 'secrets.js'],
   'integration/node-red': ['secrets.js'],

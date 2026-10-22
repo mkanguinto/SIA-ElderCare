@@ -2,7 +2,7 @@
 // One-command local setup (no Docker). Creates every service's .env from its .env.example with
 //   - one freshly generated INTERNAL_SERVICE_TOKEN shared by all services
 //   - freshly generated JWT_SECRET / JWT_REFRESH_SECRET for the gateway
-//   - DATABASE ISOLATION: each service gets its OWN PostgreSQL login (checkin_svc, alert_svc, clinic_svc)
+//   - DATABASE ISOLATION: each service gets its OWN PostgreSQL login (checkin_svc, alert_svc, clinic_svc, care_svc)
 //     with a random password and CONNECT rights to its own database only. Cross-database access with
 //     another service's credentials is refused by PostgreSQL itself (professor's evaluation, Section 18).
 //   - messaging: --amqp <url> to use a local RabbitMQ, otherwise EVENT_TRANSPORT=http (direct REST fallback)
@@ -41,6 +41,7 @@ const DBS = {
   'services/checkin-service': { db: 'checkin_db', role: 'checkin_svc', password: rand(18) },
   'services/alert-service': { db: 'alert_db', role: 'alert_svc', password: rand(18) },
   'services/clinic-risk-service': { db: 'clinic_db', role: 'clinic_svc', password: rand(18) },
+  'services/care-plan-service': { db: 'care_db', role: 'care_svc', password: rand(18) },
 };
 const dbUrl = (d) => `postgres://${d.role}:${encodeURIComponent(d.password)}@${host}:${port}/${d.db}`;
 const messaging = amqp ? { EVENT_TRANSPORT: 'rabbitmq', AMQP_URL: amqp } : { EVENT_TRANSPORT: 'http', AMQP_URL: '' };
@@ -51,6 +52,7 @@ const SERVICES = {
   'services/alert-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/alert-service']), SMS_DRY_RUN: 'true', ...messaging },
   'services/clinic-risk-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/clinic-risk-service']), ...messaging },
   'services/legacy-emr-adapter': { INTERNAL_SERVICE_TOKEN: internalToken },
+  'services/care-plan-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/care-plan-service']), SEED_DEMO_DATA: 'true' },
 };
 
 function isolationSql() {
@@ -129,7 +131,7 @@ async function applyDatabaseIsolation() {
   }
   try {
     if (await applyDatabaseIsolation()) {
-      console.log('\nDatabase isolation applied: checkin_svc -> checkin_db, alert_svc -> alert_db, clinic_svc -> clinic_db (no shared logins).');
+      console.log('\nDatabase isolation applied: checkin_svc -> checkin_db, alert_svc -> alert_db, clinic_svc -> clinic_db, care_svc -> care_db (no shared logins).');
     } else {
       const file = path.join(root, 'scripts', '.local-db-isolation.sql');
       const dbLines = Object.values(DBS).flatMap((d) => [`CREATE DATABASE ${d.db} OWNER ${d.role};`, `REVOKE ALL ON DATABASE ${d.db} FROM PUBLIC;`, `GRANT CONNECT, TEMP ON DATABASE ${d.db} TO ${d.role};`]);
