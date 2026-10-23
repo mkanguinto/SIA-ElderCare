@@ -9,6 +9,9 @@
  * |--------|-------------------------------------|-------------------------------------|------------------------|
  * | POST   | /api/checkins                       | caregiver                           | Daily Check-In Logger  |
  * | GET    | /api/patients/:id/history           | caregiver, family, clinic, admin    | Daily Check-In Logger  |
+ * | GET    | /api/checkins/review-queue          | clinic, admin                       | Daily Check-In Logger  |
+ * | GET    | /api/checkins/:id                   | caregiver, family (own), clinic, admin | Daily Check-In Logger |
+ * | POST   | /api/checkins/:id/review|action     | clinic                              | Daily Check-In Logger  |
  * | POST   | /api/alerts/dispatch                | clinic, admin                       | Family Alert & Notif.  |
  * | GET    | /api/clinic/queue                   | clinic, admin                       | Clinic Risk Queue      |
  * Supporting routes used by the dashboards:
@@ -58,6 +61,13 @@ router.post(
   requireBodyPatientAccess('patientId'),
   forwardTo('checkin'),
 );
+
+// Check-in monitoring status: Received -> Awaiting review -> Reviewed -> Action recorded
+router.get('/checkins/review-queue', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
+// The check-in id does not name the patient: the check-in service checks it against X-User-Patients.
+router.get('/checkins/:id', authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
+router.post('/checkins/:id/review', authorize(ROLES.CLINIC), forwardTo('checkin'));
+router.post('/checkins/:id/action', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 router.get(
   '/patients/:id/history',

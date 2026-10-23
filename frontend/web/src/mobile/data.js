@@ -136,7 +136,7 @@ export function explainAlert(n, patient) {
 }
 
 /** Live warnings while the caregiver types vitals (C2). Mirrors the check-in service thresholds. */
-export function vitalsWarning(v) {
+export function vitalsWarning(v, baseline) {
   const n = (x) => (x === '' || x == null ? null : Number(x));
   const sys = n(v.systolic); const dia = n(v.diastolic); const spo2 = n(v.spo2); const t = n(v.temperatureC); const hr = n(v.heartRate);
   if ((sys && sys >= 180) || (dia && dia >= 120)) return { tone: 'critical', en: 'Blood pressure looks very high. Re-check after 5 minutes of rest.', fil: 'Napakataas ng presyon. Sukatin muli pagkatapos ng 5 minutong pahinga.' };
@@ -144,7 +144,10 @@ export function vitalsWarning(v) {
   if (t && t >= 39) return { tone: 'critical', en: 'High fever. Give fluids and call the clinic.', fil: 'Mataas na lagnat. Painumin ng tubig at tumawag sa klinika.' };
   if (sys && sys < 90) return { tone: 'high', en: 'Blood pressure looks low. Let them sit or lie down and re-check.', fil: 'Mababa ang presyon. Paupuin o pahigain at sukatin muli.' };
   if ((hr && (hr > 120 || hr < 50))) return { tone: 'high', en: 'Heart rate is outside the safe range. Re-check after resting.', fil: 'Hindi normal ang tibok ng puso. Sukatin muli pagkatapos magpahinga.' };
-  if ((sys && sys >= 140) || (dia && dia >= 90) || (t && t >= 37.8) || (spo2 && spo2 < 95)) return { tone: 'moderate', en: 'Some readings are higher than normal. The clinic will see them.', fil: 'May ilang sukat na mas mataas sa normal. Makikita ito ng klinika.' };
+  // Same thresholds as the check-in service (anomaly.js): 160/100 is high; 25 above the usual top number is flagged.
+  if ((sys && sys >= 160) || (dia && dia >= 100)) return { tone: 'high', en: 'Blood pressure is high. The clinic will be alerted.', fil: 'Mataas ang presyon. Aabisuhan ang klinika.' };
+  if (sys && baseline && baseline.systolic && sys - baseline.systolic >= 25) return { tone: 'moderate', en: `Higher than usual (${baseline.systolic}/${baseline.diastolic}). The clinic will see it.`, fil: `Mas mataas sa karaniwan (${baseline.systolic}/${baseline.diastolic}). Makikita ito ng klinika.` };
+  if ((t && t >= 37.8) || (spo2 && spo2 < 95)) return { tone: 'moderate', en: 'Some readings are outside the normal range. The clinic will see them.', fil: 'May sukat na labas sa normal. Makikita ito ng klinika.' };
   return null;
 }
 

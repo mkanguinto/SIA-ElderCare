@@ -7,6 +7,7 @@ import { age, initials, relTime, REASON_LABEL, VISIT_TYPE_LABEL } from '../forma
 import Icon from './icons';
 import { Profile } from './common';
 import { WeekStrip } from './caregiver';
+import { StatusChip } from './status';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
   isToday, clock, manilaDay, hhmm, toneFor, PRIORITY_TONE,
@@ -35,6 +36,7 @@ export default function NurseApp({ user, path }) {
   else if (sub === '/patients') screen = <Patients />;
   else if (sub === '/visits') screen = <Visits />;
   else if (sub === '/digest') screen = <Digest />;
+  else if (sub === '/reviews') screen = <Reviews />;
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} desktopTo="/clinic" />;
   else screen = <Queue user={user} />;
   return (
@@ -102,6 +104,7 @@ function Queue({ user }) {
           <Banner tone="info" icon="bell">{weather[0].detail}. {tr(`${new Set(weather.map((w) => w.patient)).size} patient(s) flagged by the weather check.`, `${new Set(weather.map((w) => w.patient)).size} pasyente ang na-flag dahil sa panahon.`)}</Banner>
         </div>
       )}
+      <ReviewsLink />
       <label className="m-search" style={{ marginTop: '.75rem' }}>
         <Icon name="search" />
         <span className="m-sr">{tr('Search', 'Hanapin')}</span>
@@ -218,6 +221,8 @@ function PatientDetail({ user, patientId }) {
           </ul>
         </section>
       )}
+
+      <PatientReviews patientId={patientId} />
 
       {week && (
         <section className="m-card">
@@ -514,3 +519,117 @@ function Digest() {
     </>
   );
 }
+
+/* ------------------------------ check-in review (monitoring status) ------------------------------ */
+const DEVICE_WORD = {
+  upper_arm_digital: 'upper-arm monitor', wrist_digital: 'wrist monitor', manual_aneroid: 'manual cuff', bluetooth_monitor: 'Bluetooth monitor',
+  digital_oral: 'oral thermometer', digital_axillary: 'underarm thermometer', infrared_forehead: 'forehead thermometer', infrared_ear: 'ear thermometer', fingertip: 'fingertip oximeter',
+};
+
+function useReviewQueue(patientId) {
+  const [data, setData] = useState(null);
+  const load = useCallback(() => api(`/api/checkins/review-queue?pageSize=30${patientId ? `&patientId=${encodeURIComponent(patientId)}` : ''}`)
+    .then(setData).catch((e) => setData({ error: e.message })), [patientId]);
+  useEffect(() => { load(); }, [load]);
+  return [data, load];
+}
+
+function ReviewsLink() {
+  const tr = useT();
+  const [data] = useReviewQueue();
+  if (!data || data.error) return null;
+  const n = data.pagination.totalItems;
+  return (
+    <Link to={`${BASE}/reviews`} className="m-list-row" style={{ marginTop: '.75rem' }}>
+      <span className={`m-thumb ${n ? 'tone-moderate' : 'tone-ok'}`} aria-hidden="true"><Icon name="eye" /></span>
+      <span className="m-grow"><strong>{n ? tr(`${n} check-in${n === 1 ? '' : 's'} to review`, `${n} check-in na susuriin`) : tr('All check-ins reviewed', 'Nasuri na ang lahat')}</strong>
+        <span className="m-sub">{tr('Mark them reviewed and record what you did', 'Markahan at itala ang ginawa')}</span></span>
+      <Icon name="chevron" />
+    </Link>
+  );
+}
+
+function Reviews() {
+  const tr = useT();
+  const [data, reload] = useReviewQueue();
+  return (
+    <>
+      <TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={BASE} />
+      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('Most serious first. The caregiver and family see when you review a check-in and what you did.', 'Inuuna ang pinakaseryoso. Makikita ng tagapag-alaga at pamilya ang iyong pagsusuri.')}</p>
+      {!data && <Loader />}
+      {data && data.error && <p className="m-error">{data.error}</p>}
+      {data && data.checkins && !data.checkins.length && <div className="m-note"><strong>{tr('Nothing to review', 'Walang susuriin')}</strong>{tr('New check-ins appear here as they arrive.', 'Lalabas dito ang mga bagong check-in.')}</div>}
+      <div className="m-stack">{data && data.checkins && data.checkins.map((c) => <ReviewCard key={c.id} c={c} onDone={reload} showPatient />)}</div>
+      {data && data.pagination && data.pagination.totalItems > (data.checkins || []).length && <p className="m-caption" style={{ marginTop: '.75rem' }}>{tr(`Showing ${data.checkins.length} of ${data.pagination.totalItems}.`, `${data.checkins.length} sa ${data.pagination.totalItems}.`)}</p>}
+    </>
+  );
+}
+
+function PatientReviews({ patientId }) {
+  const tr = useT();
+  const [data, reload] = useReviewQueue(patientId);
+  if (!data || data.error || !data.checkins.length) return null;
+  return (
+    <section style={{ marginTop: '.75rem' }}>
+      <h2 className="m-section-title" style={{ marginTop: 0 }}>{tr('Check-ins to review', 'Susuriing check-in')}</h2>
+      <div className="m-stack">{data.checkins.slice(0, 5).map((c) => <ReviewCard key={c.id} c={c} onDone={reload} />)}</div>
+    </section>
+  );
+}
+
+/** One check-in awaiting the nurse: Mark reviewed (optional note) or Record action (required). */
+function ReviewCard({ c, onDone, showPatient = false }) {
+  const tr = useT();
+  const [mode, setMode] = useState(null); // null | 'review' | 'action'
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const devices = c.measurementDevice ? Object.values(c.measurementDevice).map((d) => DEVICE_WORD[d] || d).join(', ') : null;
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/checkins/${c.id}/${mode}`, { method: 'POST', body: mode === 'action' ? { action: text.trim() } : (text.trim() ? { note: text.trim() } : {}) });
+      setMode(null);
+      setText('');
+      onDone();
+    } catch (err) { setError((err.details || [err.message]).join('. ')); } finally { setBusy(false); }
+  }
+
+  return (
+    <article className="m-card" style={{ marginTop: 0 }}>
+      <div className="m-between" style={{ alignItems: 'flex-start' }}>
+        <div className="m-grow">
+          {showPatient && <Link to={`${BASE}/patients/${c.patientId}`} className="m-link" style={{ padding: 0 }}>{c.patientName}</Link>}
+          <strong style={{ display: 'block', fontSize: '1.125rem' }}>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}
+            {c.vitals.heartRate ? ` · ${c.vitals.heartRate} bpm` : ''}{c.vitals.temperatureC ? ` · ${c.vitals.temperatureC} °C` : ''}</strong>
+          <span className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}{devices ? ` · ${devices}` : ''}</span>
+        </div>
+        <StatusChip status={c.status} />
+      </div>
+      {c.anomalies.length > 0 && <p style={{ marginTop: '.4rem', color: 'var(--text-critical)', fontSize: '.875rem', fontWeight: 700 }}>{c.anomalies.map((a) => a.message).join('; ')}</p>}
+      {c.notes && <p className="m-muted" style={{ fontSize: '.875rem', marginTop: '.3rem' }}>“{c.notes}”</p>}
+      {!mode && (
+        <div className="m-grid-2" style={{ marginTop: '.75rem' }}>
+          <button type="button" className="m-btn" onClick={() => setMode('review')}><Icon name="eye" size={18} />{tr('Mark reviewed', 'Markahang nasuri')}</button>
+          <button type="button" className="m-btn is-dark" onClick={() => setMode('action')}><Icon name="check" size={18} />{tr('Record action', 'Itala ang aksyon')}</button>
+        </div>
+      )}
+      {mode && (
+        <form className="m-stack" style={{ marginTop: '.75rem' }} onSubmit={submit}>
+          <label className="m-field"><span>{mode === 'action' ? tr('What did you do?', 'Ano ang ginawa mo?') : tr('Note (optional)', 'Tala (opsyonal)')}</span>
+            <textarea rows="2" maxLength={500} value={text} onChange={(e) => setText(e.target.value)} required={mode === 'action'} minLength={mode === 'action' ? 3 : undefined}
+              placeholder={mode === 'action' ? tr('e.g. Called the caregiver, advised rest and a recheck at 6 PM', 'hal. Tinawagan ang tagapag-alaga') : ''} autoFocus /></label>
+          {error && <p className="m-error" role="alert">{error}</p>}
+          <div className="m-grid-2">
+            <button type="button" className="m-btn" onClick={() => { setMode(null); setText(''); }}>{tr('Cancel', 'Kanselahin')}</button>
+            <button className="m-btn is-dark" disabled={busy || (mode === 'action' && text.trim().length < 3)}>{busy ? tr('Saving…', 'Sine-save…') : mode === 'action' ? tr('Save action', 'I-save') : tr('Mark reviewed', 'Markahan')}</button>
+          </div>
+        </form>
+      )}
+    </article>
+  );
+}
+

@@ -462,3 +462,25 @@
 .m-week > span:first-child { display: inline-flex; gap: .2rem; }
 .m-week i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--border-default); }
 .m-week i.is-done { background: var(--bg-primary); }
+
+/* Emergency notice (always visible on caregiver and family screens) */
+.m-emergency { position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem;
+  margin: -1rem -1.25rem 1rem; padding: .55rem 1.25rem; background: var(--bg-critical); color: var(--text-critical);
+  font-size: .8125rem; font-weight: 700; border-bottom: 1px solid rgba(168, 38, 29, .15); }
+@media (min-width: 40rem) { .m-emergency { border-radius: 2.5rem 2.5rem 0 0; } }
+.m-emergency span { flex: 1; min-width: 10rem; }
+.m-emergency a { color: #fff; background: var(--accent-critical); border-radius: 999px; padding: .35rem .8rem; text-decoration: none; min-height: 2rem; display: inline-flex; align-items: center; }
+
+/* Check-in status timeline */
+.m-status-steps { list-style: none; margin: 0; padding: 0; }
+.m-status-steps li { display: flex; gap: .75rem; padding-bottom: .9rem; position: relative; }
+.m-status-steps li:not(:last-child)::before { content: ''; position: absolute; left: .8rem; top: 1.7rem; bottom: .1rem; width: 2px; background: var(--border-default); }
+.m-status-steps li.is-done:not(:last-child)::before { background: var(--border-strong); }
+.m-status-steps strong { display: block; }
+.m-status-steps .m-sub { display: block; font-size: .8125rem; color: var(--text-secondary); }
+.m-status-dot { flex: none; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; background: var(--bg-surface); border: 2px solid var(--border-default); color: #fff; }
+.m-status-steps li.is-done .m-status-dot { background: var(--bg-primary); border-color: var(--bg-primary); }
+.m-status-steps li[aria-current='step'] strong { color: var(--text-brand); }
+.m-device { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .875rem; color: var(--text-secondary); }
+.m-device select { min-height: 2.5rem; border-radius: 999px; border: 1.5px solid var(--border-default); background: var(--bg-surface); padding: 0 .75rem; font-size: .875rem; }
+.m-card-link { display: block; text-decoration: none; color: inherit; }

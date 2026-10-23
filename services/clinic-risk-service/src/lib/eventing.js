@@ -36,7 +36,7 @@ function transportMode() {
  * @param {object} o.logger
  * @param {string} o.source  service name
  */
-function createEventing({ pool, logger, source }) {
+function createEventing({ pool, logger, source, onDelivered }) {
   const mode = transportMode();
   const bus = createBus({ url: mode === 'rabbitmq' ? process.env.AMQP_URL : 'memory://', serviceName: source, logger });
 
@@ -56,7 +56,7 @@ function createEventing({ pool, logger, source }) {
     }
   }
 
-  const outbox = createOutbox({ pool, logger, deliver, source });
+  const outbox = createOutbox({ pool, logger, deliver, source, onDelivered });
 
   return {
     mode,

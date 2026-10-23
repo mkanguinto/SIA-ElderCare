@@ -64,11 +64,30 @@ export const toneFor = (seed = '') => AVATAR_TONES[[...seed].reduce((a, c) => a 
 export const shortName = (n = '') => n.split(' ').slice(0, 2).join(' ');
 
 /* ------------------------------ layout ------------------------------ */
-export function MobileFrame({ children, plain = false }) {
+export function MobileFrame({ children, plain = false, emergency = false }) {
   return (
     <div className="m-root">
-      <main className={`m-app ${plain ? 'is-plain' : ''}`} id="main">{children}</main>
+      <main className={`m-app ${plain ? 'is-plain' : ''} ${emergency ? 'has-emergency' : ''}`} id="main">
+        {emergency && <EmergencyBar />}
+        {children}
+      </main>
     </div>
+  );
+}
+
+/**
+ * Health safeguard: the emergency number is on every caregiver and family screen (also inside the
+ * check-in), because this app is not an emergency service and a check-in is not a call for help.
+ */
+export function EmergencyBar() {
+  const tr = useT();
+  return (
+    <aside className="m-emergency" role="note" aria-label={tr('Emergency', 'Emergency')}>
+      <Icon name="alert" size={16} strokeWidth={2.4} />
+      <span>{tr('Emergency? Do not wait for the app.', 'Emergency? Huwag maghintay sa app.')}</span>
+      <a href={`tel:${EMERGENCY_PHONE}`}>{tr(`Call ${EMERGENCY_PHONE}`, `Tumawag sa ${EMERGENCY_PHONE}`)}</a>
+      {CLINIC_PHONE && <a href={`tel:${CLINIC_PHONE}`}>{tr('Clinic', 'Klinika')}</a>}
+    </aside>
   );
 }
 

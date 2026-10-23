@@ -4334,6 +4334,526 @@
           }
         }
       ]
+    },
+    {
+      "name": "10. Batch 5.1 - Check-in status flow (Received -> Awaiting review -> Reviewed -> Action recorded)",
+      "item": [
+        {
+          "name": "Caregiver submits a check-in with measuring devices -> 201, status received",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"starts as received\", () => pm.expect(c.status).to.eql(\"received\"));",
+                  "pm.test(\"devices stored\", () => pm.expect(c.measurementDevice).to.eql({ bp: \"upper_arm_digital\", thermometer: \"digital_oral\" }));",
+                  "pm.collectionVariables.set(\"statusCheckinId\", c.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"idempotencyKey\": \"pm-status-{{$timestamp}}\",\n  \"vitals\": {\n    \"systolic\": 152,\n    \"diastolic\": 96,\n    \"heartRate\": 88,\n    \"temperatureC\": 36.9\n  },\n  \"measurementDevice\": {\n    \"bp\": \"upper_arm_digital\",\n    \"thermometer\": \"digital_oral\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Invalid device -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"names the field\", () => pm.expect(pm.response.json().details.join(' ')).to.include(\"measurementDevice.bp\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 85\n  },\n  \"measurementDevice\": {\n    \"bp\": \"phone_camera\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Caregiver sees it awaiting review once it reached the clinic queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"awaiting review\", () => pm.expect(j.checkin.status).to.eql(\"awaiting_review\"));",
+                  "pm.test(\"log: received then awaiting_review, with timestamps\", () => {",
+                  "  pm.expect(j.statusLog.map((l) => l.status)).to.eql([\"received\", \"awaiting_review\"]);",
+                  "  j.statusLog.forEach((l) => pm.expect(Date.parse(l.changedAt)).to.be.a(\"number\"));",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// the outbox relay moves it to awaiting_review after the broker confirms (normally < 1 s)",
+                  "setTimeout(() => {}, 2500);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse review queue lists it",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"contains the new check-in with the patient name\", () => { const c = j.checkins.find((x) => x.id === pm.collectionVariables.get(\"statusCheckinId\")); pm.expect(c).to.be.ok; pm.expect(c.patientName).to.be.a(\"string\"); });",
+                  "pm.test(\"paginated\", () => pm.expect(j.pagination.totalItems).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?pageSize=200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "200"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caregiver cannot review -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Family cannot see the review queue -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse marks it reviewed -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"reviewed by the nurse\", () => { pm.expect(c.status).to.eql(\"reviewed\"); pm.expect(c.review.byId).to.eql(\"U-CS-001\"); pm.expect(c.review.byName).to.include(\"Ana\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"High but stable. Recheck tonight.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reviewing twice -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Action without text -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "action"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Nurse records the action -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"action recorded\", () => { pm.expect(j.checkin.status).to.eql(\"action_recorded\"); pm.expect(j.checkin.action.text).to.include(\"recheck\"); });",
+                  "pm.test(\"full timeline\", () => pm.expect(j.statusLog.map((l) => l.status)).to.eql([\"received\", \"awaiting_review\", \"reviewed\", \"action_recorded\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "action"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"Called the caregiver: rest, recheck at 6 PM\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Family sees the full status timeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"action_recorded with 4 steps\", () => { const j = pm.response.json(); pm.expect(j.checkin.status).to.eql(\"action_recorded\"); pm.expect(j.statusLog).to.have.length(4); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "History shows the status on each check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"every check-in has a status\", () => pm.response.json().checkins.forEach((c) => pm.expect([\"received\",\"awaiting_review\",\"reviewed\",\"action_recorded\"]).to.include(c.status)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/history?days=1&pageSize=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -4419,6 +4939,10 @@
     },
     {
       "key": "smsId",
+      "value": ""
+    },
+    {
+      "key": "statusCheckinId",
       "value": ""
     }
   ]

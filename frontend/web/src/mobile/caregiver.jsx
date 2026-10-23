@@ -11,6 +11,7 @@ import { useOutsideWeather, WeatherCard, toEnvironment, DANGEROUS_HEAT } from '.
 import { buildPlan, useChecklists, weekDays } from './plan';
 import { useReminders, remindersSupported, remindersOn, enableReminders, disableReminders } from './reminders';
 import { bluetoothSupported, readBloodPressure } from './bluetooth';
+import { StatusChip, StatusTimeline, statusLine } from './status';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
   isToday, clock, hhmm, manilaHour, toneFor, shortName, CLINIC_PHONE, EMERGENCY_PHONE, TONE,
@@ -63,10 +64,11 @@ export default function CaregiverApp({ user, path }) {
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
   else if (sub === '/alerts') screen = <CaregiverAlerts user={user} />;
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} extra={<ReminderSetting />} />;
+  else if (sub.startsWith('/checkins/')) screen = <CheckinDetail id={sub.split('/')[2]} />;
   else screen = <Home user={user} />;
   const wizard = sub.startsWith('/check-in');
   return (
-    <MobileFrame plain={wizard}>
+    <MobileFrame plain={wizard} emergency>
       {screen}
       {!wizard && <BottomNav items={NAV(tr)} />}
       <ReminderRunner user={user} />
@@ -171,7 +173,7 @@ function Home({ user }) {
       <h2 className="m-section-title">{tr('This week', 'Ngayong linggo')}</h2>
       <div className="m-stack">
         {status.flatMap((e) => e.checkins.map((c) => ({ ...c, who: e.fullName }))).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 6).map((c) => (
-          <div key={c.id} className="m-card" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
+          <Link key={c.id} to={`${BASE}/checkins/${c.id}`} className="m-card m-card-link" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
             <div className="m-between">
               <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}</strong>
               <Chip tone={TONE[c.severity] || 'ok'} icon={['none', 'low'].includes(c.severity) ? 'check' : 'alert'}>{SEVERITY_WORD[c.severity] ? tr(...SEVERITY_WORD[c.severity]) : c.severity}</Chip>
@@ -179,7 +181,11 @@ function Home({ user }) {
             <p className="m-caption">{c.who} · {isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}
               {[c.vitals.heartRate && ` · ${c.vitals.heartRate} bpm`, c.vitals.temperatureC && ` · ${c.vitals.temperatureC} °C`, c.vitals.spo2 && ` · ${c.vitals.spo2}%`, c.vitals.bloodGlucose && ` · ${c.vitals.bloodGlucose} mg/dL`].filter(Boolean).join('')}
               {c.medication.taken === false ? tr(' · medicine missed', ' · hindi nainom ang gamot') : ''}</p>
-          </div>
+            <div className="m-row" style={{ gap: '.5rem', marginTop: '.4rem', alignItems: 'center' }}>
+              <StatusChip status={c.status} />
+              <span className="m-caption" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine(c, tr)}</span>
+            </div>
+          </Link>
         ))}
       </div>
     </>
@@ -371,6 +377,79 @@ const REASONS = [
   ['Forgot', 'Nakalimutan'],
   ['Could not swallow / vomited', 'Hindi malunok / nagsuka'],
 ];
+/* ------------------------------ measurement devices (health safeguard) ------------------------------ */
+const BP_DEVICES = [
+  ['upper_arm_digital', 'Upper-arm digital monitor', 'Digital na pang-braso'],
+  ['wrist_digital', 'Wrist digital monitor', 'Digital na pang-pulso'],
+  ['manual_aneroid', 'Manual (stethoscope + cuff)', 'Manwal (stethoscope + cuff)'],
+  ['bluetooth_monitor', 'Bluetooth monitor', 'Bluetooth monitor'],
+];
+const THERMOMETERS = [
+  ['digital_oral', 'Digital, under the tongue', 'Digital, sa ilalim ng dila'],
+  ['digital_axillary', 'Digital, under the arm', 'Digital, sa kili-kili'],
+  ['infrared_forehead', 'Infrared, forehead', 'Infrared, noo'],
+  ['infrared_ear', 'Infrared, ear', 'Infrared, tainga'],
+];
+const DEVICE_DEFAULT = { bp: 'upper_arm_digital', thermometer: 'digital_oral' };
+function readDevices(userId) {
+  try { return { ...DEVICE_DEFAULT, ...JSON.parse(localStorage.getItem(`eldercare.devices.${userId}`)) }; } catch { return DEVICE_DEFAULT; }
+}
+function saveDevices(userId, d) {
+  try { localStorage.setItem(`eldercare.devices.${userId}`, JSON.stringify(d)); } catch { /* per-device convenience only */ }
+}
+
+/** Which devices the readings come from; remembered on this phone. Wrist cuffs read less reliably, so we say so. */
+function DevicePicker({ devices, setDevice }) {
+  const tr = useT();
+  const { lang } = usePrefs();
+  const label = (list, v) => { const x = list.find((d) => d[0] === v); return x ? (lang === 'fil' ? x[2] : x[1]) : v; };
+  return (
+    <div className="m-note" style={{ padding: '.75rem 1rem' }}>
+      <strong style={{ fontSize: '.875rem' }}>{tr('Measured with', 'Ginamit sa pagsukat')}</strong>
+      <label className="m-device">{tr('Blood pressure:', 'Presyon:')}
+        <select value={devices.bp} onChange={(e) => setDevice('bp', e.target.value)} aria-label={tr('Blood pressure device', 'Gamit sa presyon')}>
+          {BP_DEVICES.map(([k]) => <option key={k} value={k}>{label(BP_DEVICES, k)}</option>)}
+        </select>
+      </label>
+      <label className="m-device" style={{ marginTop: '.35rem' }}>{tr('Thermometer:', 'Thermometer:')}
+        <select value={devices.thermometer} onChange={(e) => setDevice('thermometer', e.target.value)} aria-label={tr('Thermometer type', 'Uri ng thermometer')}>
+          {THERMOMETERS.map(([k]) => <option key={k} value={k}>{label(THERMOMETERS, k)}</option>)}
+        </select>
+      </label>
+      {devices.bp === 'wrist_digital' && <p className="m-caption" style={{ marginTop: '.35rem' }}>{tr('Wrist monitors read less accurately: keep the wrist at heart level.', 'Hindi gaanong tumpak ang pang-pulso: itapat ang pulso sa puso.')}</p>}
+    </div>
+  );
+}
+
+/** One check-in with its review timeline (caregiver). */
+function CheckinDetail({ id }) {
+  const tr = useT();
+  const [data, setData] = useState(null);
+  useEffect(() => { api(`/api/checkins/${id}`).then(setData).catch((e) => setData({ error: e.message })); }, [id]);
+  const c = data && data.checkin;
+  return (
+    <>
+      <TopBar title={tr('Check-in', 'Check-in')} back={BASE} />
+      {!data && <Loader />}
+      {data && data.error && <p className="m-error">{data.error}</p>}
+      {c && (
+        <>
+          <section className="m-card">
+            <div className="m-between"><strong style={{ fontSize: '1.25rem' }}>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}</strong><StatusChip status={c.status} /></div>
+            <p className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}
+              {[c.vitals.heartRate && ` · ${c.vitals.heartRate} bpm`, c.vitals.temperatureC && ` · ${c.vitals.temperatureC} °C`, c.vitals.spo2 && ` · ${c.vitals.spo2}%`].filter(Boolean).join('')}</p>
+            {c.notes && <p className="m-muted" style={{ marginTop: '.35rem' }}>“{c.notes}”</p>}
+          </section>
+          <section className="m-card">
+            <h2 className="m-card-title">{tr('Status', 'Status')}</h2>
+            <StatusTimeline checkinId={c.id} />
+          </section>
+        </>
+      )}
+    </>
+  );
+}
+
 const STEP_NAMES = [['Vitals', 'Vital signs'], ['Medicines', 'Gamot'], ['Anything else?', 'May iba pa?']];
 
 /** One Back button: each tap goes one step back (step 3 -> 2 -> 1). Answers are kept. */
@@ -423,9 +502,11 @@ function CheckIn({ user }) {
   const patient = elders && elders.find((e) => e.id === patientId);
   const [tried, setTried] = useState(false);
   const [bt, setBt] = useState({ busy: false, msg: '' });
+  const [devices, setDevicesState] = useState(() => readDevices(user.id));
+  const setDevice = (k, v) => setDevicesState((d) => { const next = { ...d, [k]: v }; saveDevices(user.id, next); return next; });
   const errors = vitalErrors(vitals, { pair: tried });
   const hasErrors = Object.keys(errors).length > 0;
-  const warning = hasErrors ? null : vitalsWarning(vitals);
+  const warning = hasErrors ? null : vitalsWarning(vitals, patient && patient.baseline);
   const slot = slotOf(`${String(manilaHour()).padStart(2, '0')}:00`);
   const meds = useMemo(() => {
     if (!patient) return [];
@@ -444,6 +525,7 @@ function CheckIn({ user }) {
     try {
       const r = await readBloodPressure();
       setVitals((v) => ({ ...v, systolic: String(r.systolic), diastolic: String(r.diastolic), ...(r.heartRate ? { heartRate: String(r.heartRate) } : {}) }));
+      setDevicesState((d) => ({ ...d, bp: 'bluetooth_monitor' })); // this reading only; the saved choice stays
       setBt({ busy: false, msg: tr(`Read ${r.systolic}/${r.diastolic}${r.heartRate ? `, pulse ${r.heartRate}` : ''} from the monitor.`, `Nabasa: ${r.systolic}/${r.diastolic}.`) });
     } catch (e) {
       setBt({ busy: false, msg: e.name === 'NotFoundError' ? tr('No monitor was chosen.', 'Walang napiling monitor.') : e.message });
@@ -469,6 +551,11 @@ function CheckIn({ user }) {
       ...(symptoms.includes('confused') ? { mood: 'confused' } : mood ? { mood } : {}),
       ...(noteText ? { notes: noteText.slice(0, 2000) } : {}),
       ...(weather.status === 'ready' ? { environment: toEnvironment(weather.weather) } : {}),
+      measurementDevice: {
+        ...(v.systolic ? { bp: devices.bp } : {}),
+        ...(v.temperatureC ? { thermometer: devices.thermometer } : {}),
+        ...(v.spo2 ? { oximeter: 'fingertip' } : {}),
+      },
     };
   }
 
@@ -530,6 +617,7 @@ function CheckIn({ user }) {
             {bluetoothSupported() && <button type="button" className="m-link" onClick={readMonitor} disabled={bt.busy}><Icon name="zap" size={16} /> {bt.busy ? tr('Connecting…', 'Kumokonekta…') : tr('Read from Bluetooth monitor', 'Basahin mula sa Bluetooth monitor')}</button>}
           </div>
           {bt.msg && <p className="m-caption" role="status">{bt.msg}</p>}
+          <DevicePicker devices={devices} setDevice={setDevice} />
           <div className="m-grid-2">
             <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
             <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
@@ -686,6 +774,10 @@ function Sent({ sent, patient }) {
             </li>
           )}
         </ul>
+      </section>
+      <section className="m-card">
+        <h2 className="m-card-title">{tr('Check-in status', 'Status ng check-in')}</h2>
+        <StatusTimeline checkinId={c.id} />
       </section>
       <div className="m-footer-actions">
         {CLINIC_PHONE && <a className="m-btn is-block" href={`tel:${CLINIC_PHONE}`}>{tr('Call the clinic', 'Tawagan ang klinika')}</a>}

@@ -247,4 +247,28 @@ ok(r.s === 200 && typeof r.j.adherence.scheduled === 'number' && r.j.adherence.c
   `family sees adherence: ${r.j.adherence && r.j.adherence.rate}% of ${r.j.adherence && r.j.adherence.scheduled} scheduled duties this week`);
 ok((await call('GET', '/api/admin/health', admin)).j.services.some((x) => x.name === 'care' && x.status === 'up'), 'admin health includes the care-plan service');
 
+// ---- Batch 5.1: check-in monitoring status (Received -> Awaiting review -> Reviewed -> Action recorded) ----
+console.log('\n-- Check-in status flow --');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 150, diastolic: 94 }, measurementDevice: { bp: 'wrist_digital' } });
+const statusId = r.j && r.j.checkin && r.j.checkin.id;
+ok(r.s === 201 && r.j.checkin.status === 'received' && r.j.checkin.measurementDevice.bp === 'wrist_digital', 'check-in saved as received with its measuring device');
+let st = null;
+for (let i = 0; i < 10; i++) {
+  st = (await call('GET', `/api/checkins/${statusId}`, cg)).j;
+  if (st && st.checkin && st.checkin.status === 'awaiting_review') break;
+  await new Promise((res) => setTimeout(res, 500));
+}
+ok(st && st.checkin.status === 'awaiting_review' && st.statusLog.length === 2, 'moves to awaiting review once delivered to the clinic queue');
+r = await call('GET', '/api/checkins/review-queue?pageSize=200', nurse);
+ok(r.s === 200 && r.j.checkins.some((c) => c.id === statusId), 'nurse review queue lists it');
+ok((await call('POST', `/api/checkins/${statusId}/review`, cg, {})).s === 403, 'caregiver cannot review (403)');
+r = await call('POST', `/api/checkins/${statusId}/review`, nurse, { note: 'smoke test review' });
+ok(r.s === 200 && r.j.checkin.status === 'reviewed' && r.j.checkin.review.byId === 'U-CS-001', 'nurse marks it reviewed');
+ok((await call('POST', `/api/checkins/${statusId}/review`, nurse, {})).s === 409, 'cannot be reviewed twice (409)');
+ok((await call('POST', `/api/checkins/${statusId}/action`, nurse, {})).s === 422, 'an action needs text (422)');
+r = await call('POST', `/api/checkins/${statusId}/action`, nurse, { action: 'Smoke test: advised an upper-arm cuff' });
+ok(r.s === 200 && r.j.checkin.status === 'action_recorded', 'nurse records the action');
+r = await call('GET', `/api/checkins/${statusId}`, fam);
+ok(r.s === 200 && r.j.statusLog.map((l) => l.status).join('>') === 'received>awaiting_review>reviewed>action_recorded', 'family sees the full timestamped timeline');
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

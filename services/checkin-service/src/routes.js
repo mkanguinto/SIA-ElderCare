@@ -75,6 +75,10 @@ function toCheckinDto(r) {
     mobilityStatus: r.mobility_status,
     mood: r.mood,
     environment: r.environment || null,
+    measurementDevice: r.measurement_device || null,
+    status: r.status || 'received',
+    review: r.reviewed_at ? { byId: r.reviewed_by_nurse, byName: r.reviewed_by_name, at: r.reviewed_at, note: r.review_note } : null,
+    action: r.action_at ? { text: r.action_taken, byId: r.action_by, byName: r.action_by_name, at: r.action_at } : null,
     notes: r.notes,
     anomalies: r.anomalies,
     severity: r.severity,
@@ -99,7 +103,7 @@ function assertPatientScope(req, res, patientId) {
  * @param {string[]|null} allowedPatients  caregiver's assigned patients (null = already verified upstream)
  * @returns {Promise<{status:number, body:object}>}
  */
-async function createCheckin(caregiverId, allowedPatients, input, requestId) {
+async function createCheckin(caregiverId, allowedPatients, input, requestId, { caregiverName, viaSms = false } = {}) {
   const result = validateCheckin(input);
   if (!result.ok) return { status: 422, body: { error: 'validation_failed', details: result.errors } };
   const c = result.value;
@@ -123,13 +127,15 @@ async function createCheckin(caregiverId, allowedPatients, input, requestId) {
     const { rows } = await client.query(
       `INSERT INTO checkins (patient_id, caregiver_id, idempotency_key, recorded_at, systolic, diastolic, heart_rate,
                              temperature_c, spo2, blood_glucose, medication_taken, missed_medications, mobility_status,
-                             mood, notes, anomalies, severity, severity_score, environment)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+                             mood, notes, anomalies, severity, severity_score, environment, measurement_device)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
       [c.patientId, caregiverId, c.idempotencyKey, c.recordedAt, c.vitals.systolic, c.vitals.diastolic, c.vitals.heartRate,
         c.vitals.temperatureC, c.vitals.spo2, c.vitals.bloodGlucose, c.medication.taken, c.medication.missed, c.mobilityStatus,
         c.mood, c.notes, JSON.stringify(detection.anomalies), detection.severity, detection.severityScore,
-        c.environment ? JSON.stringify(c.environment) : null],
+        c.environment ? JSON.stringify(c.environment) : null, c.measurementDevice ? JSON.stringify(c.measurementDevice) : null],
     );
+    await client.query(`INSERT INTO checkin_status_log (checkin_id, status, changed_by, changed_by_name, note) VALUES ($1, 'received', $2, $3, $4)`,
+      [rows[0].id, caregiverId, caregiverName || null, viaSms ? 'received by SMS' : null]);
     const checkin = toCheckinDto(rows[0]);
     let event = null;
     const patientRef = { id: patient.id, fullName: patient.fullName, zipCode: patient.zipCode, conditions: patient.conditions, mobilityRestricted: patient.mobilityRestricted, assignedClinic: patient.assignedClinic };
@@ -168,7 +174,7 @@ router.post('/api/checkins', async (req, res, next) => {
     if (!req.user || req.user.role !== 'caregiver') {
       return res.status(403).json({ error: 'forbidden', message: 'Only caregivers can submit check-ins' });
     }
-    const r = await createCheckin(req.user.id, req.user.patients, req.body, req.get('x-request-id'));
+    const r = await createCheckin(req.user.id, req.user.patients, req.body, req.get('x-request-id'), { caregiverName: req.user.name });
     return res.status(r.status).json(r.body);
   } catch (err) {
     return next(err);
@@ -184,7 +190,7 @@ router.post('/internal/checkins', async (req, res, next) => {
     if (!caregiverId || !Array.isArray(allowedPatients) || !allowedPatients.length || !checkin) {
       return res.status(400).json({ error: 'bad_request', message: 'caregiverId, allowedPatients[] and checkin are required' });
     }
-    const r = await createCheckin(String(caregiverId), allowedPatients.map(String), checkin, req.get('x-request-id'));
+    const r = await createCheckin(String(caregiverId), allowedPatients.map(String), checkin, req.get('x-request-id'), { viaSms: true });
     return res.status(r.status).json(r.body);
   } catch (err) {
     return next(err);
@@ -452,4 +458,8 @@ router.get('/internal/locations', async (req, res, next) => {
   }
 });
 
+// Check-in review status (Received -> Awaiting review -> Reviewed -> Action recorded); behind the same internal-token check.
+router.use(require('./reviewRoutes'));
+
 module.exports = router;
+module.exports.toCheckinDto = toCheckinDto;

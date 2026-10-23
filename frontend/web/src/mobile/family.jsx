@@ -7,6 +7,7 @@ import { todaysDoses, SLOTS, slotOf, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications, CallClinic } from './common';
 import { DoseRow, WeekStrip } from './caregiver';
 import { DutiesScreen, DutiesSummary } from './duties';
+import { StatusChip, statusLine } from './status';
 import { conditionLabel, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Chip, Loader, useT, usePrefs,
@@ -54,7 +55,7 @@ export default function FamilyApp({ user, path }) {
   else if (sub === '/duties') screen = <FamilyDuties patientId={patientId} />;
   else screen = <Today user={user} patientId={patientId} />;
   return (
-    <MobileFrame>
+    <MobileFrame emergency>
       {screen}
       <BottomNav items={NAV(tr)} />
     </MobileFrame>
@@ -120,6 +121,12 @@ function Today({ user, patientId }) {
         {today ? tr(`Today's check-in was sent at ${clock(today.recordedAt)} by the caregiver.`, `Naipadala ang check-in ngayong ${clock(today.recordedAt)}.`)
           : latest ? tr(`Last check-in ${clock(latest.recordedAt)}, ${manilaDay(latest.recordedAt)}.`, `Huling check-in ${manilaDay(latest.recordedAt)}.`) : tr('No check-ins yet.', 'Wala pang check-in.')}
       </p>
+      {latest && (
+        <div className="m-row" style={{ gap: '.5rem', marginTop: '.5rem', alignItems: 'center' }}>
+          <StatusChip status={latest.status} />
+          <span className="m-caption" style={{ flex: 1 }}>{statusLine(latest, tr)}</span>
+        </div>
+      )}
       {(p.conditions.length > 0 || p.mobilityRestricted) && (
         <div className="m-pills" style={{ margin: '.6rem 0 .25rem', gap: '.35rem' }}>
           {p.conditions.map((c) => <Chip key={c}>{conditionLabel(c)}</Chip>)}

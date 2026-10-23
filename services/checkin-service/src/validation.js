@@ -19,6 +19,13 @@ const MOBILITY = ['normal', 'assisted', 'wheelchair', 'bedridden', 'fall_reporte
 const MOOD = ['good', 'neutral', 'low', 'confused', 'agitated'];
 const MAX_NOTES = 2000;
 const ENV_SOURCES = ['device_location', 'patient_address'];
+// Which device each reading came from (health safeguard: readings from wrist cuffs or forehead thermometers
+// are less reliable, and a nurse should know when a reading came from a different device than usual).
+const DEVICES = {
+  bp: ['upper_arm_digital', 'wrist_digital', 'manual_aneroid', 'bluetooth_monitor'],
+  thermometer: ['digital_oral', 'digital_axillary', 'infrared_forehead', 'infrared_ear'],
+  oximeter: ['fingertip'],
+};
 
 function isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -103,6 +110,21 @@ function validateCheckin(body, now = new Date()) {
     }
   }
 
+  let measurementDevice = null;
+  if (body.measurementDevice !== undefined && body.measurementDevice !== null) {
+    const d = body.measurementDevice;
+    if (typeof d !== 'object' || Array.isArray(d)) errors.push('measurementDevice must be an object');
+    else {
+      measurementDevice = {};
+      for (const [k, v] of Object.entries(d)) {
+        if (!DEVICES[k]) errors.push(`measurementDevice.${k} is not a known device type (bp, thermometer, oximeter)`);
+        else if (!DEVICES[k].includes(v)) errors.push(`measurementDevice.${k} must be one of: ${DEVICES[k].join(', ')}`);
+        else measurementDevice[k] = v;
+      }
+      if (!Object.keys(measurementDevice).length) measurementDevice = null;
+    }
+  }
+
   if (!Object.keys(vitals).length && med.taken === undefined && !body.mobilityStatus && !body.notes) {
     errors.push('Provide at least one vital sign, medication status, mobility status or note');
   }
@@ -120,8 +142,9 @@ function validateCheckin(body, now = new Date()) {
       recordedAt,
       idempotencyKey: body.idempotencyKey ? String(body.idempotencyKey) : null,
       environment,
+      measurementDevice,
     },
   };
 }
 
-module.exports = { validateCheckin, RANGES, MOBILITY, MOOD };
+module.exports = { validateCheckin, RANGES, MOBILITY, MOOD, DEVICES };
