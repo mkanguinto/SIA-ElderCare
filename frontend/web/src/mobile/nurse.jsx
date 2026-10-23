@@ -6,6 +6,7 @@ import { Link, navigate } from '../router';
 import { age, initials, relTime, REASON_LABEL, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
 import { Profile } from './common';
+import { WeekStrip } from './caregiver';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
   isToday, clock, manilaDay, hhmm, toneFor, PRIORITY_TONE,
@@ -153,10 +154,12 @@ function PatientDetail({ user, patientId }) {
   const [patient, setPatient] = useState(null);
   const [item, setItem] = useState(undefined);
   const [emr, setEmr] = useState(null);
+  const [week, setWeek] = useState(null);
   const [busy, setBusy] = useState(false);
   const loadItem = useCallback(() => api(`/api/clinic/queue?patientId=${encodeURIComponent(patientId)}`).then((r) => setItem(r.items[0] || null)).catch(() => setItem(null)), [patientId]);
   useEffect(() => {
     api(`/api/patients/${encodeURIComponent(patientId)}`).then(setPatient).catch((e) => setPatient({ error: e.message }));
+    api(`/api/patients/${encodeURIComponent(patientId)}/history?days=7&limit=60`).then((h) => setWeek(h.checkins)).catch(() => setWeek([]));
     api(`/api/clinic/patients/${encodeURIComponent(patientId)}/emr-history`).then((r) => setEmr(r.history)).catch((e) => setEmr({ error: e.message }));
     loadItem();
   }, [patientId, loadItem]);
@@ -213,6 +216,23 @@ function PatientDetail({ user, patientId }) {
           <ul className="m-steps-list" style={{ marginTop: '.5rem' }}>
             {item.reasons.slice(0, 3).map((x) => <li key={`${x.at}${x.detail}`}><Icon name={x.type === 'environmental_risk' ? 'zap' : 'alert'} size={18} /><div><strong style={{ fontSize: '.9375rem' }}>{x.detail}</strong><span className="m-sub">{REASON_LABEL[x.type]} · {relTime(x.at)}</span></div></li>)}
           </ul>
+        </section>
+      )}
+
+      {week && (
+        <section className="m-card">
+          <h2 className="m-card-title">{tr('This week', 'Ngayong linggo')}</h2>
+          <WeekStrip checkins={week} />
+          {week[0] && (
+            <p className="m-muted" style={{ fontSize: '.9375rem', marginTop: '.6rem' }}>
+              {tr('Last check-in', 'Huling check-in')} {isToday(week[0].recordedAt) ? clock(week[0].recordedAt) : relTime(week[0].recordedAt)}
+              {week[0].vitals.temperatureC ? tr(` · body ${week[0].vitals.temperatureC} °C`, ` · katawan ${week[0].vitals.temperatureC} °C`) : ''}
+              {week[0].environment && week[0].environment.outsideTempC != null
+                ? tr(` · outside ${Math.round(week[0].environment.outsideTempC)} °C (feels ${Math.round(week[0].environment.heatIndexC ?? week[0].environment.outsideTempC)} °C${week[0].environment.locationName ? `, ${week[0].environment.locationName}` : ''})`,
+                  ` · sa labas ${Math.round(week[0].environment.outsideTempC)} °C`)
+                : ''}
+            </p>
+          )}
         </section>
       )}
 

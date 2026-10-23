@@ -445,3 +445,20 @@
 .m-weather.tone-high { background: var(--bg-high); color: var(--text-high); }
 .m-weather.tone-critical { background: var(--bg-critical); color: var(--text-critical); }
 .m-weather .m-caption, .m-weather .m-muted { color: inherit; opacity: .85; }
+
+/* Today's plan timeline and weekly check-in strip */
+.m-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.m-plan-item { display: flex; align-items: center; gap: .75rem; padding: .75rem .875rem; border-radius: 1.25rem; background: var(--bg-surface); text-decoration: none; color: inherit; }
+.m-plan-item strong { display: block; font-size: .9375rem; }
+.m-plan-item .m-sub { display: block; font-size: .8125rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: .1rem 0 .35rem; }
+.m-plan-item { align-items: flex-start; }
+.m-plan-item .m-plan-time { padding-top: .6rem; }
+.m-plan-item.is-done, .m-plan-item.is-skipped { opacity: .7; }
+.m-plan-item.is-overdue, .m-plan-item.is-missed { box-shadow: inset 4px 0 0 var(--accent-high); }
+.m-plan-time { flex: none; width: 3.9rem; font-weight: 700; font-size: .875rem; color: var(--text-secondary); }
+.m-plan-now { display: flex; align-items: center; gap: .5rem; color: var(--text-brand); font-size: .8125rem; font-weight: 700; }
+.m-plan-now::before, .m-plan-now::after { content: ''; height: 2px; background: var(--border-strong); flex: 1; }
+.m-week { display: flex; align-items: center; gap: .5rem; margin-top: .45rem; font-size: .8125rem; color: var(--text-secondary); }
+.m-week > span:first-child { display: inline-flex; gap: .2rem; }
+.m-week i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--border-default); }
+.m-week i.is-done { background: var(--bg-primary); }

@@ -18,6 +18,7 @@ const RANGES = {
 const MOBILITY = ['normal', 'assisted', 'wheelchair', 'bedridden', 'fall_reported'];
 const MOOD = ['good', 'neutral', 'low', 'confused', 'agitated'];
 const MAX_NOTES = 2000;
+const ENV_SOURCES = ['device_location', 'patient_address'];
 
 function isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -75,6 +76,33 @@ function validateCheckin(body, now = new Date()) {
     errors.push('idempotencyKey must be 8-100 chars (letters, digits, _ or -)');
   }
 
+  // Optional outdoor conditions at the time of the check-in (shown to nurses next to body temperature).
+  let environment = null;
+  if (body.environment !== undefined && body.environment !== null) {
+    const e = body.environment;
+    if (typeof e !== 'object' || Array.isArray(e)) errors.push('environment must be an object');
+    else {
+      const num = (k, lo, hi) => {
+        if (e[k] === undefined || e[k] === null) return undefined;
+        if (!isNum(e[k]) || e[k] < lo || e[k] > hi) { errors.push(`environment.${k} must be between ${lo} and ${hi}`); return undefined; }
+        return Math.round(e[k] * 10) / 10;
+      };
+      environment = {
+        outsideTempC: num('outsideTempC', -30, 60),
+        heatIndexC: num('heatIndexC', -30, 80),
+        humidity: num('humidity', 0, 100),
+      };
+      if (e.locationName !== undefined && e.locationName !== null) {
+        if (typeof e.locationName !== 'string' || e.locationName.length > 80) errors.push('environment.locationName must be a string of at most 80 characters');
+        else environment.locationName = e.locationName.trim();
+      }
+      if (e.source !== undefined && !ENV_SOURCES.includes(e.source)) errors.push(`environment.source must be one of: ${ENV_SOURCES.join(', ')}`);
+      else if (e.source) environment.source = e.source;
+      environment = Object.fromEntries(Object.entries(environment).filter(([, v]) => v !== undefined));
+      if (!Object.keys(environment).length) environment = null;
+    }
+  }
+
   if (!Object.keys(vitals).length && med.taken === undefined && !body.mobilityStatus && !body.notes) {
     errors.push('Provide at least one vital sign, medication status, mobility status or note');
   }
@@ -91,6 +119,7 @@ function validateCheckin(body, now = new Date()) {
       notes: body.notes ? body.notes.trim() : null,
       recordedAt,
       idempotencyKey: body.idempotencyKey ? String(body.idempotencyKey) : null,
+      environment,
     },
   };
 }

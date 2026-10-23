@@ -6,7 +6,11 @@ import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
 import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, vitalErrors, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications } from './common';
-import { DutiesScreen, DutiesSummary } from './duties';
+import { DutiesScreen } from './duties';
+import { useOutsideWeather, WeatherCard, toEnvironment, DANGEROUS_HEAT } from './weather';
+import { buildPlan, useChecklists, weekDays } from './plan';
+import { useReminders, remindersSupported, remindersOn, enableReminders, disableReminders } from './reminders';
+import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
   isToday, clock, hhmm, manilaHour, toneFor, shortName, CLINIC_PHONE, EMERGENCY_PHONE, TONE,
@@ -58,13 +62,14 @@ export default function CaregiverApp({ user, path }) {
   else if (sub === '/duties') screen = <Duties user={user} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
   else if (sub === '/alerts') screen = <CaregiverAlerts user={user} />;
-  else if (sub === '/profile') screen = <Profile user={user} back={BASE} />;
+  else if (sub === '/profile') screen = <Profile user={user} back={BASE} extra={<ReminderSetting />} />;
   else screen = <Home user={user} />;
   const wizard = sub.startsWith('/check-in');
   return (
     <MobileFrame plain={wizard}>
       {screen}
       {!wizard && <BottomNav items={NAV(tr)} />}
+      <ReminderRunner user={user} />
     </MobileFrame>
   );
 }
@@ -76,6 +81,9 @@ function Home({ user }) {
   const [outbox, online] = useOutbox(user.id);
   const alerts = useNotifications(null, 20);
   const newAlerts = (alerts || []).filter((a) => isToday(a.createdAt)).length;
+  const checklists = useChecklists(elders);
+  const weather = useOutsideWeather(elders && elders[0]);
+  const plan = useMemo(() => (elders ? buildPlan(elders, checklists) : []), [elders, checklists]);
 
   if (!online || outbox.length) return <Offline user={user} outbox={outbox} online={online} alerts={newAlerts} />;
   if (!elders) return <><Greeting user={user} alertsTo={`${BASE}/alerts`} /><Loader /></>;
@@ -114,6 +122,11 @@ function Home({ user }) {
         <a href={`tel:${EMERGENCY_PHONE}`} className="is-danger"><span className="m-quick-icon"><Icon name="alert" /></span>{tr('Emergency', 'Emergency')}</a>
       </nav>
 
+      {weather.status === 'ready' && DANGEROUS_HEAT.includes(weather.weather.heatLevel) && (
+        <div style={{ marginTop: '1rem' }}><WeatherCard state={weather} fallbackLabel={elders[0].addressLine} /></div>
+      )}
+      <ReminderPrompt />
+
       <div className="m-between"><h2 className="m-section-title">{tr('Your elders', 'Iyong mga inaalagaan')}</h2></div>
       <div className="m-stack">
         {status.map((e) => {
@@ -131,6 +144,7 @@ function Home({ user }) {
                   ? tr(`Checked in ${clock(e.latest.recordedAt)}${sev === 'none' ? ' · all normal' : ''}`, `Na-check-in ${clock(e.latest.recordedAt)}`)
                   : tr(`Due now · last check-in ${e.last ? relTime(e.last.recordedAt) : 'never'}`, `Kailangan na · huling check-in ${e.last ? relTime(e.last.recordedAt) : 'wala pa'}`)}</span>
                 {chip}
+                <WeekStrip checkins={e.checkins} />
               </span>
               <Icon name="chevron" />
             </Link>
@@ -151,8 +165,8 @@ function Home({ user }) {
         </section>
       ))}
 
-      <div className="m-between"><h2 className="m-section-title">{tr('Care duties today', 'Mga gawain ngayon')}</h2></div>
-      {status.map((e) => <div key={e.id} style={{ marginBottom: '.75rem' }}><p className="m-caption" style={{ fontWeight: 700, marginBottom: '.35rem' }}>{e.fullName}</p><DutiesSummary patientId={e.id} to={`${BASE}/duties`} LinkComponent={Link} /></div>)}
+      <div className="m-between"><h2 className="m-section-title">{tr("Today's plan", 'Plano ngayon')}</h2><Link to={`${BASE}/duties`} className="m-link">{tr('All duties', 'Lahat ng gawain')}</Link></div>
+      <TodayPlan plan={plan} />
 
       <h2 className="m-section-title">{tr('This week', 'Ngayong linggo')}</h2>
       <div className="m-stack">
@@ -168,6 +182,131 @@ function Home({ user }) {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+const PLAN_STATUS = {
+  done: ['ok', 'check', 'Done', 'Tapos'],
+  skipped: ['moderate', 'x', 'Skipped', 'Nilaktawan'],
+  missed: ['critical', 'alert', 'Missed', 'Hindi nagawa'],
+  overdue: ['high', 'alert', 'Overdue', 'Huli na'],
+  due: ['info', 'clock', 'Later', 'Mamaya'],
+};
+const PLAN_ICON = { checkin: 'clipboard', dose: 'pill', duty: 'heart' };
+
+/** Check-ins, medicines and duties for all elders in one time-ordered list, with a "Now" marker. */
+function TodayPlan({ plan }) {
+  const tr = useT();
+  const { lang } = usePrefs();
+  const [showDone, setShowDone] = useState(false);
+  if (!plan.length) return <div className="m-note">{tr('Nothing scheduled today.', 'Walang nakatakda ngayon.')}</div>;
+  const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const finished = plan.filter((i) => i.status === 'done' || i.status === 'skipped').length;
+  const shown = showDone ? plan : plan.filter((i) => i.status !== 'done' && i.status !== 'skipped');
+  const nowIndex = shown.findIndex((i) => i.time > now);
+  return (
+    <>
+      <p className="m-caption" style={{ marginBottom: '.5rem' }}>
+        {tr(`${finished} of ${plan.length} done today`, `${finished} sa ${plan.length} tapos ngayon`)} ·{' '}
+        <button type="button" className="m-link" style={{ padding: 0, fontSize: 'inherit' }} onClick={() => setShowDone(!showDone)}>{showDone ? tr('Hide finished', 'Itago ang tapos') : tr('Show finished', 'Ipakita ang tapos')}</button>
+      </p>
+      <ol className="m-plan">
+        {shown.map((i, n) => {
+          const [tone, icon, en, fil] = PLAN_STATUS[i.status] || PLAN_STATUS.due;
+          const to = i.kind === 'duty' ? `${BASE}/duties` : `${BASE}/check-in?patient=${i.patientId}`;
+          return (
+            <React.Fragment key={i.id}>
+              {n === nowIndex && <li className="m-plan-now" aria-label={tr(`Now, ${hhmm(now)}`, `Ngayon, ${hhmm(now)}`)}><span>{tr('Now', 'Ngayon')} · {hhmm(now)}</span></li>}
+              <li>
+                <Link to={to} className={`m-plan-item is-${i.status}`}>
+                  <span className="m-plan-time">{hhmm(i.time)}</span>
+                  <span className={`m-thumb tone-${tone === 'high' ? 'moderate' : tone}`} style={{ width: '2.25rem', height: '2.25rem' }} aria-hidden="true"><Icon name={PLAN_ICON[i.kind]} size={18} /></span>
+                  <span className="m-grow">
+                    <strong>{lang === 'fil' ? i.titleFil : i.title}</strong>
+                    <span className="m-sub">{i.who}{i.detail ? ` · ${i.detail}` : ''}</span>
+                    <Chip tone={tone} icon={icon}>{tr(en, fil)}</Chip>
+                  </span>
+                </Link>
+              </li>
+            </React.Fragment>
+          );
+        })}
+        {nowIndex === -1 && shown.length > 0 && <li className="m-plan-now"><span>{tr('Now', 'Ngayon')} · {hhmm(now)}</span></li>}
+      </ol>
+      {!shown.length && <div className="m-note">{tr('Everything for today is done.', 'Tapos na ang lahat ngayon.')}</div>}
+    </>
+  );
+}
+
+/** "5 of 7 days" with a dot per day (oldest left, today right). */
+export function WeekStrip({ checkins }) {
+  const tr = useT();
+  const days = weekDays(checkins);
+  const n = days.filter((d) => d.done).length;
+  return (
+    <span className="m-week" title={tr(`${n} of the last 7 days have a check-in`, `${n} sa huling 7 araw ay may check-in`)}>
+      <span aria-hidden="true">{days.map((d) => <i key={d.day} className={d.done ? 'is-done' : ''} />)}</span>
+      <span>{tr(`${n} of 7 days this week`, `${n} sa 7 araw ngayong linggo`)}</span>
+    </span>
+  );
+}
+
+/** Mounted once for the caregiver app: notifies about overdue plan items while the app is open. */
+function ReminderRunner({ user }) {
+  return remindersOn() ? <ReminderWatcher user={user} /> : null;
+}
+
+function ReminderWatcher({ user }) {
+  const { lang } = usePrefs();
+  const [elders, reload] = useElders(user);
+  const checklists = useChecklists(elders);
+  const plan = useMemo(() => (elders ? buildPlan(elders, checklists) : null), [elders, checklists]);
+  useEffect(() => {
+    const t = setInterval(reload, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [reload]);
+  useReminders(plan, BASE, lang);
+  return null;
+}
+
+function ReminderPrompt() {
+  const tr = useT();
+  const [on, setOn] = useState(remindersOn());
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem('eldercare.reminders') === 'off'; } catch { return false; } });
+  if (on || hidden || !remindersSupported()) return null;
+  return (
+    <section className="m-card m-row" style={{ marginTop: '1rem', alignItems: 'flex-start' }}>
+      <span className="m-thumb tone-ok" aria-hidden="true"><Icon name="bell" /></span>
+      <div className="m-grow">
+        <strong>{tr('Get reminders', 'Tumanggap ng paalala')}</strong>
+        <p className="m-muted" style={{ fontSize: '.875rem', margin: '.2rem 0 .6rem' }}>{tr('A notification when a check-in, medicine or duty is 15 minutes late.', 'Abiso kapag 15 minutong huli ang check-in, gamot o gawain.')}</p>
+        <div className="m-row">
+          <button type="button" className="m-btn is-dark" style={{ minHeight: '2.75rem' }} onClick={async () => setOn((await enableReminders()) === 'granted')}>{tr('Turn on', 'I-on')}</button>
+          <button type="button" className="m-link" onClick={() => { disableReminders(); setHidden(true); }}>{tr('Not now', 'Hindi muna')}</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ReminderSetting() {
+  const tr = useT();
+  const [on, setOn] = useState(remindersOn());
+  const [msg, setMsg] = useState('');
+  if (!remindersSupported()) return null;
+  return (
+    <>
+      <h2 className="m-section-title">{tr('Reminders', 'Mga paalala')}</h2>
+      <div className="m-pills">
+        <button type="button" className="m-pill" aria-pressed={on} onClick={async () => {
+          if (on) { disableReminders(); setOn(false); return; }
+          const p = await enableReminders();
+          setOn(p === 'granted');
+          setMsg(p === 'denied' ? tr('Notifications are blocked. Allow them for this site in your browser settings.', 'Naka-block ang abiso. Payagan ito sa browser settings.') : '');
+        }}><Icon name="bell" size={18} />{on ? tr('Reminders on', 'Naka-on ang paalala') : tr('Turn on reminders', 'I-on ang paalala')}</button>
+      </div>
+      <p className="m-caption" style={{ marginTop: '.5rem' }}>{msg || tr('Reminders work while the app is open or installed on this phone.', 'Gumagana ang paalala habang bukas o naka-install ang app.')}</p>
     </>
   );
 }
@@ -234,6 +373,17 @@ const REASONS = [
 ];
 const STEP_NAMES = [['Vitals', 'Vital signs'], ['Medicines', 'Gamot'], ['Anything else?', 'May iba pa?']];
 
+/** One Back button: each tap goes one step back (step 3 -> 2 -> 1). Answers are kept. */
+function BackStep({ step, goTo }) {
+  const tr = useT();
+  const [en, fil] = STEP_NAMES[step - 2];
+  return (
+    <button type="button" className="m-btn is-block" onClick={() => goTo(step - 1)}>
+      <Icon name="back" size={18} />{tr(`Back to step ${step - 1}: ${en.toLowerCase()}`, `Bumalik sa hakbang ${step - 1}: ${fil.toLowerCase()}`)}
+    </button>
+  );
+}
+
 /** Number input that shows its problem underneath straight away (red border + message). */
 function VitalField({ k, label, value, onChange, error, hint, placeholder, decimal }) {
   const { lang } = usePrefs();
@@ -245,62 +395,6 @@ function VitalField({ k, label, value, onChange, error, hint, placeholder, decim
         placeholder={placeholder} aria-invalid={error ? 'true' : undefined} aria-describedby={error ? `${id}-err` : undefined} />
       {error ? <span className="m-field-error" id={`${id}-err`} role="alert">{lang === 'fil' ? error.fil : error.en}</span> : hint && <span className="m-hint">{hint}</span>}
     </label>
-  );
-}
-
-const HEAT_ADVICE = {
-  normal: null,
-  caution: ['Warm outside. Offer water often.', 'Mainit sa labas. Painumin nang madalas.'],
-  extreme_caution: ['Very hot outside. Keep them indoors, cool and drinking water.', 'Napakainit. Manatili sa loob, presko at umiinom ng tubig.'],
-  danger: ['Dangerous heat. Keep them cool and watch for dizziness or confusion.', 'Mapanganib na init. Panatilihing presko at bantayan ang hilo o pagkalito.'],
-  extreme_danger: ['Extreme heat. Call the clinic if they feel unwell.', 'Matinding init. Tumawag sa klinika kung masama ang pakiramdam.'],
-};
-const HEAT_TONE = { normal: 'ok', caution: 'moderate', extreme_caution: 'high', danger: 'critical', extreme_danger: 'critical' };
-
-/**
- * Outdoor weather where the caregiver is right now (phone location, OpenWeatherMap through the gateway),
- * falling back to the patient's address. Body temperature still needs a thermometer: a phone cannot
- * measure it, but outside heat explains a high reading and drives the heat-risk advice.
- */
-function OutsideWeather({ patient }) {
-  const tr = useT();
-  const { lang } = usePrefs();
-  const [w, setW] = useState(null);
-  const [state, setState] = useState('locating'); // locating | loading | ready | error
-  useEffect(() => {
-    if (!patient) return undefined;
-    let live = true;
-    const load = (q, src) => api(`/api/alerts/weather/current?${q}`)
-      .then((r) => { if (live) { setW({ ...r, src }); setState('ready'); } })
-      .catch(() => { if (live) setState('error'); });
-    const byAddress = () => (patient.zipCode ? load(`zip=${encodeURIComponent(patient.zipCode)}&country=${patient.countryCode || 'PH'}`, 'address') : setState('error'));
-    if (!navigator.geolocation) byAddress();
-    else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => { if (live) { setState('loading'); load(`lat=${pos.coords.latitude.toFixed(4)}&lon=${pos.coords.longitude.toFixed(4)}`, 'device'); } },
-        () => { if (live) { setState('loading'); byAddress(); } },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60 * 1000 },
-      );
-    }
-    return () => { live = false; };
-  }, [patient && patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (state === 'error') return null;
-  if (state !== 'ready') return <div className="m-weather is-loading" role="status"><Icon name="globe" size={18} />{tr('Checking the weather where you are…', 'Tinitingnan ang panahon sa lugar mo…')}</div>;
-  const advice = HEAT_ADVICE[w.heatLevel];
-  const tone = HEAT_TONE[w.heatLevel] || 'ok';
-  return (
-    <section className={`m-weather tone-${tone}`} aria-label={tr('Weather outside', 'Panahon sa labas')}>
-      <div className="m-between">
-        <span className="m-caption" style={{ fontWeight: 700 }}>{tr('OUTSIDE NOW', 'SA LABAS NGAYON')} · {w.locationName || (w.src === 'device' ? tr('your location', 'lugar mo') : patient.addressLine)}</span>
-        <span className="m-caption">{w.src === 'device' ? tr('from your phone', 'mula sa phone') : tr("from the patient's address", 'mula sa address ng pasyente')}</span>
-      </div>
-      <div className="m-row" style={{ marginTop: '.35rem', alignItems: 'baseline' }}>
-        <strong style={{ fontSize: '1.75rem' }}>{Math.round(w.temperatureC)}°C</strong>
-        <span className="m-muted">{tr(`feels like ${Math.round(w.heatIndexC ?? w.feelsLikeC)}°C`, `parang ${Math.round(w.heatIndexC ?? w.feelsLikeC)}°C`)} · {w.humidity}% {tr('humidity', 'halumigmig')}{w.conditions[0] ? ` · ${w.conditions[0]}` : ''}</span>
-      </div>
-      {advice && <p style={{ marginTop: '.35rem', fontWeight: 700 }}>{lang === 'fil' ? advice[1] : advice[0]}</p>}
-    </section>
   );
 }
 
@@ -328,6 +422,7 @@ function CheckIn({ user }) {
 
   const patient = elders && elders.find((e) => e.id === patientId);
   const [tried, setTried] = useState(false);
+  const [bt, setBt] = useState({ busy: false, msg: '' });
   const errors = vitalErrors(vitals, { pair: tried });
   const hasErrors = Object.keys(errors).length > 0;
   const warning = hasErrors ? null : vitalsWarning(vitals);
@@ -341,7 +436,19 @@ function CheckIn({ user }) {
   const slotInfo = SLOTS.find((s) => s.key === slot);
   const firstTime = meds.flatMap((m) => m.times).filter((t) => slotOf(t) === slot).sort()[0];
 
+  const weather = useOutsideWeather(patient);
   const cancel = () => navigate(BASE);
+
+  async function readMonitor() {
+    setBt({ busy: true, msg: tr('Choose your monitor, then take a reading…', 'Piliin ang monitor at sumukat…') });
+    try {
+      const r = await readBloodPressure();
+      setVitals((v) => ({ ...v, systolic: String(r.systolic), diastolic: String(r.diastolic), ...(r.heartRate ? { heartRate: String(r.heartRate) } : {}) }));
+      setBt({ busy: false, msg: tr(`Read ${r.systolic}/${r.diastolic}${r.heartRate ? `, pulse ${r.heartRate}` : ''} from the monitor.`, `Nabasa: ${r.systolic}/${r.diastolic}.`) });
+    } catch (e) {
+      setBt({ busy: false, msg: e.name === 'NotFoundError' ? tr('No monitor was chosen.', 'Walang napiling monitor.') : e.message });
+    }
+  }
   const goTo = (n) => { setStep(n); window.scrollTo({ top: 0 }); };
   const set = (k) => (e) => setVitals((v) => ({ ...v, [k]: e.target.value }));
 
@@ -361,6 +468,7 @@ function CheckIn({ user }) {
       ...(symptoms.includes('fall') ? { mobilityStatus: 'fall_reported' } : mobility ? { mobilityStatus: mobility } : {}),
       ...(symptoms.includes('confused') ? { mood: 'confused' } : mood ? { mood } : {}),
       ...(noteText ? { notes: noteText.slice(0, 2000) } : {}),
+      ...(weather.status === 'ready' ? { environment: toEnvironment(weather.weather) } : {}),
     };
   }
 
@@ -416,8 +524,12 @@ function CheckIn({ user }) {
               {elders.map((e) => <button key={e.id} type="button" role="radio" aria-checked={e.id === patientId} className="m-pill" aria-pressed={e.id === patientId} onClick={() => { setPatientId(e.id); setGiven({}); setReasons({}); setPicking(false); }}>{e.fullName}</button>)}
             </div>
           )}
-          <OutsideWeather patient={patient} />
-          <p style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '.875rem' }}>{tr('Blood pressure', 'Presyon ng dugo')}</p>
+          <WeatherCard state={weather} fallbackLabel={patient ? patient.addressLine : ''} />
+          <div className="m-between">
+            <p style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '.875rem' }}>{tr('Blood pressure', 'Presyon ng dugo')}</p>
+            {bluetoothSupported() && <button type="button" className="m-link" onClick={readMonitor} disabled={bt.busy}><Icon name="zap" size={16} /> {bt.busy ? tr('Connecting…', 'Kumokonekta…') : tr('Read from Bluetooth monitor', 'Basahin mula sa Bluetooth monitor')}</button>}
+          </div>
+          {bt.msg && <p className="m-caption" role="status">{bt.msg}</p>}
           <div className="m-grid-2">
             <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
             <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
@@ -457,7 +569,7 @@ function CheckIn({ user }) {
             </div>
           ))}
           <div className="m-footer-actions">
-            <button type="button" className="m-btn is-block" onClick={() => goTo(1)}><Icon name="back" size={18} />{tr('Back to step 1: vitals', 'Bumalik sa hakbang 1: vital signs')}</button>
+            <BackStep step={step} goTo={goTo} />
             <Cta onClick={() => goTo(3)}>{tr('Next: anything else?', 'Susunod: may iba pa?')}</Cta>
           </div>
         </div>
@@ -486,10 +598,7 @@ function CheckIn({ user }) {
           <label className="m-field"><span>{tr('Notes for the nurse (optional)', 'Tala para sa nars (opsyonal)')}</span><textarea rows="3" maxLength={1500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
           {error && <p className="m-error" role="alert">{error}</p>}
           <div className="m-footer-actions">
-            <div className="m-grid-2">
-              <button type="button" className="m-btn" onClick={() => goTo(1)}><Icon name="back" size={18} />{tr('Step 1', 'Hakbang 1')}</button>
-              <button type="button" className="m-btn" onClick={() => goTo(2)}><Icon name="back" size={18} />{tr('Step 2', 'Hakbang 2')}</button>
-            </div>
+            <BackStep step={step} goTo={goTo} />
             <Cta onClick={submit} disabled={busy || hasErrors}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send check-in', 'Ipadala ang check-in')}</Cta></div>
         </div>
       )}

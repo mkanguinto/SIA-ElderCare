@@ -74,6 +74,7 @@ function toCheckinDto(r) {
     medication: { taken: r.medication_taken, missed: r.missed_medications },
     mobilityStatus: r.mobility_status,
     mood: r.mood,
+    environment: r.environment || null,
     notes: r.notes,
     anomalies: r.anomalies,
     severity: r.severity,
@@ -122,11 +123,12 @@ async function createCheckin(caregiverId, allowedPatients, input, requestId) {
     const { rows } = await client.query(
       `INSERT INTO checkins (patient_id, caregiver_id, idempotency_key, recorded_at, systolic, diastolic, heart_rate,
                              temperature_c, spo2, blood_glucose, medication_taken, missed_medications, mobility_status,
-                             mood, notes, anomalies, severity, severity_score)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+                             mood, notes, anomalies, severity, severity_score, environment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [c.patientId, caregiverId, c.idempotencyKey, c.recordedAt, c.vitals.systolic, c.vitals.diastolic, c.vitals.heartRate,
         c.vitals.temperatureC, c.vitals.spo2, c.vitals.bloodGlucose, c.medication.taken, c.medication.missed, c.mobilityStatus,
-        c.mood, c.notes, JSON.stringify(detection.anomalies), detection.severity, detection.severityScore],
+        c.mood, c.notes, JSON.stringify(detection.anomalies), detection.severity, detection.severityScore,
+        c.environment ? JSON.stringify(c.environment) : null],
     );
     const checkin = toCheckinDto(rows[0]);
     let event = null;

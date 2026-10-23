@@ -5,7 +5,7 @@ import { Link, navigate } from '../router';
 import Icon from './icons';
 import { todaysDoses, SLOTS, slotOf, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications, CallClinic } from './common';
-import { DoseRow } from './caregiver';
+import { DoseRow, WeekStrip } from './caregiver';
 import { DutiesScreen, DutiesSummary } from './duties';
 import { conditionLabel, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import {
@@ -121,12 +121,13 @@ function Today({ user, patientId }) {
           : latest ? tr(`Last check-in ${clock(latest.recordedAt)}, ${manilaDay(latest.recordedAt)}.`, `Huling check-in ${manilaDay(latest.recordedAt)}.`) : tr('No check-ins yet.', 'Wala pang check-in.')}
       </p>
       {(p.conditions.length > 0 || p.mobilityRestricted) && (
-        <div className="m-pills" style={{ margin: '.6rem 0 1rem', gap: '.35rem' }}>
+        <div className="m-pills" style={{ margin: '.6rem 0 .25rem', gap: '.35rem' }}>
           {p.conditions.map((c) => <Chip key={c}>{conditionLabel(c)}</Chip>)}
           {p.mobilityRestricted && <Chip tone="moderate">{tr('Limited mobility', 'Limitado ang galaw')}</Chip>}
         </div>
       )}
 
+      <div style={{ marginBottom: '.75rem' }}><WeekStrip checkins={data.checkins} /></div>
       {bpReading && (
         <>
           <section className={`m-bp-hero tone-${bpTone === 'ok' ? 'ok' : bpTone}`} style={{ paddingBottom: '1.25rem', marginTop: '.75rem' }} aria-label={tr('Blood pressure', 'Presyon ng dugo')}>
@@ -152,7 +153,8 @@ function Today({ user, patientId }) {
       <div className="m-between"><h2 className="m-section-title">{tr('Latest vitals', 'Pinakabagong vital signs')}</h2>{latest && <strong style={{ color: 'var(--text-brand)' }}>{clock(latest.recordedAt)}</strong>}</div>
       <div className="m-tiles">
         <VitalTile icon="heartPulse" label={tr('Heart rate', 'Tibok ng puso')} value={hr && hr.vitals.heartRate} unit="bpm" bad={anomalyIn(hr, 'HR')} tr={tr} />
-        <VitalTile icon="thermometer" label={tr('Temperature', 'Temperatura')} value={temp && temp.vitals.temperatureC} unit="°C" bad={anomalyIn(temp, 'TEMP')} tr={tr} />
+        <VitalTile icon="thermometer" label={tr('Temperature', 'Temperatura')} value={temp && temp.vitals.temperatureC} unit="°C" bad={anomalyIn(temp, 'TEMP')} tr={tr}
+          note={temp && temp.environment && temp.environment.outsideTempC != null ? tr(`Outside was ${Math.round(temp.environment.outsideTempC)} °C`, `${Math.round(temp.environment.outsideTempC)} °C sa labas`) : null} />
         <VitalTile icon="lungs" label={tr('Oxygen', 'Oxygen')} value={spo2 && spo2.vitals.spo2} unit="%" bad={anomalyIn(spo2, 'SPO2')} tr={tr} />
         <div className={`m-tile tone-${mTone}`}>
           <div className="m-between"><span className="m-tile-icon"><Icon name="fall" size={20} /></span><Chip className="on-light" tone={mTone}>{mob ? tr('Reported', 'Naiulat') : tr('No data', 'Wala')}</Chip></div>
@@ -181,13 +183,14 @@ function Today({ user, patientId }) {
   );
 }
 
-function VitalTile({ icon, label, value, unit, bad, tr }) {
+function VitalTile({ icon, label, value, unit, bad, tr, note }) {
   const tone = value == null ? '' : bad ? 'high' : 'ok';
   return (
     <div className={`m-tile ${tone ? `tone-${tone}` : ''}`}>
       <div className="m-between"><span className="m-tile-icon"><Icon name={icon} size={20} /></span>{value != null && <Chip className="on-light" tone={tone}>{bad ? tr('High', 'Mataas') : tr('Normal', 'Normal')}</Chip>}</div>
       <span className="m-tile-label">{label}</span>
       <span className="m-tile-value">{value ?? '–'}{value != null && <small>{unit}</small>}</span>
+      {note && <span className="m-caption" style={{ marginTop: '.15rem' }}>{note}</span>}
     </div>
   );
 }

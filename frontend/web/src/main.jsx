@@ -99,3 +99,9 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<><App /><ServerWake /></>);
+
+// Installable app + offline shell + reminder taps (public/sw.js). Production builds only, so the dev server
+// never serves stale cached code.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
