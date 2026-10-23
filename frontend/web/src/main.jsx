@@ -12,6 +12,8 @@ import CaseHistory from './pages/CaseHistory';
 import AlertRules from './pages/AlertRules';
 import { PrefsProvider } from './mobile/kit';
 import { Landing, RolePicker, SignIn, NoAccount } from './mobile/Onboarding';
+import { Activate, ResetPassword } from './mobile/Account';
+import SessionLock from './components/SessionLock';
 import CaregiverApp from './mobile/caregiver';
 import FamilyApp from './mobile/family';
 import NurseApp from './mobile/nurse';
@@ -31,15 +33,16 @@ export const HOME = {
 };
 const homeFor = (role) => (role === 'clinic_staff' && isPhone() ? '/m/nurse' : HOME[role] || '/');
 
-const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn, '/no-account': NoAccount };
-const CLINIC = ['clinic_staff', 'system_admin'];
+const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn, '/no-account': NoAccount, '/activate': Activate, '/reset-password': ResetPassword };
+// The desktop clinic pages show patient records: nurses only. The admin keeps the alert-rule settings.
+const CLINIC = ['clinic_staff'];
 // Entries with `app` render full-screen and handle their own sub-paths (phone apps, admin console);
 // entries with `page` render inside the desktop Shell.
 const ROUTES = {
   '/m/caregiver': { roles: ['caregiver'], app: CaregiverApp, layout: 'mobile', title: 'Caregiver' },
   '/m/family': { roles: ['family_member'], app: FamilyApp, layout: 'mobile', title: 'Family' },
   '/m/nurse': { roles: ['clinic_staff'], app: NurseApp, layout: 'mobile', title: 'Nurse' },
-  '/clinic/alert-rules': { roles: CLINIC, page: AlertRules, title: 'Alert rules' },
+  '/clinic/alert-rules': { roles: ['clinic_staff', 'system_admin'], page: AlertRules, title: 'Alert rules' },
   '/clinic': { roles: CLINIC, page: ClinicQueue, title: 'Risk queue' },
   '/clinic/visits': { roles: CLINIC, page: ClinicVisits, title: 'Visits' },
   '/clinic/history': { roles: CLINIC, page: CaseHistory, title: 'Case history' },
@@ -86,15 +89,17 @@ function App() {
 
   if (route.app) {
     const AppScreen = route.app;
-    return <PrefsProvider key={user.id}><AppScreen user={user} path={path} /></PrefsProvider>;
+    return <SessionLock user={user}><PrefsProvider key={user.id}><AppScreen user={user} path={path} /></PrefsProvider></SessionLock>;
   }
   const Page = route.page;
   return (
-    <ToastProvider key={user.id}>
-      <Shell key={user.id} user={user} onSignOut={logout}>
-        <Page key={path} user={user} params={params} />
-      </Shell>
-    </ToastProvider>
+    <SessionLock user={user}>
+      <ToastProvider key={user.id}>
+        <Shell key={user.id} user={user} onSignOut={logout}>
+          <Page key={path} user={user} params={params} />
+        </Shell>
+      </ToastProvider>
+    </SessionLock>
   );
 }
 

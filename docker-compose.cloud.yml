@@ -29,6 +29,9 @@ services:
   care-db:
     <<: *prod
     ports: !reset []
+  auth-db:
+    <<: *prod
+    ports: !reset []
   rabbitmq:
     <<: *prod
     ports: !reset []
@@ -38,6 +41,7 @@ services:
     ports: !override ["127.0.0.1:8080:8080"]
     environment:
       NODE_ENV: production
+      ACCOUNT_SMS_CAPTURE: "false"
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
     deploy: { resources: { limits: { memory: 256m } } }
 

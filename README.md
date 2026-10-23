@@ -156,7 +156,15 @@ Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/
 | `nurse.carla` | clinic_staff | all · holds P-1002 (lead, Team B) |
 | `admin.harold` | system_admin | all |
 
-Users live in `api-gateway/data/users.json` with scrypt hashes. New hash: `node api-gateway/scripts/hash-password.js "NewPassword"`.
+Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gateway/data/users.json` is only the bootstrap list: accounts in it that are not in the database yet are imported at start-up. Without `AUTH_DATABASE_URL` (unit tests, no Docker) the file itself is used.
+
+### Accounts and sessions
+* **The admin creates accounts** (`/admin/users` → Accounts): role, name, username, mobile number. The person gets an **SMS with an activation code** (valid 24 h, single use, 5 wrong tries lock it) and chooses their own password at `/activate`. Password resets go out as an **SMS link** (valid 1 h, `/reset-password`). The admin never sees a code, a link or a password; only a keyed hash is stored. SMS goes through the alert service, so `SMS_DRY_RUN` and `SMS_RECIPIENT_ALLOWLIST` apply (add your own number to receive real codes).
+* **Audit log** (`/admin/audit`, `GET /api/admin/audit`): account created / activated / disabled / enabled, codes and links sent, sign-ins (and failures), lock / unlock, sessions ended - with who, when and from which IP. Append-only.
+* **One session per user**: signing in again ends the earlier session ("You signed in on another device"). Nurses may keep **one phone and one desktop** session. The admin can see and end sessions per account.
+* **Inactivity lock**: after 15 min (nurses, admin) or 30 min (caregivers, family) without taps or keys the app locks and the server refuses the session until the password is entered (`POST /oauth/lock`, `POST /oauth/unlock`). Three wrong passwords sign the user out.
+* **The admin is technical, not clinical**: no patient records, check-ins, histories, medicines, visits, care plans or clinic cases, and no clinical actions (alerts, triage, reviews, weather check). The admin's digest export is counts only (`GET /api/clinic/queue/summary`). An admin who also works as a nurse uses a separate nurse account.
+* Duty coverage and case handover are separate from sessions: signing out never moves a case.
 
 ---
 
@@ -426,8 +434,9 @@ Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 | Layer | Tool | Asset |
 |---|---|---|
 | Unit | `node --test` | `*/test/*.test.js` – 60 tests: vitals + patient validation, anomaly rules, heat index, triage thresholds, visit validation, TextBee client + webhook signature, SMS parsing, EMR mapping, gateway auth/RBAC |
-| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 142 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
+| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 160 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
 | Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – nurse handover: pending list, Accept, case moves to My cases |
+| Accounts / sessions | `node --test` + smoke + Postman | `api-gateway/test/accounts.test.js`, `accountRules.test.js`; smoke "Accounts and sessions"; Postman folder 12 |
 | Weather demo / failure | fake OpenWeatherMap | `testing/mocks/fake-openweathermap.js` – heatwave + typhoon on demand, no API key |
 | Functional + security | Postman | `testing/postman/ElderCare_Connect.postman_collection.json` (folders 0–4) |
 | Integration (saga) | Postman / Newman | folder **5. Integration** – check-in → family alert → clinic queue → EMR history → triage update |

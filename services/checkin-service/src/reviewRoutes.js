@@ -3,9 +3,9 @@
 /**
  * Check-in monitoring status (Received -> Awaiting review -> Reviewed -> Action recorded).
  *
- *   GET  /api/checkins/review-queue?view=pending|current|historical|archived&status=&page=&pageSize=   clinic staff, admin
+ *   GET  /api/checkins/review-queue?view=pending|current|historical|archived&status=&page=&pageSize=   clinic staff
  *   POST /api/checkins/archive-demo              clinic staff (demo / test records only)
- *   GET  /api/checkins/:id                       caregiver / family (own patients), clinic staff, admin
+ *   GET  /api/checkins/:id                       caregiver / family (own patients), clinic staff
  *   POST /api/checkins/:id/review   {note?}      clinic staff
  *   POST /api/checkins/:id/action   {action, note?}   clinic staff
  *
@@ -18,7 +18,8 @@ const { parsePagination, pageInfo } = require('./lib/pagination');
 const { ORDER, plan, validateNote } = require('./reviewStatus');
 
 const router = express.Router();
-const CLINIC = ['clinic_staff', 'system_admin'];
+// Nurses only: the system admin does not read patient records (defense in depth behind the gateway).
+const CLINIC = ['clinic_staff'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function toLogDto(r) {
@@ -105,7 +106,9 @@ router.get('/api/checkins/:id', async (req, res, next) => {
     const { rows: [row] } = await pool.query('SELECT * FROM checkins WHERE id = $1', [req.params.id]);
     if (!row) return res.status(404).json({ error: 'not_found', message: 'Check-in not found' });
     const scoped = ['caregiver', 'family_member'].includes(req.user && req.user.role);
-    if (!req.user || (scoped && !req.user.patients.includes(row.patient_id))) return res.status(403).json({ error: 'forbidden' });
+    if (!req.user || !['caregiver', 'family_member', 'clinic_staff'].includes(req.user.role) || (scoped && !req.user.patients.includes(row.patient_id))) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
     const { rows: log } = await pool.query('SELECT * FROM checkin_status_log WHERE checkin_id = $1 ORDER BY changed_at, id', [row.id]);
     // eslint-disable-next-line global-require
     const { toCheckinDto } = require('./routes');

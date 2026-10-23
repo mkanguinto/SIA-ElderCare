@@ -1,6 +1,6 @@
 /* Phone-first UI (Figma "ElderCare Connect – Phone-First UI"). Tokens are copied from the Foundations page.
    Everything is sized in rem so "Big text" (html font-size 118.75%) scales the whole screen. */
-.m-app, .ad-app {
+.m-app, .ad-app, .m-lock {
   --bg-app: #eef3ef;
   --bg-surface: #ffffff;
   --bg-muted: #e3ece6;
@@ -28,7 +28,7 @@
 }
 @media (prefers-color-scheme: dark) {
   /* The design is light-only for now; keep it light rather than half-inverting it. */
-  .m-app, .ad-app { color-scheme: light; }
+  .m-app, .ad-app, .m-lock { color-scheme: light; }
 }
 
 .m-root { min-height: 100dvh; background: var(--bg-app); display: flex; justify-content: center; }
@@ -148,9 +148,10 @@
 /* ---------- form fields ---------- */
 .m-field { display: flex; flex-direction: column; gap: .4rem; }
 .m-field > span { font-size: .875rem; font-weight: 700; color: var(--text-secondary); }
-.m-field input, .m-field textarea, .m-field select {
+/* :is(.m-app, .m-lock) outranks the desktop styles.css input rule, which turns inputs dark on phones in dark mode. */
+:is(.m-app, .m-lock) .m-field :is(input, textarea, select) {
   width: 100%; min-height: 3.5rem; border-radius: 1rem; border: 1.5px solid var(--border-default); background: var(--bg-surface);
-  padding: .75rem 1.125rem; font-size: 1.0625rem;
+  color: var(--text-primary); padding: .75rem 1.125rem; font-size: 1.0625rem;
 }
 .m-field textarea { min-height: 5rem; resize: vertical; line-height: 1.4; }
 .m-field input:focus, .m-field textarea:focus, .m-field select:focus { border-color: var(--border-strong); outline: none; box-shadow: 0 0 0 3px var(--bg-primary-soft); }
@@ -525,8 +526,15 @@
 .ad-members li { display: flex; align-items: center; gap: .6rem; }
 .ad-members .m-sub { display: block; font-size: .8125rem; color: var(--text-muted); }
 .ad-inline-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: 1rem; }
-.ad-inline-form input, .ad-inline-form select, .ad-table select {
-  min-height: 2.75rem; border-radius: .75rem; border: 1.5px solid var(--border-default); background: var(--bg-surface); padding: 0 .75rem; font: inherit; font-size: .9375rem; }
+.ad-app .ad-inline-form input, .ad-app .ad-inline-form select, .ad-app .ad-table select, .ad-app .ad-select {
+  min-height: 2.75rem; border-radius: .75rem; border: 1.5px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); padding: 0 .75rem; font: inherit; font-size: .9375rem; }
 .ad-inline-form input { flex: 1 1 10rem; }
 .ad-panel .ad-inline-form[style*='column'] input { flex: none; }
 .ad-table .m-chip { margin-top: .35rem; }
+
+/* Batch 3a: inactivity lock screen */
+.m-lock { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: var(--bg-app); overflow-y: auto; }
+.m-lock-card { width: 100%; max-width: 24rem; background: var(--bg-surface); border-radius: 1.75rem; padding: 1.5rem; box-shadow: 0 10px 40px rgb(0 0 0 / .08); }
+.m-lock .m-cta { justify-content: center; }
+.ad-manage { background: var(--bg-app); border-radius: 1rem; padding: 1rem; }
+.ad-select { min-height: 2.75rem; border-radius: .75rem; border: 1.5px solid var(--border-default); background: var(--bg-surface); padding: 0 .75rem; font: inherit; }

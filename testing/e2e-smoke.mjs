@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // ElderCare Connect - end-to-end smoke test (no dependencies, Node 18+).
 // Start all six services (or docker compose up), then:   npm run smoke
 // Optional: GATEWAY_URL=http://host:8080 npm run smoke
@@ -6,7 +7,9 @@ const ok=(c,m)=>{ c?pass++:fail++; console.log((c?'PASS ':'FAIL ')+m); };
 // Check-ins created by this test are demo data (archived at the end, never mixed with real records).
 const call=async(method,path,token,body)=>{if(method==='POST'&&path==='/api/checkins'&&body&&!body.dataOrigin)body={...body,dataOrigin:'demo'};const r=await fetch(B+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let j;try{j=await r.json()}catch{j=null}return {s:r.status,j};};
 const login=async u=>(await call('POST','/oauth/token',null,{grant_type:'password',username:u,password:'ElderCare@2026'})).j.access_token;
-const cg=await login('caregiver.maria'), fam=await login('family.jose'), nurse=await login('nurse.ana'), admin=await login('admin.harold');
+// One session per user (Batch 3a): signing in again ends the earlier session, so sections that test sign-in
+// use separate devices (nurses: phone + desktop) or sign the shared users in again afterwards.
+let cg=await login('caregiver.maria'), fam=await login('family.jose'), nurse=await login('nurse.ana'), admin=await login('admin.harold');
 ok(cg&&fam&&nurse&&admin,'4 role logins');
 let r=await call('POST','/api/checkins',cg,{patientId:'P-1002',vitals:{systolic:126,diastolic:80,heartRate:72,temperatureC:36.6,spo2:97},medication:{taken:true}});
 ok(r.s===201&&r.j.checkin.severity==='none','normal check-in 201, no anomaly');
@@ -34,7 +37,8 @@ r=await call('PATCH','/api/clinic/queue/'+item.id,nurse,{status:'in_review',note
 ok((await call('PATCH','/api/clinic/queue/'+item.id,nurse,{status:'bogus'})).s===409,'invalid transition 409');
 r=await call('POST','/api/alerts/dispatch',nurse,{patientId:'P-1001',message:'Nurse visit tomorrow 9AM'}); ok(r.s===202&&r.j.alertId,'manual dispatch 202');
 ok((await call('POST','/api/alerts/dispatch',cg,{patientId:'P-1001',message:'hello there'})).s===403,'caregiver dispatch 403');
-r=await call('POST','/api/alerts/weather-check',admin,{zipCode:'1012'}); ok([200,503].includes(r.s),'weather-check reachable ('+(r.s===503?'503 = OPENWEATHER_API_KEY not set':'200 = mashup ran')+')');
+r=await call('POST','/api/alerts/weather-check',nurse,{zipCode:'1012'}); ok([200,503].includes(r.s),'weather-check reachable ('+(r.s===503?'503 = OPENWEATHER_API_KEY not set':r.s===200?'200 = mashup ran':`${r.s}: ${r.j&&(r.j.message||r.j.error)}`)+')');
+ok((await call('POST','/api/alerts/weather-check',admin,{zipCode:'1012'})).s===403,'admin cannot run the clinical weather check (403)');
 r=await call('GET','/api/admin/health',admin); ok(r.s===200,'admin health ('+r.j.overall+'): '+r.j.services.map(s=>s.name+'='+s.status).join(' '));
 r=await call('GET','/api/patients/P-1001/history',fam); ok(r.s===200&&r.j.trends.totalCheckins>=1,'family history trends');
 r=await call('GET','/api/admin/users',admin); ok(r.s===200&&r.j.users.every(u=>!u.passwordHash),'admin user list without password hashes');
@@ -134,7 +138,8 @@ ok(r.s === 200 && r.j.cases.length <= 1 && isPage(r.j.pagination, 1, 1), 'case h
 ok((await call('GET', '/api/patients/P-1001/history?limit=2', fam)).j.pagination.pageSize === 2, 'legacy limit= still works');
 
 // JWT: refresh rotation + reuse detection, revocation, logout, key status
-const tok = async (u) => (await call('POST', '/oauth/token', null, { grant_type: 'password', username: u, password: 'ElderCare@2026' })).j;
+// The nurse signs in on her phone here, so the desktop session used by the rest of the test stays open.
+const tok = async (u, device = 'phone') => (await call('POST', '/oauth/token', null, { grant_type: 'password', username: u, password: 'ElderCare@2026', device })).j;
 const refreshWith = (rt) => call('POST', '/oauth/token', null, { grant_type: 'refresh_token', refresh_token: rt });
 const s1 = await tok('nurse.ana');
 const s2 = (await refreshWith(s1.refresh_token)).j;
@@ -149,6 +154,7 @@ ok((await call('POST', '/oauth/revoke', null, { token: s4.access_token, token_ty
 const s5 = await tok('family.jose');
 ok((await call('POST', '/oauth/logout', s5.access_token)).s === 204 && (await call('GET', '/api/alerts/notifications', s5.access_token)).s === 401
   && (await refreshWith(s5.refresh_token)).s === 400, 'logout ends the session (access + refresh)');
+fam = await login('family.jose'); // s5 replaced the shared family session
 r = await call('GET', '/api/admin/security', admin);
 ok(r.s === 200 && r.j.jwt.access.activeKid && r.j.jwt.store.persistent === true, `key status: kid ${r.j.jwt && r.j.jwt.access.activeKid}, next rotation ${r.j.jwt && r.j.jwt.rotation.nextRotationDue}`);
 
@@ -364,8 +370,57 @@ ok((await call('POST', `/api/clinic/care-teams/${teamId}/members`, admin, { nurs
 ok((await call('DELETE', `/api/clinic/care-teams/CT-MNL-A/members/U-CS-001`, admin)).s === 409, 'a nurse holding cases cannot be removed from the team (409)');
 ok((await call('DELETE', `/api/clinic/care-teams/${teamId}/members/U-CS-003`, admin)).s === 200, 'a nurse without cases can be removed');
 r = await call('GET', '/api/clinic/care-log?limit=50', admin);
-ok(r.s === 200 && r.j.entries.some((e) => e.action === 'handover_accepted' && e.details.handoverId === hid) && r.j.entries.some((e) => e.action === 'team_created'), 'assignment log records handovers and team changes with who and when');
+ok(r.s === 200 && r.j.entries.some((e) => e.action === 'handover_accepted' && e.details.handoverId === hid) && r.j.entries.some((e) => e.action === 'member_added'), 'assignment log records handovers and team changes with who and when');
 ok((await call('GET', '/api/clinic/care-log', nurse)).s === 403, 'nurse cannot read the admin assignment log (403)');
+
+// ---- Batch 3a: accounts, sessions, admin limits ----
+console.log('\n-- Accounts and sessions --');
+const internalToken = process.env.INTERNAL_SERVICE_TOKEN || (() => {
+  try { return (fs.readFileSync(new URL('../.env', import.meta.url), 'utf8').match(/^INTERNAL_SERVICE_TOKEN=(.*)$/m) || [])[1]; } catch { return undefined; }
+})();
+const capturedSms = async (to, purpose) => {
+  const res = await fetch(`${B}/internal/test/account-sms?to=${encodeURIComponent(to)}&purpose=${purpose}`, { headers: { 'x-internal-token': internalToken || '' } });
+  return res.status === 200 ? res.json() : null;
+};
+const uname = `caregiver.smoke${Date.now().toString(36)}`;
+const phone = `0917${String(Date.now()).slice(-7)}`;
+r = await call('POST', '/api/admin/accounts', admin, { username: uname, name: 'Smoke Test Caregiver', role: 'caregiver', phone, patients: ['P-1003'] });
+ok(r.s === 201 && r.j.account.status === 'pending_activation' && r.j.activation.sentTo && !/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(JSON.stringify(r.j)), `admin creates a caregiver account; activation code sent to ${r.j && r.j.activation && r.j.activation.sentTo} (${r.j && r.j.activation && r.j.activation.delivery}), not shown to the admin`);
+const newId = r.j.account && r.j.account.id;
+r = await call('POST', '/oauth/token', null, { grant_type: 'password', username: uname, password: 'whatever-1' });
+ok(r.s === 400 && r.j.reason === 'account_pending', 'cannot sign in before activation');
+const sms = await capturedSms(phone, 'activation');
+if (sms) {
+  const code = sms.body.match(/code is ([A-Z0-9]{4}-[A-Z0-9]{4})/)[1];
+  ok((await call('POST', '/auth/activate', null, { username: uname, code, password: 'short' })).s === 422, 'weak password rejected at activation (422)');
+  r = await call('POST', '/auth/activate', null, { username: uname, code, password: 'Kalamansi2026' });
+  ok(r.s === 200 && r.j.activated, 'caregiver activates with the SMS code and an own password');
+  r = await call('POST', '/oauth/token', null, { grant_type: 'password', username: uname, password: 'Kalamansi2026' });
+  ok(r.s === 200 && r.j.role === 'caregiver', 'and signs in');
+  ok((await call('POST', '/auth/activate', null, { username: uname, code, password: 'Kalamansi2026' })).s === 400, 'the activation code works once');
+  r = await call('POST', `/api/admin/accounts/${newId}/password-reset`, admin, {});
+  ok(r.s === 200 && !JSON.stringify(r.j).includes('#'), 'admin sends a password-reset link by SMS without seeing it');
+  ok((await call('POST', `/api/admin/accounts/${newId}/disable`, admin, { reason: 'Smoke test account' })).s === 200, 'admin disables the test account');
+} else {
+  console.log('SKIP activation checks (ACCOUNT_SMS_CAPTURE is off or INTERNAL_SERVICE_TOKEN unknown)');
+}
+const fam1 = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'family.jose', password: 'ElderCare@2026' })).j;
+const fam2 = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'family.jose', password: 'ElderCare@2026' })).j;
+r = await call('GET', '/api/patients/P-1001', fam1.access_token);
+ok(r.s === 401 && r.j.reason === 'session_replaced' && (await call('GET', '/api/patients/P-1001', fam2.access_token)).s === 200, 'signing in again ends the earlier session (single session)');
+fam = fam2.access_token;
+const nPhone = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'nurse.ana', password: 'ElderCare@2026', device: 'phone' })).j;
+ok((await call('GET', '/api/clinic/my-cases', nPhone.access_token)).s === 200 && (await call('GET', '/api/clinic/my-cases', nurse)).s === 200, 'a nurse keeps one phone and one desktop session');
+ok((await call('POST', '/oauth/lock', nPhone.access_token)).s === 204 && (await call('GET', '/api/clinic/my-cases', nPhone.access_token)).j.reason === 'session_locked', 'a locked session is refused until the password is entered');
+r = await call('POST', '/oauth/unlock', null, { refresh_token: nPhone.refresh_token, password: 'ElderCare@2026' });
+ok(r.s === 200 && (await call('GET', '/api/clinic/my-cases', r.j.access_token)).s === 200, 'unlock with the password');
+for (const [m, p] of [['GET', '/api/patients/P-1001'], ['GET', '/api/clinic/queue'], ['GET', '/api/checkins/review-queue'], ['POST', '/api/alerts/dispatch']]) {
+  ok((await call(m, p, admin, m === 'POST' ? {} : undefined)).s === 403, `admin cannot ${m} ${p} (403)`);
+}
+r = await call('GET', '/api/clinic/queue/summary', admin);
+ok(r.s === 200 && typeof r.j.open.total === 'number' && !JSON.stringify(r.j).includes('Lola'), `admin digest is counts only (${r.j.open && r.j.open.total} open cases, no names)`);
+r = await call('GET', '/api/admin/audit?limit=100', admin);
+ok(r.s === 200 && ['account_created', 'login', 'session_locked'].every((a) => r.j.entries.some((e) => e.action === a)), 'account audit log records who did what and when');
 
 // Archive this run's pending demo check-ins: they leave the pending lists without being marked reviewed.
 const lastDemo = (await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 71 } })).j.checkin;

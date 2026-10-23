@@ -69,6 +69,7 @@ const DBS = [
   { svc: 'alert', role: 'alert_svc', db: 'alert_db' },
   { svc: 'clinic', role: 'clinic_svc', db: 'clinic_db' },
   { svc: 'care', role: 'care_svc', db: 'care_db' },
+  { svc: 'auth', role: 'auth_svc', db: 'auth_db' }, // gateway accounts + account audit log
 ];
 for (const d of DBS) d.password = keep(`${d.svc.toUpperCase()}_DB_PASSWORD`, () => secret(24).replace(/[-_]/g, 'x'));
 
@@ -102,6 +103,8 @@ function envFor(key, url) {
       ...common, PORT: '8080', CORS_ORIGINS: url.web, JWT_ALGORITHM: 'HS256',
       JWT_SECRET: S.JWT_SECRET, JWT_REFRESH_SECRET: S.JWT_REFRESH_SECRET, JWT_KID: 'k1', JWT_REFRESH_KID: 'r1',
       JWT_ACCESS_TTL: env.JWT_ACCESS_TTL || '15m', TOKEN_STORE_FILE: '/tmp/token-store.json',
+      // Accounts live in Neon (auth_db) so accounts made in the app survive redeploys; reset links point at the web app.
+      AUTH_DATABASE_URL: dbUrl(DBS.find((d) => d.svc === 'auth')), DB_SSL: 'true', PUBLIC_WEB_URL: url.web, ACCOUNT_SMS_CAPTURE: 'false',
       CHECKIN_SERVICE_URL: url.checkin, ALERT_SERVICE_URL: url.alert, CLINIC_SERVICE_URL: url.clinic,
       LEGACY_ADAPTER_URL: url.adapter, CARE_SERVICE_URL: url.care, NODE_RED_URL: url.nodeRed,
       // A sleeping free instance needs ~1 minute to start: wait for it instead of failing the request.

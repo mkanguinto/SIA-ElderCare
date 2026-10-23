@@ -916,7 +916,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
+                "value": "Bearer {{nurseToken}}"
               }
             ],
             "url": {
@@ -2807,7 +2807,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3017,7 +3017,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -6001,6 +6001,846 @@
           }
         }
       ]
+    },
+    {
+      "name": "12. Batch 3a - Accounts and sessions (create -> activate -> sign in, single session, lock, admin limits)",
+      "item": [
+        {
+          "name": "Admin creates a caregiver account -> 201 pending, code sent by SMS (not shown)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const t = Date.now().toString();",
+                  "pm.collectionVariables.set(\"newUser\", \"caregiver.pm\" + Date.now().toString(36));",
+                  "pm.collectionVariables.set(\"newPhone\", \"0918\" + t.slice(-7));",
+                  "pm.collectionVariables.set(\"activationCode\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"pending activation\", () => pm.expect(j.account.status).to.eql(\"pending_activation\"));",
+                  "pm.test(\"code not in the response\", () => pm.expect(pm.response.text()).to.not.match(/[A-Z0-9]{4}-[A-Z0-9]{4}/));",
+                  "pm.test(\"masked number only\", () => pm.expect(j.activation.sentTo).to.match(/^\\+63 9/));",
+                  "pm.collectionVariables.set(\"newAccountId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"name\": \"Postman Caregiver\",\n  \"role\": \"caregiver\",\n  \"phone\": \"{{newPhone}}\",\n  \"patients\": [\"P-1003\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Sign-in before activation -> 400 account_pending",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"account_pending\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"{{newUser}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "(local testing) read the captured activation SMS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get(\"internalToken\")) { pm.test.skip(\"set internalToken (and ACCOUNT_SMS_CAPTURE=true) to run the activation steps\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const m = pm.response.json().body.match(/code is ([A-Z0-9]{4}-[A-Z0-9]{4})/);",
+                  "pm.test(\"activation code in the SMS\", () => pm.expect(m).to.not.be.null);",
+                  "if (m) pm.collectionVariables.set(\"activationCode\", m[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Token",
+                "value": "{{internalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/test/account-sms?to={{newPhone}}&purpose=activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "test",
+                "account-sms"
+              ],
+              "query": [
+                {
+                  "key": "to",
+                  "value": "{{newPhone}}"
+                },
+                {
+                  "key": "purpose",
+                  "value": "activation"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activation with a weak password -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"short\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Activation with the SMS code -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"activated\", () => pm.expect(pm.response.json().activated).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "New caregiver signs in -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"caregiver role\", () => pm.expect(pm.response.json().role).to.eql(\"caregiver\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"{{newUser}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The code works once -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin disables the test account -> 200 (reason required)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"disabled\", () => pm.expect(pm.response.json().account.status).to.eql(\"disabled\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts/{{newAccountId}}/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts",
+                "{{newAccountId}}",
+                "disable"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test account\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Signing in again ends the earlier session (single session)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"familyTokenOld\", pm.collectionVariables.get(\"familyToken\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"familyToken\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"family.jose\",\n  \"password\": \"{{demoPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Earlier family session -> 401 session_replaced",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"session_replaced\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyTokenOld}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse phone sign-in keeps the desktop session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set(\"phoneAccess\", j.access_token);",
+                  "pm.collectionVariables.set(\"phoneRefresh\", j.refresh_token);",
+                  "pm.test(\"phone session\", () => pm.expect(j.session.deviceClass).to.eql(\"phone\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Desktop nurse session still works",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "App reports idle -> session locked (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "lock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Locked session -> 401 session_locked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"session_locked\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unlock with the password -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"phoneAccess\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "unlock"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{phoneRefresh}}\",\n  \"password\": \"{{demoPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Unlocked session works again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read a patient record -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read the clinic queue -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot dispatch an alert -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/dispatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "dispatch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"message\": \"test message\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin digest: counts only, no names",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"counts\", () => pm.expect(pm.response.json().open.total).to.be.a(\"number\"));",
+                  "pm.test(\"no patient names\", () => pm.expect(pm.response.text()).to.not.include(\"Lola\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Account audit log: who did what, when",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const e = pm.response.json().entries;",
+                  "pm.test(\"account_created by the admin\", () => pm.expect(e.some((x) => x.action === \"account_created\" && x.actorId === \"U-AD-001\" && x.at)).to.be.true);",
+                  "pm.test(\"no secrets\", () => pm.expect(pm.response.text()).to.not.match(/code is|scrypt\\$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit?limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -6106,6 +6946,38 @@
     },
     {
       "key": "handoverDue",
+      "value": ""
+    },
+    {
+      "key": "internalToken",
+      "value": ""
+    },
+    {
+      "key": "newUser",
+      "value": ""
+    },
+    {
+      "key": "newPhone",
+      "value": ""
+    },
+    {
+      "key": "newAccountId",
+      "value": ""
+    },
+    {
+      "key": "activationCode",
+      "value": ""
+    },
+    {
+      "key": "familyTokenOld",
+      "value": ""
+    },
+    {
+      "key": "phoneAccess",
+      "value": ""
+    },
+    {
+      "key": "phoneRefresh",
       "value": ""
     }
   ]

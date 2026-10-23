@@ -42,12 +42,13 @@ const DBS = {
   'services/alert-service': { db: 'alert_db', role: 'alert_svc', password: rand(18) },
   'services/clinic-risk-service': { db: 'clinic_db', role: 'clinic_svc', password: rand(18) },
   'services/care-plan-service': { db: 'care_db', role: 'care_svc', password: rand(18) },
+  'api-gateway': { db: 'auth_db', role: 'auth_svc', password: rand(18) },
 };
 const dbUrl = (d) => `postgres://${d.role}:${encodeURIComponent(d.password)}@${host}:${port}/${d.db}`;
 const messaging = amqp ? { EVENT_TRANSPORT: 'rabbitmq', AMQP_URL: amqp } : { EVENT_TRANSPORT: 'http', AMQP_URL: '' };
 
 const SERVICES = {
-  'api-gateway': { INTERNAL_SERVICE_TOKEN: internalToken, JWT_SECRET: rand(48), JWT_REFRESH_SECRET: rand(48) },
+  'api-gateway': { INTERNAL_SERVICE_TOKEN: internalToken, JWT_SECRET: rand(48), JWT_REFRESH_SECRET: rand(48), AUTH_DATABASE_URL: dbUrl(DBS['api-gateway']), ACCOUNT_SMS_CAPTURE: 'true' },
   'services/checkin-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/checkin-service']), ...messaging },
   'services/alert-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/alert-service']), SMS_DRY_RUN: 'true', ...messaging },
   'services/clinic-risk-service': { INTERNAL_SERVICE_TOKEN: internalToken, DATABASE_URL: dbUrl(DBS['services/clinic-risk-service']), ...messaging },
@@ -131,7 +132,7 @@ async function applyDatabaseIsolation() {
   }
   try {
     if (await applyDatabaseIsolation()) {
-      console.log('\nDatabase isolation applied: checkin_svc -> checkin_db, alert_svc -> alert_db, clinic_svc -> clinic_db, care_svc -> care_db (no shared logins).');
+      console.log('\nDatabase isolation applied: checkin_svc -> checkin_db, alert_svc -> alert_db, clinic_svc -> clinic_db, care_svc -> care_db, auth_svc -> auth_db (no shared logins).');
     } else {
       const file = path.join(root, 'scripts', '.local-db-isolation.sql');
       const dbLines = Object.values(DBS).flatMap((d) => [`CREATE DATABASE ${d.db} OWNER ${d.role};`, `REVOKE ALL ON DATABASE ${d.db} FROM PUBLIC;`, `GRANT CONNECT, TEMP ON DATABASE ${d.db} TO ${d.role};`]);

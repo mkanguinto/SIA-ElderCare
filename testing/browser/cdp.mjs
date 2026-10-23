@@ -64,7 +64,7 @@ export async function launch({ width = 390, height = 844 } = {}) {
     /** Signs in through the web app's own /oauth proxy and stores the session the way the app does. */
     async login(username) {
       await page.goto('/');
-      const ok = await evaluate(`fetch('/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'password',username:${JSON.stringify(username)},password:${JSON.stringify(PASSWORD)}})})
+      const ok = await evaluate(`fetch('/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'password',username:${JSON.stringify(username)},password:${JSON.stringify(PASSWORD)},device:'phone'})})
         .then(r=>r.json()).then(d=>{sessionStorage.clear();sessionStorage.setItem('eldercare.session',JSON.stringify({accessToken:d.access_token,refreshToken:d.refresh_token}));return !!d.access_token})`);
       if (!ok) throw new Error(`login failed for ${username}`);
     },

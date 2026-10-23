@@ -55,6 +55,20 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U clinic_admin -d clinic_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
+  # Gateway accounts, account codes and the account audit log (Batch 3a)
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${AUTH_DB_ADMIN_PASSWORD:-auth_admin_pass}"
+      APP_DB_USER: auth_svc                         # the only login the gateway has
+      APP_DB_PASSWORD: "${AUTH_DB_PASSWORD:-auth_pass}"
+    volumes: ["auth-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
+    ports: ["5437:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U auth_admin -d auth_db"], interval: 5s, retries: 10 }
+    networks: [internal]
+
   care-db:
     image: postgres:16-alpine
     environment:
@@ -93,6 +107,10 @@ services:
       PORT: 8080
       NODE_ENV: production
       SERVICE_NAME: api-gateway
+      AUTH_DATABASE_URL: "postgres://auth_svc:${AUTH_DB_PASSWORD:-auth_pass}@auth-db:5432/auth_db"
+      PUBLIC_WEB_URL: "${PUBLIC_WEB_URL:-http://localhost:3000}"
+      # Local testing only: lets the smoke test / Postman read activation codes (never set in the cloud)
+      ACCOUNT_SMS_CAPTURE: "${ACCOUNT_SMS_CAPTURE:-true}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
       JWT_ALGORITHM: HS256
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env}"
@@ -122,7 +140,12 @@ services:
       TEXTBEE_WEBHOOK_SECRET: "${TEXTBEE_WEBHOOK_SECRET:-}"
       TEXTBEE_VALIDATE_WEBHOOK: "${TEXTBEE_VALIDATE_WEBHOOK:-true}"
     volumes: ["gateway-state:/app/state"]
-    depends_on: [checkin-service, alert-service, clinic-risk-service, care-plan-service]
+    depends_on:
+      auth-db: { condition: service_healthy }
+      checkin-service: { condition: service_started }
+      alert-service: { condition: service_started }
+      clinic-risk-service: { condition: service_started }
+      care-plan-service: { condition: service_started }
     networks: [internal, public]
 
   checkin-service:
@@ -262,6 +285,7 @@ volumes:
   alert-data: {}
   clinic-data: {}
   care-data: {}
+  auth-data: {}
   rabbitmq-data: {}
   gateway-state: {}
   node-red-data: {}

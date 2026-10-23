@@ -105,6 +105,17 @@ const config = {
   },
 
   usersFile: process.env.USERS_FILE || require('path').join(__dirname, '../../data/users.json'),
+
+  // Accounts, account codes and the account audit log (Batch 3a). Empty -> data/users.json (tests, no Docker).
+  authDatabaseUrl: process.env.AUTH_DATABASE_URL || '',
+  // Key for hashing activation codes / reset links at rest. Defaults to a value derived from the refresh secret.
+  accountTokenPepper: process.env.ACCOUNT_TOKEN_PEPPER
+    || require('crypto').createHmac('sha256', required('JWT_REFRESH_SECRET')).update('eldercare-account-tokens').digest('hex'),
+  // Where the web app lives, for the password-reset link sent by SMS.
+  publicWebUrl: (process.env.PUBLIC_WEB_URL || 'http://localhost:3000').replace(/\/+$/, ''),
+  // Local testing only: keep the last account SMS in memory so automated tests can read the code
+  // (GET /internal/test/account-sms, internal token required). Explicit opt-in; the cloud deploy sets it to false.
+  accountSmsCapture: process.env.ACCOUNT_SMS_CAPTURE === 'true',
 };
 
 if (!['alert', 'node-red'].includes(config.textbee.webhookTarget)) throw new Error('TEXTBEE_WEBHOOK_TARGET must be alert or node-red');

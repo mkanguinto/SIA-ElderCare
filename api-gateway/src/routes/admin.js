@@ -17,7 +17,7 @@ const { authorize } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
 const { breakerSnapshots } = require('../lib/resilientHttp');
 const logger = require('../lib/logger');
-const { listUsers, findById } = require('../auth/userStore');
+const { listUsers, getAccount, audit } = require('../auth/userStore');
 const { keyStatus, revokeUserSessions } = require('../auth/tokenService');
 
 const router = express.Router();
@@ -40,21 +40,28 @@ router.get('/health', authenticate, authorize(ROLES.ADMIN), async (req, res) => 
 
 // GET /api/admin/users : accounts and role assignments (Section 17 - Admin View). Read-only;
 // accounts are changed in data/users.json (or the external IdP), never through an API that could leak hashes.
-router.get('/users', authenticate, authorize(ROLES.ADMIN), (req, res) => {
-  const users = listUsers();
-  const byRole = users.reduce((acc, u) => ({ ...acc, [u.role]: (acc[u.role] || 0) + 1 }), {});
-  res.json({ total: users.length, byRole, users });
+router.get('/users', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
+  try {
+    const users = await listUsers();
+    const byRole = users.reduce((acc, u) => ({ ...acc, [u.role]: (acc[u.role] || 0) + 1 }), {});
+    res.json({ total: users.length, byRole, users });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post('/users/:id/revoke-sessions', authenticate, authorize(ROLES.ADMIN), (req, res) => {
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(req.params.id)) return res.status(404).json({ error: 'not_found', message: 'User not found' });
-  // Disabled users can still hold unexpired tokens, so look them up in the raw list too.
-  if (!findById(req.params.id) && !listUsers().some((u) => u.id === req.params.id)) {
-    return res.status(404).json({ error: 'not_found', message: 'User not found' });
+router.post('/users/:id/revoke-sessions', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
+  try {
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(req.params.id)) return res.status(404).json({ error: 'not_found', message: 'User not found' });
+    // Disabled users can still hold unexpired tokens, so look the account up whatever its status.
+    if (!(await getAccount(req.params.id))) return res.status(404).json({ error: 'not_found', message: 'User not found' });
+    const r = revokeUserSessions(req.params.id);
+    logger.warn('all sessions revoked by admin', { requestId: req.id, userId: req.params.id, by: req.user.id, sessions: r.sessions });
+    await audit(req, 'sessions_revoked_all', req.params.id, { sessions: r.sessions });
+    return res.json({ userId: req.params.id, sessionsRevoked: r.sessions, tokensIssuedBefore: new Date(r.revokedBefore * 1000).toISOString() });
+  } catch (err) {
+    return next(err);
   }
-  const r = revokeUserSessions(req.params.id);
-  logger.warn('all sessions revoked by admin', { requestId: req.id, userId: req.params.id, by: req.user.id, sessions: r.sessions });
-  return res.json({ userId: req.params.id, sessionsRevoked: r.sessions, tokensIssuedBefore: new Date(r.revokedBefore * 1000).toISOString() });
 });
 
 router.get('/security', authenticate, authorize(ROLES.ADMIN), (req, res) => {

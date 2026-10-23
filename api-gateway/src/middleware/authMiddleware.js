@@ -18,9 +18,13 @@
 const { ALL_ROLES } = require('../config/roles');
 const { verifyAccessToken } = require('../auth/tokenService');
 
-function unauthorized(res, error, description) {
+// `reason` tells the app what to show: the lock screen (session_locked), "signed in elsewhere" (session_replaced),
+// or the sign-in page (session_ended).
+const REASON = { locked: 'session_locked', replaced: 'session_replaced', revoked: 'session_ended' };
+
+function unauthorized(res, error, description, reason) {
   res.set('WWW-Authenticate', `Bearer realm="eldercare-connect", error="${error}", error_description="${description}"`);
-  return res.status(401).json({ error, message: description });
+  return res.status(401).json({ error, message: description, ...(reason ? { reason } : {}) });
 }
 
 function extractBearerToken(req) {
@@ -41,7 +45,8 @@ function authenticate(req, res, next) {
     claims = verifyAccessToken(token);
   } catch (err) {
     if (err.code === 'expired') return unauthorized(res, 'invalid_token', 'Access token has expired');
-    if (err.code === 'revoked' || err.message === 'Token is not an access token') return unauthorized(res, 'invalid_token', err.message);
+    if (REASON[err.code]) return unauthorized(res, 'invalid_token', err.message, REASON[err.code]);
+    if (err.message === 'Token is not an access token') return unauthorized(res, 'invalid_token', err.message);
     return unauthorized(res, 'invalid_token', 'Access token is invalid');
   }
 

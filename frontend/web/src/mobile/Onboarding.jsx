@@ -5,11 +5,11 @@
 //   /no-account  how to get an account (there is no open sign-up: the health center creates accounts and
 //                links each one to a patient before anyone can see health data)
 import React, { useState } from 'react';
-import { login } from '../api';
+import { login, takeNotice } from '../api';
 import { navigate } from '../router';
 import { DEMO, DEMO_PASSWORD } from '../demoAccounts';
 import Icon from './icons';
-import { MobileFrame, Cta, LangSwitch, CaregiverWalk, BrandMark, usePrefs, useT } from './kit';
+import { MobileFrame, Cta, Banner, LangSwitch, CaregiverWalk, BrandMark, usePrefs, useT } from './kit';
 
 // Demo mode: role buttons sign straight in. On in development; set VITE_DEMO_LOGIN=true for a demo deployment.
 export const DEMO_MODE = import.meta.env.DEV || import.meta.env.VITE_DEMO_LOGIN === 'true';
@@ -97,6 +97,8 @@ export function SignIn() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice] = useState(takeNotice);
+  const [forgot, setForgot] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -133,8 +135,14 @@ export function SignIn() {
           <button type="button" className="m-pill" aria-pressed={big} onClick={() => setPrefs({ big: !big })}><Icon name="textSize" size={18} />{tr('Big text', 'Malaking letra')}</button>
           <button type="button" className="m-pill" aria-pressed={lang === 'fil'} onClick={() => setPrefs({ lang: lang === 'fil' ? 'en' : 'fil' })}><Icon name="globe" size={18} />Filipino</button>
         </div>
+        {notice && <Banner tone="moderate" icon="shield" role="status">{notice}</Banner>}
         {error && <p className="m-error" role="alert">{error}</p>}
         <div style={{ marginTop: '.75rem' }}><Cta type="submit" disabled={busy}>{busy ? tr('Logging in…', 'Nagla-log in…') : tr('Log in', 'Mag-log in')}</Cta></div>
+        <div className="m-between">
+          <button type="button" className="m-link" onClick={() => navigate('/activate')}>{tr('Activate my account', 'I-activate ang account')}</button>
+          <button type="button" className="m-link" onClick={() => setForgot(!forgot)} aria-expanded={forgot}>{tr('Forgot password?', 'Nakalimutan ang password?')}</button>
+        </div>
+        {forgot && <Banner tone="info" icon="message">{tr('Ask your health center. They will send a reset link by SMS to the number on your account. They never see or ask for your password.', 'Humingi sa health center. Magpapadala sila ng reset link sa SMS. Hindi nila makikita o hihingin ang iyong password.')}</Banner>}
         <p className="m-caption">{tr('Caregivers, family and clinic staff use the same app. You will only see the screens for your role.', 'Iisang app para sa tagapag-alaga, pamilya at klinika. Makikita mo lang ang mga screen para sa iyo.')}</p>
         <p className="m-muted" style={{ textAlign: 'center' }}>{tr('New here?', 'Bago ka rito?')} <button type="button" className="m-link" onClick={() => navigate('/no-account')}>{tr('How to get an account', 'Paano magkaroon ng account')}</button></p>
         {DEMO_MODE && <button type="button" className="m-link" onClick={() => navigate('/start')}>{tr('Demo: pick a role instead', 'Demo: pumili ng papel')}</button>}
@@ -146,8 +154,8 @@ export function SignIn() {
 const STEPS = [
   ['Visit or call your barangay health center.', 'Pumunta o tumawag sa inyong barangay health center.'],
   ['Tell the nurse who you care for and how you are related (caregiver or family).', 'Sabihin sa nars kung sino ang inaalagaan mo at ano ang kaugnayan mo (tagapag-alaga o pamilya).'],
-  ['The nurse adds the patient (if new) and links your account to them.', 'Idadagdag ng nars ang pasyente (kung bago) at ili-link ang iyong account.'],
-  ['You get a username and a first password. Log in and change it.', 'Bibigyan ka ng username at unang password. Mag-log in at palitan ito.'],
+  ['The health center creates your account and links it to them (family members are verified first).', 'Gagawa ang health center ng account at ili-link ito (bini-verify muna ang pamilya).'],
+  ['You get an SMS with your username and an activation code. Tap "Activate my account" and choose your own password.', 'Makakatanggap ka ng SMS na may username at activation code. I-tap ang "I-activate ang account" at pumili ng sariling password.'],
 ];
 
 /** Replaces open sign-up: accounts are created by the health center so no one sees a patient they are not linked to. */

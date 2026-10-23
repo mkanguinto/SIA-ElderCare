@@ -463,6 +463,33 @@ const SMS_ROUTE_HANDLERS = {
   unknown: async () => `Sorry, we did not understand that message. ${SMS_HELP_TEXT}`,
 };
 
+/**
+ * Account messages from the gateway (activation codes, password-reset links). Sent straight away, not queued,
+ * through the same dry-run / allow-list rules as alerts. The text is never logged or stored here because it
+ * carries a one-time secret; only its length and the outcome are logged.
+ */
+const ACCOUNT_PURPOSES = ['activation', 'password_reset', 'family_activation'];
+router.post('/internal/messages/sms', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const errors = [];
+    if (typeof b.to !== 'string' || !normalizePhone(b.to)) errors.push('to must be a Philippine mobile number');
+    if (typeof b.body !== 'string' || !b.body.trim() || b.body.length > 480) errors.push('body is required (at most 480 characters)');
+    if (!ACCOUNT_PURPOSES.includes(b.purpose)) errors.push(`purpose must be one of: ${ACCOUNT_PURPOSES.join(', ')}`);
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    try {
+      const r = await sendSms({ to: b.to, body: b.body });
+      logger.info('account sms', { purpose: b.purpose, status: r.status, simulated: Boolean(r.simulated), chars: b.body.length });
+      return res.json({ status: r.simulated ? 'simulated' : 'sent', note: r.note || null, sid: r.sid });
+    } catch (err) {
+      logger.warn('account sms failed', { purpose: b.purpose, error: err.message });
+      return res.status(502).json({ error: 'sms_failed', message: err.permanent ? 'The SMS provider rejected the message' : 'The SMS could not be sent, try again' });
+    }
+  } catch (err) {
+    return next(err);
+  }
+});
+
 router.post('/internal/sms/status', async (req, res, next) => {
   try {
     const b = req.body || {};

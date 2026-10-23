@@ -61,6 +61,12 @@ const router = express.Router();
 // Everything under /api requires a valid access token.
 router.use(authenticate);
 
+// Who may read patient records: the elder's caregiver and family (own elders only) and nurses. The system admin
+// is technical, not clinical: accounts, care-team links, system health and audit logs, but no vital signs,
+// histories, medicines, visits, care plans or clinic cases, and no clinical actions (dispatching alerts,
+// triage, reviews). An admin who also works as a nurse uses a separate nurse account.
+const PATIENT_DATA = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC];
+
 /* ----------------------------- Daily Check-In Logger ----------------------------- */
 
 router.post(
@@ -71,28 +77,28 @@ router.post(
 );
 
 // Check-in monitoring status: Received -> Awaiting review -> Reviewed -> Action recorded
-router.get('/checkins/review-queue', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
+router.get('/checkins/review-queue', authorize(ROLES.CLINIC), forwardTo('checkin'));
 // The check-in id does not name the patient: the check-in service checks it against X-User-Patients.
-router.get('/checkins/:id', authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
+router.get('/checkins/:id', authorize(...PATIENT_DATA), forwardTo('checkin'));
 router.post('/checkins/archive-demo', authorize(ROLES.CLINIC), forwardTo('checkin'));
 router.post('/checkins/:id/review', authorize(ROLES.CLINIC), forwardTo('checkin'));
 router.post('/checkins/:id/action', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 router.get(
   '/patients/:id/history',
-  authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN),
+  authorize(...PATIENT_DATA),
   requirePatientAccess('id'),
   forwardTo('checkin'),
 );
 
-// Patient onboarding + list (clinic staff / admin)
-router.get('/patients', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
-router.post('/patients', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('checkin'));
+// Patient onboarding + list (nurses: the records carry conditions and baselines)
+router.get('/patients', authorize(ROLES.CLINIC), forwardTo('checkin'));
+router.post('/patients', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 // Prescribed medications: caregivers / family see their own patients; clinic staff prescribe
 router.get(
   '/patients/:id/medications',
-  authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN),
+  authorize(...PATIENT_DATA),
   requirePatientAccess('id'),
   forwardTo('checkin'),
 );
@@ -102,7 +108,7 @@ router.patch('/patients/:id/medications/:medId', authorize(ROLES.CLINIC), forwar
 // A patient's scheduled / recent visits, readable by their caregiver and family too
 router.get(
   '/patients/:id/visits',
-  authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN),
+  authorize(...PATIENT_DATA),
   requirePatientAccess('id'),
   forwardTo('clinic', (req) => {
     const view = ['upcoming', 'recent', 'all'].includes(req.query.view) ? req.query.view : 'upcoming';
@@ -113,9 +119,9 @@ router.get(
 /* ---------------------------- Care Plan (caregiver duties) ---------------------------- */
 const ANY_ROLE = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN];
 router.get('/care/categories', authorize(...ANY_ROLE), forwardTo('care'));
-router.get('/patients/:id/care-plan', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
-router.get('/patients/:id/care-plan/checklist', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
-router.get('/patients/:id/care-plan/history', authorize(...ANY_ROLE), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-plan', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-plan/checklist', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-plan/history', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('care'));
 router.put('/patients/:id/care-plan', authorize(ROLES.CLINIC), forwardTo('care'));
 router.post('/patients/:id/care-plan/tasks', authorize(ROLES.CLINIC), forwardTo('care'));
 router.patch('/care/tasks/:taskId', authorize(ROLES.CLINIC), forwardTo('care'));
@@ -125,7 +131,7 @@ router.post('/care/tasks/:taskId/completions', authorize(ROLES.CAREGIVER), forwa
 
 router.get(
   '/patients/:id',
-  authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN),
+  authorize(...PATIENT_DATA),
   requirePatientAccess('id'),
   forwardTo('checkin'),
 );
@@ -134,7 +140,7 @@ router.get(
 
 router.post(
   '/alerts/dispatch',
-  authorize(ROLES.CLINIC, ROLES.ADMIN),
+  authorize(ROLES.CLINIC), // a clinical decision
   forwardTo('alert'),
 );
 
@@ -143,7 +149,7 @@ router.get('/alerts/weather/current', authorize(...ANY_ROLE), forwardTo('alert')
 
 router.post(
   '/alerts/weather-check',
-  authorize(ROLES.CLINIC, ROLES.ADMIN),
+  authorize(ROLES.CLINIC),
   forwardTo('alert'), // runs the OpenWeatherMap x patient-profile mashup on demand
 );
 
@@ -169,16 +175,18 @@ router.get(
 
 router.get(
   '/clinic/queue',
-  authorize(ROLES.CLINIC, ROLES.ADMIN),
+  authorize(ROLES.CLINIC),
   forwardTo('clinic'),
 );
+// Counts only (no names, reasons or scores per patient): the admin's operational digest
+router.get('/clinic/queue/summary', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
 
 // Resolved / dismissed case history
-router.get('/clinic/queue/history', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
+router.get('/clinic/queue/history', authorize(ROLES.CLINIC), forwardTo('clinic'));
 
 // Visits: schedule for a case, list upcoming / recent, complete / cancel
 router.post('/clinic/queue/:itemId/visits', authorize(ROLES.CLINIC), forwardTo('clinic'));
-router.get('/clinic/visits', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
+router.get('/clinic/visits', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.patch('/clinic/visits/:visitId', authorize(ROLES.CLINIC), forwardTo('clinic'));
 
 // Care teams, case ownership and nurse handover (a case moves only when the incoming nurse accepts).
@@ -205,7 +213,7 @@ router.patch(
 
 router.get(
   '/clinic/patients/:id/emr-history',
-  authorize(ROLES.CLINIC, ROLES.ADMIN),
+  authorize(ROLES.CLINIC),
   forwardTo('clinic'),
 );
 

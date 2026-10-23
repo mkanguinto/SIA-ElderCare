@@ -192,6 +192,39 @@ router.get('/api/clinic/queue', async (req, res, next) => {
   }
 });
 
+/* ---------------------- GET /api/clinic/queue/summary ----------------------- */
+// Operational digest for the system admin: counts and case ages only - no patient names, ids, reasons or
+// readings - so the admin can watch the workload without reading patient records.
+router.get('/api/clinic/queue/summary', async (req, res, next) => {
+  try {
+    if (!req.user || !['clinic_staff', 'system_admin'].includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
+    const [{ rows: open }, { rows: [closed] }, { rows: [handovers] }] = await Promise.all([
+      pool.query(`SELECT left(id::text, 8) AS ref, priority, category, status, handover_status, assigned_to IS NOT NULL AS assigned,
+                         round(extract(epoch FROM now() - created_at) / 3600)::int AS age_hours
+                    FROM risk_queue WHERE status = ANY($1) ORDER BY priority, created_at`, [ACTIVE]),
+      pool.query(`SELECT count(*) FILTER (WHERE status = 'resolved')::int AS resolved, count(*) FILTER (WHERE status = 'dismissed')::int AS dismissed
+                    FROM risk_queue WHERE resolved_at > now() - interval '7 days'`),
+      pool.query(`SELECT count(*)::int AS pending, count(*) FILTER (WHERE due_time < now())::int AS overdue FROM handover_record WHERE status = 'pending'`),
+    ]);
+    const countBy = (k) => open.reduce((acc, r) => ({ ...acc, [r[k]]: (acc[r[k]] || 0) + 1 }), {});
+    return res.json({
+      generatedAt: new Date().toISOString(),
+      open: {
+        total: open.length,
+        byPriority: { P1: 0, P2: 0, P3: 0, P4: 0, ...countBy('priority') },
+        byStatus: countBy('status'),
+        unassigned: open.filter((r) => !r.assigned).length,
+        olderThan24h: open.filter((r) => r.age_hours >= 24).length,
+      },
+      closedLast7Days: closed,
+      handovers,
+      cases: open.map((r) => ({ ref: r.ref, priority: r.priority, category: r.category, status: r.status, handoverStatus: r.handover_status, assigned: r.assigned, ageHours: r.age_hours })),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 /* ------------------------ PATCH /api/clinic/queue/:itemId -------------------- */
 router.patch('/api/clinic/queue/:itemId', async (req, res, next) => {
   try {

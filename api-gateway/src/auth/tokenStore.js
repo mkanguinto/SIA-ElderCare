@@ -64,9 +64,58 @@ class TokenStore {
   }
 
   /* ---- refresh-token sessions (rotation + reuse detection) ---- */
-  createSession({ sid, userId, jti, exp }) {
-    this.state.sessions[sid] = { userId, currentJti: jti, previousJti: null, rotatedAt: null, createdAt: now(), exp, revokedAt: null, reason: null };
+  createSession({ sid, userId, jti, exp, role = null, deviceClass = 'desktop', userAgent = null, ip = null }) {
+    this.state.sessions[sid] = {
+      userId, role, deviceClass, userAgent: userAgent ? String(userAgent).slice(0, 200) : null, ip,
+      currentJti: jti, previousJti: null, rotatedAt: null, createdAt: now(), lastSeenAt: now(), lockedAt: null, exp, revokedAt: null, reason: null,
+    };
     this.save();
+  }
+
+  /** Active (not revoked, not expired) sessions of a user. */
+  userSessions(userId) {
+    const t = now();
+    return Object.entries(this.state.sessions)
+      .filter(([, s]) => s.userId === userId && !s.revokedAt && s.exp > t)
+      .map(([sid, s]) => ({ sid, ...s }));
+  }
+
+  /** Activity on a session. Written to disk at most once a minute (the deny-list and revocations save at once). */
+  touch(sid) {
+    const s = this.state.sessions[sid];
+    if (!s) return;
+    const t = now();
+    const due = t - (s.lastSavedSeenAt || 0) >= 60;
+    s.lastSeenAt = t;
+    if (due) { s.lastSavedSeenAt = t; this.save(); }
+  }
+
+  lockSession(sid, reason = 'inactivity') {
+    const s = this.state.sessions[sid];
+    if (!s || s.revokedAt || s.lockedAt) return false;
+    s.lockedAt = now();
+    s.lockReason = reason;
+    this.save();
+    return true;
+  }
+
+  unlockSession(sid) {
+    const s = this.state.sessions[sid];
+    if (!s) return;
+    s.lockedAt = null;
+    s.lockReason = null;
+    s.unlockFailures = 0;
+    s.lastSeenAt = now();
+    this.save();
+  }
+
+  /** Wrong password on the lock screen; returns the running count. */
+  unlockFailed(sid) {
+    const s = this.state.sessions[sid];
+    if (!s) return 0;
+    s.unlockFailures = (s.unlockFailures || 0) + 1;
+    this.save();
+    return s.unlockFailures;
   }
 
   getSession(sid) {

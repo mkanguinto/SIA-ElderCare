@@ -16,7 +16,7 @@ npm run smoke
 # with the Batch 3 checks (signed TextBee webhooks, DLQ dashboard):
 TEXTBEE_WEBHOOK_SECRET=<gateway value> DASHBOARD_PASSWORD=<value> NODE_RED_URL=http://localhost:1880 npm run smoke
 ```
-142 checks across all batches. Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
+160 checks across all batches. The account checks read the activation code through `GET /internal/test/account-sms`, which exists only with `ACCOUNT_SMS_CAPTURE=true` (the local Docker default; never in the cloud) and needs `INTERNAL_SERVICE_TOKEN` (taken from `.env`). Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
 Check-ins created by the test are sent with `dataOrigin: "demo"` and archived at the end, so they never sit in a nurse's review list.
 
 ## Browser tests (headless Chrome)
@@ -54,9 +54,11 @@ v2 folders:
 - **9. Batch 4** – care plan: categories, plan, checklist, tick off / upsert / skip rules, clinic add / edit / retire, adherence.
 - **10. Batch 5.1** – check-in status: received → awaiting review → reviewed → action recorded, missing readings (never 0), historical and archived demo lists.
 - **11. Batch 2 (handover)** – submit → still pending → wrong nurse cannot accept → accept → case in the new nurse's My cases, chain logged, admin limits; ends by handing the case back.
+- **12. Batch 3a (accounts)** – admin creates a caregiver → cannot sign in yet → activation code (read through the test-only SMS capture) → weak password 422 → activate → sign in → code single use; single session, nurse phone + desktop, lock / unlock, admin cannot read patient data, audit log.
+  Pass the internal token so the activation steps run: `--env-var internalToken=<INTERNAL_SERVICE_TOKEN>` (without it they are skipped).
 
 Postman CLI: `postman collection run postman/ElderCare_Connect.postman_collection.json -e postman/ElderCare_Connect.local.postman_environment.json --env-var textbeeSecret=<secret>`
-(last run: 134 requests, 226 assertions, 0 failures).
+(last run: 155 requests, 262 assertions, 0 failures).
 
 ## SoapUI – legacy SOAP integration
 1. Make sure the mock EMR (`:4005`) and the adapter (`:4004`) are running (both are published by docker compose).

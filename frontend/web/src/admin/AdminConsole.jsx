@@ -2,12 +2,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api, logout } from '../api';
 import { Link } from '../router';
-import { ROLE_LABEL, initials, relTime } from '../format';
+import { relTime } from '../format';
 import Icon from '../mobile/icons';
-import { Chip, toneFor } from '../mobile/kit';
+import { Chip } from '../mobile/kit';
 import { SecurityPanel } from './SecurityPanel';
 import { CareTeams } from './CareTeams';
-import { reasonLine } from '../mobile/nurse';
+import { Accounts, AuditLog } from './Accounts';
 import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
 
@@ -23,12 +23,12 @@ const SERVICES = {
 const NAV = [
   { to: '/admin', label: 'Integration monitor', icon: 'flow' },
   { to: '/admin/health', label: 'Service health', icon: 'server' },
-  { to: '/admin/users', label: 'Users & roles', icon: 'users' },
+  { to: '/admin/users', label: 'Accounts', icon: 'users' },
+  { to: '/admin/audit', label: 'Audit log', icon: 'shield' },
   { to: '/admin/care-teams', label: 'Care teams', icon: 'heartPulse' },
   { to: '/admin/dlq', label: 'Dead-letter queue', icon: 'inbox' },
   { to: '/admin/digest', label: 'Digest export', icon: 'file' },
 ];
-const ROLE_CHIP = { caregiver: ['ok', 'check', 'Caregiver'], family_member: ['info', 'bell', 'Family (view only)'], clinic_staff: ['ok', 'check', 'Clinic staff'], system_admin: ['', 'checkCircle', 'System admin'] };
 
 /** /api/admin/health + /api/admin/messaging, refreshed every 5 s. */
 function useLive() {
@@ -50,7 +50,8 @@ export default function AdminConsole({ user, path }) {
   const [live, reload] = useLive();
   let page;
   if (sub === '/admin/health') page = <Health live={live} />;
-  else if (sub === '/admin/users') page = <Users />;
+  else if (sub === '/admin/users') page = <Accounts Head={Head} />;
+  else if (sub === '/admin/audit') page = <AuditLog Head={Head} />;
   else if (sub === '/admin/care-teams') page = <CareTeams Head={Head} />;
   else if (sub === '/admin/dlq') page = <Dlq live={live} reload={reload} />;
   else if (sub === '/admin/digest') page = <DigestExport />;
@@ -64,8 +65,7 @@ export default function AdminConsole({ user, path }) {
         </div>
         <nav aria-label="Admin" style={{ display: 'contents' }}>
           {NAV.map((n) => <Link key={n.to} to={n.to} activeClassName="is-active"><Icon name={n.icon} />{n.label}</Link>)}
-          <span className="ad-sep">Clinic tools</span>
-          <Link to="/clinic" activeClassName="is-active"><Icon name="clipboard" />Risk queue</Link>
+          <span className="ad-sep">Settings</span>
           <Link to="/clinic/alert-rules" activeClassName="is-active"><Icon name="sliders" />Alert rules</Link>
         </nav>
         <button type="button" className="ad-bottom" onClick={logout}><Icon name="logout" />Log out</button>
@@ -196,51 +196,6 @@ function Health({ live }) {
 }
 
 /* ------------------------------ A2 users & roles ------------------------------ */
-function Users() {
-  const [users, setUsers] = useState(null);
-  const [msg, setMsg] = useState('');
-  useEffect(() => { api('/api/admin/users').then((r) => setUsers(r.users)).catch((e) => setMsg(e.message)); }, []);
-  async function signOutEverywhere(u) {
-    if (!window.confirm(`Sign ${u.name} out on every device?`)) return;
-    try {
-      const r = await api(`/api/admin/users/${encodeURIComponent(u.id)}/revoke-sessions`, { method: 'POST' });
-      setMsg(`${u.name}: ${r.sessionsRevoked} session(s) ended.`);
-    } catch (e) { setMsg(e.message); }
-  }
-  return (
-    <>
-      <Head title="Users & roles" sub="Who can sign in, what they can see, and which patients they are linked to." />
-      <section className="ad-panel">
-        <div className="m-between">
-          <h2>Users & roles</h2>
-          <button type="button" className="m-btn" style={{ background: 'var(--bg-primary)', color: '#fff', borderColor: 'var(--bg-primary)' }} disabled title="Accounts are managed in api-gateway/data/users.json for now">Add user</button>
-        </div>
-        {msg && <p className="m-banner tone-info" style={{ marginTop: '1rem' }} role="status">{msg}</p>}
-        {!users && !msg && <p>Loading…</p>}
-        {users && (
-          <table className="ad-table">
-            <thead><tr><th>Name</th><th>Role</th><th>Patients</th><th>Status</th><th><span className="m-sr">Actions</span></th></tr></thead>
-            <tbody>
-              {users.map((u) => {
-                const [tone, icon, label] = ROLE_CHIP[u.role] || ['', 'user', ROLE_LABEL[u.role]];
-                return (
-                  <tr key={u.id}>
-                    <td><div className="ad-user"><span className={`m-avatar ${toneFor(u.name)}`} aria-hidden="true">{initials(u.name)}</span><div><strong>{u.name}</strong><span className="m-sub">{u.username}</span></div></div></td>
-                    <td><Chip tone={tone} icon={icon}>{label}</Chip></td>
-                    <td>{u.role === 'clinic_staff' ? 'All patients' : u.patients.length ? u.patients.join(' · ') : '—'}</td>
-                    <td>{u.disabled ? <Chip tone="critical" icon="x">Disabled</Chip> : <Chip tone="ok" icon="check">Active</Chip>}</td>
-                    <td><button type="button" className="m-link" onClick={() => signOutEverywhere(u)}>Sign out everywhere</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </section>
-    </>
-  );
-}
-
 /* ------------------------------ dead-letter queue ------------------------------ */
 function Dlq({ live, reload }) {
   const [msg, setMsg] = useState('');
@@ -282,17 +237,22 @@ function Dlq({ live, reload }) {
 // The nurse app shows the digest as a list; the machine-readable copies for the barangay health office
 // and other systems live here, in the system console, not in the phone app.
 const esc = (v) => String(v).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+// The admin's digest is de-identified (Batch 3a): counts, case ages and statuses from
+// GET /api/clinic/queue/summary - no patient names, ids, reasons or readings. Nurses see the named digest.
 function buildDigest(q) {
-  const groups = ['P1', 'P2', 'P3'].map((p) => ({
-    priority: p,
-    patients: q.items.filter((i) => i.priority === p).map((i) => ({ id: i.patient.id, name: i.patient.name, score: i.scores.total, reason: reasonLine(i), status: i.status })),
-  }));
-  return { digest: { generatedAt: q.generatedAt, date: manilaDay(), totals: { P1: q.summary.P1 || 0, P2: q.summary.P2 || 0, P3: q.summary.P3 || 0 }, groups } };
+  return {
+    digest: {
+      generatedAt: q.generatedAt, date: manilaDay(), deidentified: true,
+      open: q.open, closedLast7Days: q.closedLast7Days, pendingHandovers: q.handovers,
+      cases: q.cases,
+    },
+  };
 }
 function toXml(d) {
   const g = d.digest;
-  const patients = (x) => x.patients.map((p) => `    <patient id="${esc(p.id)}" score="${p.score}" status="${p.status}">\n      <name>${esc(p.name)}</name>\n      <reason>${esc(p.reason)}</reason>\n    </patient>`).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<digest date="${g.date}" generatedAt="${g.generatedAt}">\n  <totals p1="${g.totals.P1}" p2="${g.totals.P2}" p3="${g.totals.P3}"/>\n${g.groups.map((x) => `  <group priority="${x.priority}">\n${patients(x)}\n  </group>`).join('\n')}\n</digest>`;
+  const cases = g.cases.map((c) => `    <case ref="${esc(c.ref)}" priority="${c.priority}" category="${esc(c.category || '')}" status="${c.status}" handover="${c.handoverStatus}" assigned="${c.assigned}" ageHours="${c.ageHours}"/>`).join('\n');
+  const p = g.open.byPriority;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<digest date="${g.date}" generatedAt="${g.generatedAt}" deidentified="true">\n  <open total="${g.open.total}" p1="${p.P1}" p2="${p.P2}" p3="${p.P3}" p4="${p.P4}" unassigned="${g.open.unassigned}" olderThan24h="${g.open.olderThan24h}"/>\n  <closedLast7Days resolved="${g.closedLast7Days.resolved}" dismissed="${g.closedLast7Days.dismissed}"/>\n  <handovers pending="${g.pendingHandovers.pending}" overdue="${g.pendingHandovers.overdue}"/>\n  <cases>\n${cases}\n  </cases>\n</digest>`;
 }
 function download(name, type, text) {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -306,13 +266,13 @@ function download(name, type, text) {
 function DigestExport() {
   const [q, setQ] = useState(null);
   const [tab, setTab] = useState('json');
-  const load = useCallback(() => api('/api/clinic/queue?pageSize=200').then(setQ).catch((e) => setQ({ error: e.message })), []);
+  const load = useCallback(() => api('/api/clinic/queue/summary').then(setQ).catch((e) => setQ({ error: e.message })), []);
   useEffect(() => { load(); }, [load]);
-  const digest = q && q.items ? buildDigest(q) : null;
+  const digest = q && q.open ? buildDigest(q) : null;
   const text = digest ? (tab === 'json' ? JSON.stringify(digest, null, 2) : toXml(digest)) : '';
   return (
     <>
-      <Head title="Daily digest export" sub="The nurses' daily digest in machine-readable form (JSON and XML) for the barangay health office and other systems." />
+      <Head title="Daily digest export" sub="Workload counts in machine-readable form (JSON and XML) for the barangay health office and other systems. De-identified: no names, readings or reasons - those stay with the nurses." />
       <section className="ad-panel">
         <div className="m-between">
           <div className="m-seg" role="group" aria-label="Format" style={{ width: '16rem' }}>

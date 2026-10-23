@@ -14,7 +14,7 @@ const targets = {
   'services/clinic-risk-service': [...BASE, ...MESSAGING, 'pagination.js', 'migrations.js'],
   'services/care-plan-service': [...BASE, 'pagination.js'],
   'services/legacy-emr-adapter': BASE,
-  'api-gateway': ['logger.js', 'resilientHttp.js', 'secrets.js'],
+  'api-gateway': ['logger.js', 'resilientHttp.js', 'secrets.js', 'migrations.js'],
   'integration/node-red': ['secrets.js'],
 };
 const contractsSrc = path.join(root, 'contracts', 'events');

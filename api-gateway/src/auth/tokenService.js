@@ -18,6 +18,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const logger = require('../lib/logger');
 const { TokenStore } = require('./tokenStore');
+const { sessionsToReplace, idleLimitMinutes } = require('./accountRules');
 
 const store = new TokenStore(config.tokenStoreFile);
 
@@ -116,13 +117,36 @@ function tokenResponse(user, sid, refreshJti) {
   };
 }
 
-/** Password grant: a new session (refresh-token family). */
-function startSession(user) {
+/**
+ * Password grant: a new session (refresh-token family). One session per user: the user's other sessions end
+ * (nurses keep one phone and one desktop session, so only the one on the same kind of device ends).
+ * @returns {{response:object, replaced:string[], sid:string}}
+ */
+function startSession(user, { deviceClass = 'desktop', userAgent = null, ip = null } = {}) {
+  const replaced = sessionsToReplace(user.role, deviceClass, store.userSessions(user.id));
+  for (const old of replaced) store.revokeSession(old, 'replaced');
   const sid = crypto.randomUUID();
   const jti = crypto.randomUUID();
   const { response, refreshExp } = tokenResponse(user, sid, jti);
-  store.createSession({ sid, userId: user.id, jti, exp: refreshExp });
-  return response;
+  store.createSession({ sid, userId: user.id, jti, exp: refreshExp, role: user.role, deviceClass, userAgent, ip });
+  return { response: { ...response, session: { id: sid, deviceClass, idleLockMinutes: idleLimitMinutes(user.role) } }, replaced, sid };
+}
+
+const SESSION_ENDED = {
+  replaced: ['replaced', 'You signed in on another device, so this session ended. Sign in again to continue here.'],
+  admin_revoked: ['revoked', 'An administrator ended this session. Sign in again.'],
+  account_disabled: ['revoked', 'This account has been disabled.'],
+};
+/** Revoked -> TokenError with a reason the app can explain; locked or idle too long -> 'locked'. */
+function checkSession(session, role) {
+  if (!session || session.revokedAt) {
+    const [code, msg] = SESSION_ENDED[session && session.reason] || ['revoked', 'Session has ended, please sign in again'];
+    throw new TokenError(code, msg);
+  }
+  const idleSec = Date.now() / 1000 - (session.lastSeenAt || session.createdAt);
+  if (session.lockedAt || idleSec > idleLimitMinutes(session.role || role) * 60) {
+    throw new TokenError('locked', 'Locked after inactivity. Enter your password to continue.');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -141,8 +165,8 @@ function verifyAccessToken(token) {
   if (store.isDenied(claims.jti)) throw new TokenError('revoked', 'Access token has been revoked');
   if (claims.iat < store.userRevokedBefore(claims.sub)) throw new TokenError('revoked', 'Access token has been revoked');
   if (claims.sid) {
-    const session = store.getSession(claims.sid);
-    if (!session || session.revokedAt) throw new TokenError('revoked', 'Session has ended, please sign in again');
+    checkSession(store.getSession(claims.sid), claims.role);
+    store.touch(claims.sid);
   }
   return claims;
 }
@@ -155,13 +179,14 @@ function verifyAccessToken(token) {
  * @param {(userId:string) => object|null} findUser
  * @returns {object} token response
  */
-function refreshSession(refreshToken, findUser) {
+async function refreshSession(refreshToken, findUser) {
   const claims = verifyRefreshToken(refreshToken);
   const session = store.getSession(claims.sid);
-  if (!session || session.revokedAt || session.userId !== claims.sub) throw new TokenError('revoked', 'Session has ended, please sign in again');
+  if (session && session.userId !== claims.sub) throw new TokenError('revoked', 'Session has ended, please sign in again');
+  checkSession(session, null);
   if (claims.iat < store.userRevokedBefore(claims.sub)) throw new TokenError('revoked', 'Session has ended, please sign in again');
 
-  const user = findUser(claims.sub);
+  const user = await findUser(claims.sub);
   if (!user) {
     store.revokeSession(claims.sid, 'user_inactive');
     throw new TokenError('revoked', 'User no longer active');
@@ -223,8 +248,60 @@ function logout(accessClaims) {
   if (accessClaims.sid) store.revokeSession(accessClaims.sid, 'logout');
 }
 
-function revokeUserSessions(userId) {
-  return store.revokeUser(userId);
+function revokeUserSessions(userId, reason = 'admin_revoked') {
+  return store.revokeUser(userId, reason);
+}
+
+/* ------------------------------------------------------------------ */
+/* Inactivity lock                                                     */
+/* ------------------------------------------------------------------ */
+/** The app reports that its user went idle: lock the session now (all API calls fail until unlocked). */
+function lockSession(accessClaims) {
+  return accessClaims.sid ? store.lockSession(accessClaims.sid, 'inactivity') : false;
+}
+
+/**
+ * Lock screen: the refresh token identifies the session (its access token may have expired meanwhile) and the
+ * user proves who they are with their password. Three wrong passwords end the session.
+ * @param {(userId:string, password:string) => Promise<object|null>} checkPassword  active user when the password is right
+ */
+async function unlockSession(refreshToken, password, checkPassword) {
+  const claims = verifyRefreshToken(refreshToken);
+  const session = store.getSession(claims.sid);
+  if (!session || session.revokedAt || session.userId !== claims.sub) {
+    const [code, msg] = SESSION_ENDED[session && session.reason] || ['revoked', 'Session has ended, please sign in again'];
+    throw new TokenError(code, msg);
+  }
+  if (claims.jti !== session.currentJti && claims.jti !== session.previousJti) throw new TokenError('revoked', 'Session has ended, please sign in again');
+  const user = await checkPassword(claims.sub, password);
+  if (!user) {
+    if (store.unlockFailed(claims.sid) >= 3) {
+      store.revokeSession(claims.sid, 'unlock_failed');
+      throw new TokenError('revoked', 'Too many wrong passwords. You have been signed out.');
+    }
+    throw new TokenError('bad_password', 'Wrong password');
+  }
+  store.unlockSession(claims.sid);
+  const jti = crypto.randomUUID();
+  const { response, refreshExp } = tokenResponse(user, claims.sid, jti);
+  store.rotateSession(claims.sid, jti, refreshExp);
+  return { ...response, session: { id: claims.sid, deviceClass: session.deviceClass, idleLockMinutes: idleLimitMinutes(user.role) } };
+}
+
+/** Sessions of a user for the admin view (no token material). */
+function listUserSessions(userId) {
+  const t = Date.now() / 1000;
+  return store.userSessions(userId).map((s) => ({
+    id: s.sid, deviceClass: s.deviceClass || 'desktop', userAgent: s.userAgent, ip: s.ip,
+    startedAt: new Date(s.createdAt * 1000).toISOString(), lastSeenAt: new Date((s.lastSeenAt || s.createdAt) * 1000).toISOString(),
+    locked: Boolean(s.lockedAt) || t - (s.lastSeenAt || s.createdAt) > idleLimitMinutes(s.role) * 60,
+  }));
+}
+
+function revokeOneSession(userId, sid, reason = 'admin_revoked') {
+  const s = store.getSession(sid);
+  if (!s || s.userId !== userId) return false;
+  return store.revokeSession(sid, reason);
 }
 
 /** For GET /api/admin/security: key ids and rotation schedule (never key material). */
@@ -255,6 +332,10 @@ module.exports = {
   revokeToken,
   logout,
   revokeUserSessions,
+  lockSession,
+  unlockSession,
+  listUserSessions,
+  revokeOneSession,
   keyStatus,
   issueAccessToken,
 };
