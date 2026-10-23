@@ -2,6 +2,8 @@
 //   /        landing: logo, "Care from Anywhere", Get started / I already have an account
 //   /start   pick your role: one tap signs in with that role's demo account (demo mode only)
 //   /signin  username + password, Big text and Filipino toggles
+//   /no-account  how to get an account (there is no open sign-up: the health center creates accounts and
+//                links each one to a patient before anyone can see health data)
 import React, { useState } from 'react';
 import { login } from '../api';
 import { navigate } from '../router';
@@ -134,8 +136,44 @@ export function SignIn() {
         {error && <p className="m-error" role="alert">{error}</p>}
         <div style={{ marginTop: '.75rem' }}><Cta type="submit" disabled={busy}>{busy ? tr('Logging in…', 'Nagla-log in…') : tr('Log in', 'Mag-log in')}</Cta></div>
         <p className="m-caption">{tr('Caregivers, family and clinic staff use the same app. You will only see the screens for your role.', 'Iisang app para sa tagapag-alaga, pamilya at klinika. Makikita mo lang ang mga screen para sa iyo.')}</p>
+        <p className="m-muted" style={{ textAlign: 'center' }}>{tr('New here?', 'Bago ka rito?')} <button type="button" className="m-link" onClick={() => navigate('/no-account')}>{tr('How to get an account', 'Paano magkaroon ng account')}</button></p>
         {DEMO_MODE && <button type="button" className="m-link" onClick={() => navigate('/start')}>{tr('Demo: pick a role instead', 'Demo: pumili ng papel')}</button>}
       </form>
+    </MobileFrame>
+  );
+}
+
+const STEPS = [
+  ['Visit or call your barangay health center.', 'Pumunta o tumawag sa inyong barangay health center.'],
+  ['Tell the nurse who you care for and how you are related (caregiver or family).', 'Sabihin sa nars kung sino ang inaalagaan mo at ano ang kaugnayan mo (tagapag-alaga o pamilya).'],
+  ['The nurse adds the patient (if new) and links your account to them.', 'Idadagdag ng nars ang pasyente (kung bago) at ili-link ang iyong account.'],
+  ['You get a username and a first password. Log in and change it.', 'Bibigyan ka ng username at unang password. Mag-log in at palitan ito.'],
+];
+
+/** Replaces open sign-up: accounts are created by the health center so no one sees a patient they are not linked to. */
+export function NoAccount() {
+  const tr = useT();
+  return (
+    <MobileFrame plain>
+      <div className="m-brandbar">
+        <button type="button" className="m-icon-btn" onClick={() => navigate('/signin')} aria-label={tr('Back', 'Bumalik')}><Icon name="back" /></button>
+        <LangSwitch />
+      </div>
+      <h1 style={{ fontSize: '1.75rem', margin: '.5rem 0 .35rem' }}>{tr('Getting an account', 'Paano magkaroon ng account')}</h1>
+      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr("Accounts come from your barangay health center, so only the people your loved one's nurse approves can see their health information.", 'Ang account ay galing sa barangay health center para ang mga inaprubahan lang ng nars ang makakita ng impormasyon.')}</p>
+      <ol className="m-stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {STEPS.map(([en, fil], i) => (
+          <li key={en} className="m-card m-row" style={{ marginTop: 0, alignItems: 'flex-start' }}>
+            <span className="m-brand-mark" style={{ width: '2.25rem', height: '2.25rem', fontWeight: 800 }} aria-hidden="true">{i + 1}</span>
+            <span style={{ paddingTop: '.35rem' }}>{tr(en, fil)}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="m-note" style={{ marginTop: '1rem' }}>
+        <strong>{tr('Clinic staff', 'Kawani ng klinika')}</strong>
+        {tr('Nurse and admin accounts are set up by the system administrator.', 'Ang account ng nars at admin ay ginagawa ng system administrator.')}
+      </div>
+      <div style={{ marginTop: '1.5rem' }}><Cta onClick={() => navigate('/signin')}>{tr('I have my username', 'May username na ako')}</Cta></div>
     </MobileFrame>
   );
 }

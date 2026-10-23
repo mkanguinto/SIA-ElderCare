@@ -50,7 +50,7 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 flowchart TB
   subgraph Clients
     CA[Caregiver App<br/>React Native]
-    FD[Family Dashboard<br/>React]
+    FD[Caregiver & Family<br/>phone apps]
     CP[Clinic Portal / Admin View<br/>React]
   end
   CA & FD & CP -->|HTTPS + Bearer JWT| GW[API Gateway :8080<br/>OAuth 2.0 token endpoint · JWT · RBAC · rate limit · routing]
@@ -140,8 +140,9 @@ Web dashboards:
 cd frontend/web && npm install && npm run dev      # http://localhost:3000 (proxies /api and /oauth to :8080)
 ```
 Open it, tap **Get started** and pick a role (one-tap demo sign-in, on in development or with `VITE_DEMO_LOGIN=true`).
-Caregivers and families land on the phone app (`/m/caregiver`, `/m/family`); nurses get `/m/nurse` on a phone and the
-desktop clinic pages (`/clinic`) on a computer; admins get the web console (`/admin`). Set `VITE_CLINIC_PHONE` to the
+Caregivers and families use only the phone app (`/m/caregiver`, `/m/family`; on a computer it shows in a phone-sized
+frame); nurses get `/m/nurse` on a phone and the desktop clinic pages (`/clinic`) on a computer; admins get the web
+console (`/admin`), which also exports the daily digest as JSON / XML. Set `VITE_CLINIC_PHONE` to the
 health center hotline to enable the "Call the clinic" buttons. Use Chrome DevTools' device toolbar to see the phone layout.
 Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/mobile/app.json` to your computer's LAN IP, then `cd frontend/mobile && npm install && npx expo start`.
 

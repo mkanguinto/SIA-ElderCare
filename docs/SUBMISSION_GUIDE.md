@@ -14,13 +14,15 @@ It also added **Node-RED** for the integration flows.
 ### React web app – `frontend/web`
 | View | File | Role | Gateway endpoints used |
 |---|---|---|---|
-| Login | `src/pages/Login.jsx` | all | `POST /oauth/token` |
-| Caregiver Check-In | `src/pages/CaregiverCheckIn.jsx` | caregiver | `POST /api/checkins`, `GET /api/patients/:id/history` |
-| Care Duties | `src/pages/CareDuties.jsx` | caregiver | `GET …/care-plan/checklist`, `POST /api/care/tasks/:id/completions` |
-| Family Dashboard | `src/pages/FamilyDashboard.jsx` | family_member | `/history`, `GET /api/alerts/notifications`, care checklist + adherence |
+| Onboarding / Log in | `src/mobile/Onboarding.jsx` | all | `POST /oauth/token` (pick-your-role demo sign-in, username + password) |
+| Caregiver phone app | `src/mobile/caregiver.jsx`, `src/mobile/duties.jsx` | caregiver | `POST /api/checkins` (3-step check-in, offline outbox), `/history`, `/medications`, `/visits`, care-plan checklist + completions, `GET /api/alerts/notifications` |
+| Family phone app | `src/mobile/family.jsx`, `src/mobile/duties.jsx` | family_member | `/history` (today, 7/30-day trends), `/medications`, `GET /api/alerts/notifications`, care checklist + adherence (read-only) |
+| Nurse phone app | `src/mobile/nurse.jsx` | clinic_staff | queue, patient + EMR history, visits, add patient, daily digest (computers use the Clinic Portal below) |
 | Clinic Portal | `src/pages/ClinicQueue.jsx`, `PatientProfile.jsx`, `CaseHistory.jsx` | clinic_staff, system_admin | queue, visits, case history (paged), EMR history, care plan editor |
 | Alert Rules | `src/pages/AlertRules.jsx` | admin (edit), clinic (read) | `GET/POST/PATCH/DELETE /api/alerts/rules` |
-| Admin View | `src/pages/AdminView.jsx` | system_admin | `/api/admin/health`, `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, link to the Node-RED DLQ dashboard |
+| Admin console | `src/admin/AdminConsole.jsx` | system_admin | `/api/admin/health`, `/api/admin/messaging` (+ replay), `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, daily digest export (JSON / XML), link to the Node-RED DLQ dashboard |
+
+Caregivers and families have no desktop pages: on a computer the phone app is shown in a phone-sized frame.
 
 How tokens are handled (`src/api.js`):
 - Login stores the access and refresh tokens in `sessionStorage`, which is cleared when the tab closes.
@@ -275,12 +277,12 @@ To show it in the defense:
 
 ## Demo script (about 12 minutes)
 
-1. **Admin View:** all services up, circuit breakers closed, sign-in security (key ID, rotation date,
+1. **Admin console:** all services up, circuit breakers closed, sign-in security (key ID, rotation date,
    sessions), users and roles. Open the **DLQ dashboard**: queues empty, last weather run, SMS router counts.
-2. **Caregiver** (phone app or web): submit normal vitals, then BP 186/118 with medication missed. Open
-   **Care duties** and tick off "Give morning medicines".
-3. **Family Dashboard:** the critical alert appears; show that the SMS was queued (alert-service log).
-   Below it, the caregiver's duties for today and the adherence bars.
+2. **Caregiver** (phone app, `/m/caregiver`): submit normal vitals, then BP 186/118 with a medicine "Not
+   given". Open the **Duties** tab and tick off "Give morning medicines".
+3. **Family** (phone app, `/m/family`): the critical alert appears ("Why am I seeing this?"); show that the
+   SMS was queued (alert-service log). Today shows the caregiver's duties; tap See all for adherence.
 4. **Clinic Portal:** P1 item at the top with its score breakdown. Open the patient to show the legacy EMR
    history (SOAP translated to JSON) and the **care plan editor**; add a duty from a suggestion.
 5. **Alert rules:** lower `WEATHER_HEAT` to 30 °C, click **Run now** on the DLQ dashboard (or use the fake

@@ -5,7 +5,9 @@ import { Link } from '../router';
 import { ROLE_LABEL, initials, relTime } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, toneFor } from '../mobile/kit';
-import { SecurityPanel } from '../pages/AdminView';
+import { SecurityPanel } from './SecurityPanel';
+import { reasonLine } from '../mobile/nurse';
+import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
 
 const DLQ_DASHBOARD = import.meta.env.VITE_DLQ_DASHBOARD_URL || 'http://localhost:1880/dlq';
@@ -22,6 +24,7 @@ const NAV = [
   { to: '/admin/health', label: 'Service health', icon: 'server' },
   { to: '/admin/users', label: 'Users & roles', icon: 'users' },
   { to: '/admin/dlq', label: 'Dead-letter queue', icon: 'inbox' },
+  { to: '/admin/digest', label: 'Digest export', icon: 'file' },
 ];
 const ROLE_CHIP = { caregiver: ['ok', 'check', 'Caregiver'], family_member: ['info', 'bell', 'Family (view only)'], clinic_staff: ['ok', 'check', 'Clinic staff'], system_admin: ['', 'checkCircle', 'System admin'] };
 
@@ -47,6 +50,7 @@ export default function AdminConsole({ user, path }) {
   if (sub === '/admin/health') page = <Health live={live} />;
   else if (sub === '/admin/users') page = <Users />;
   else if (sub === '/admin/dlq') page = <Dlq live={live} reload={reload} />;
+  else if (sub === '/admin/digest') page = <DigestExport />;
   else page = <Monitor live={live} />;
   return (
     <div className="ad-app">
@@ -63,7 +67,10 @@ export default function AdminConsole({ user, path }) {
         </nav>
         <button type="button" className="ad-bottom" onClick={logout}><Icon name="logout" />Log out</button>
       </aside>
-      <main className="ad-main" id="main">{page}</main>
+      <main className="ad-main" id="main">
+        <p className="m-banner tone-info ad-phone-note" role="note"><Icon name="monitor" />The admin console is made for a computer. On a phone you can check status, but use a computer to manage the system.</p>
+        {page}
+      </main>
     </div>
   );
 }
@@ -263,6 +270,60 @@ function Dlq({ live, reload }) {
           </tbody>
         </table>
         {live.at && <p className="m-caption" style={{ marginTop: '.75rem' }}>Checked {relTime(live.at)}.</p>}
+      </section>
+    </>
+  );
+}
+
+/* ------------------------------ daily digest export (JSON / XML) ------------------------------ */
+// The nurse app shows the digest as a list; the machine-readable copies for the barangay health office
+// and other systems live here, in the system console, not in the phone app.
+const esc = (v) => String(v).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+function buildDigest(q) {
+  const groups = ['P1', 'P2', 'P3'].map((p) => ({
+    priority: p,
+    patients: q.items.filter((i) => i.priority === p).map((i) => ({ id: i.patient.id, name: i.patient.name, score: i.scores.total, reason: reasonLine(i), status: i.status })),
+  }));
+  return { digest: { generatedAt: q.generatedAt, date: manilaDay(), totals: { P1: q.summary.P1 || 0, P2: q.summary.P2 || 0, P3: q.summary.P3 || 0 }, groups } };
+}
+function toXml(d) {
+  const g = d.digest;
+  const patients = (x) => x.patients.map((p) => `    <patient id="${esc(p.id)}" score="${p.score}" status="${p.status}">\n      <name>${esc(p.name)}</name>\n      <reason>${esc(p.reason)}</reason>\n    </patient>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<digest date="${g.date}" generatedAt="${g.generatedAt}">\n  <totals p1="${g.totals.P1}" p2="${g.totals.P2}" p3="${g.totals.P3}"/>\n${g.groups.map((x) => `  <group priority="${x.priority}">\n${patients(x)}\n  </group>`).join('\n')}\n</digest>`;
+}
+function download(name, type, text) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function DigestExport() {
+  const [q, setQ] = useState(null);
+  const [tab, setTab] = useState('json');
+  const load = useCallback(() => api('/api/clinic/queue?pageSize=200').then(setQ).catch((e) => setQ({ error: e.message })), []);
+  useEffect(() => { load(); }, [load]);
+  const digest = q && q.items ? buildDigest(q) : null;
+  const text = digest ? (tab === 'json' ? JSON.stringify(digest, null, 2) : toXml(digest)) : '';
+  return (
+    <>
+      <Head title="Daily digest export" sub="The nurses' daily digest in machine-readable form (JSON and XML) for the barangay health office and other systems." />
+      <section className="ad-panel">
+        <div className="m-between">
+          <div className="m-seg" role="group" aria-label="Format" style={{ width: '16rem' }}>
+            <button type="button" aria-pressed={tab === 'json'} onClick={() => setTab('json')}>JSON</button>
+            <button type="button" aria-pressed={tab === 'xml'} onClick={() => setTab('xml')}>XML</button>
+          </div>
+          <div className="m-row">
+            <button type="button" className="m-btn" onClick={load}><Icon name="refresh" size={18} />Rebuild</button>
+            <button type="button" className="m-btn is-dark" disabled={!digest} onClick={() => download(`digest-${manilaDay()}.${tab}`, tab === 'json' ? 'application/json' : 'application/xml', text)}>Download .{tab}</button>
+          </div>
+        </div>
+        {!q && <p>Loading…</p>}
+        {q && q.error && <p className="m-error">{q.error}</p>}
+        {digest && <pre className="m-code" style={{ marginTop: '1rem', maxHeight: '36rem' }}>{text}</pre>}
       </section>
     </>
   );

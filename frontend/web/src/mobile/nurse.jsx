@@ -56,7 +56,7 @@ function useQueue() {
 }
 
 /** The reason behind the current priority, in a short line ("BP 186/118 · missed medicine · 8:06 AM"). */
-function reasonLine(item) {
+export function reasonLine(item) {
   const r = item.reasons.slice(0, 6);
   const health = r.find((x) => x.type === 'health_anomaly') || r.find((x) => x.type === 'missed_checkin');
   const env = r.find((x) => x.type === 'environmental_risk');
@@ -70,13 +70,19 @@ function Queue({ user }) {
   const tr = useT();
   const [q] = useQueue();
   const [filter, setFilter] = useState(null);
+  const [mine, setMine] = useState(false);
   const [search, setSearch] = useState('');
+  const [staff, setStaff] = useState({});
+  useEffect(() => {
+    api('/api/directory/users?role=clinic_staff').then((r) => setStaff(Object.fromEntries(r.users.map((u) => [u.id, u.name])))).catch(() => {});
+  }, []);
   if (!q) return <><Greeting user={user} alertsTo={`${BASE}/digest`} /><Loader /></>;
   if (q.error) return <div className="m-error">{q.error}</div>;
 
   const s = q.summary;
   const items = q.items
     .filter((i) => !filter || i.priority === filter)
+    .filter((i) => !mine || i.assignedTo === user.id)
     .filter((i) => !search || `${i.patient.name} ${i.patient.zipCode} ${i.patient.id}`.toLowerCase().includes(search.toLowerCase()));
   const weather = q.items.flatMap((i) => i.reasons.filter((r) => r.type === 'environmental_risk' && isToday(r.at)).map((r) => ({ ...r, patient: i.patient.name })));
   const urgent = (s.P1 || 0) + (s.P2 || 0);
@@ -100,7 +106,13 @@ function Queue({ user }) {
         <span className="m-sr">{tr('Search', 'Hanapin')}</span>
         <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tr('Search patient or ZIP code', 'Hanapin ang pasyente o ZIP')} />
       </label>
-      <div className="m-between"><h2 className="m-section-title">{tr('Needs action now', 'Kailangang aksyunan')}</h2><span className="m-caption" style={{ fontWeight: 700, color: 'var(--text-brand)' }}>{tr('Sort: score', 'Ayos: score')}</span></div>
+      <div className="m-between">
+        <h2 className="m-section-title">{tr('Needs action now', 'Kailangang aksyunan')}</h2>
+        <div className="m-seg" role="group" aria-label={tr('Show', 'Ipakita')} style={{ padding: '.2rem' }}>
+          <button type="button" aria-pressed={!mine} onClick={() => setMine(false)} style={{ minHeight: '2.25rem', padding: '0 .75rem' }}>{tr('All', 'Lahat')}</button>
+          <button type="button" aria-pressed={mine} onClick={() => setMine(true)} style={{ minHeight: '2.25rem', padding: '0 .75rem' }}>{tr('Mine', 'Akin')}</button>
+        </div>
+      </div>
       <div className="m-stack">
         {items.map((i) => (
           <Link key={i.id} to={`${BASE}/patients/${i.patient.id}`} className="m-list-row">
@@ -110,11 +122,12 @@ function Queue({ user }) {
               <span className="m-sub">{reasonLine(i)}</span>
               <Chip tone={PRIORITY_TONE[i.priority]} icon="alert">{i.priority} · {tr('score', 'score')} {i.scores.total}</Chip>
               {i.status !== 'open' && <Chip tone="info">{i.status === 'scheduled' ? tr('Visit booked', 'May bisita') : tr('In review', 'Sinusuri')}</Chip>}
+              {i.assignedTo && <span className="m-sub" style={{ marginTop: '.35rem', marginBottom: 0 }}>{i.assignedTo === user.id ? tr('You are handling this', 'Ikaw ang may hawak') : tr(`${staff[i.assignedTo] || 'Another nurse'} is handling this`, `Hawak ni ${staff[i.assignedTo] || 'ibang nars'}`)}</span>}
             </span>
             <Icon name="chevron" />
           </Link>
         ))}
-        {!items.length && <div className="m-note"><strong>{tr('Nothing here', 'Wala rito')}</strong>{tr('No patients match. Clear the filter or search.', 'Walang tugma.')}</div>}
+        {!items.length && <div className="m-note"><strong>{tr('Nothing here', 'Wala rito')}</strong>{mine ? tr('No cases are assigned to you. Open a patient and tap "Assign to me".', 'Walang kasong nakatalaga sa iyo.') : tr('No patients match. Clear the filter or search.', 'Walang tugma.')}</div>}
       </div>
     </>
   );
@@ -442,24 +455,13 @@ function Visits() {
 }
 
 /* ------------------------------ N5 daily digest ------------------------------ */
-const esc = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-function buildDigest(q) {
-  const groups = ['P1', 'P2', 'P3'].map((p) => ({ priority: p, patients: q.items.filter((i) => i.priority === p).map((i) => ({ id: i.patient.id, name: i.patient.name, score: i.scores.total, reason: reasonLine(i), status: i.status })) }));
-  return { digest: { generatedAt: q.generatedAt, date: manilaDay(), totals: { P1: q.summary.P1 || 0, P2: q.summary.P2 || 0, P3: q.summary.P3 || 0 }, groups } };
-}
-function toXml(d) {
-  const g = d.digest;
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<digest date="${g.date}" generatedAt="${g.generatedAt}">\n  <totals p1="${g.totals.P1}" p2="${g.totals.P2}" p3="${g.totals.P3}"/>\n${g.groups.map((x) => `  <group priority="${x.priority}">\n${x.patients.map((p) => `    <patient id="${esc(p.id)}" score="${p.score}" status="${p.status}">\n      <name>${esc(p.name)}</name>\n      <reason>${esc(p.reason)}</reason>\n    </patient>`).join('\n')}\n  </group>`).join('\n')}\n</digest>`;
-}
-
 function Digest() {
   const tr = useT();
   const [q, reload] = useQueue();
-  const [tab, setTab] = useState('summary');
-  const digest = useMemo(() => (q && q.items ? buildDigest(q) : null), [q]);
+  const groups = useMemo(() => (q && q.items ? ['P1', 'P2', 'P3'].map((p) => ({ priority: p, items: q.items.filter((i) => i.priority === p) })) : []), [q]);
   if (!q) return <><TopBar title={tr('Daily digest', 'Daily digest')} back={BASE} /><Loader /></>;
   if (q.error) return <div className="m-error">{q.error}</div>;
-  const t = digest.digest.totals;
+  const t = { P1: q.summary.P1 || 0, P2: q.summary.P2 || 0, P3: q.summary.P3 || 0 };
   const total = t.P1 + t.P2 + t.P3;
   return (
     <>
@@ -472,28 +474,23 @@ function Digest() {
           <Chip tone="high" icon="alert">{t.P2} {tr('soon', 'malapit na')}</Chip>
           <Chip tone="moderate" icon="alert">{t.P3} {tr('watch', 'bantayan')}</Chip>
         </div>
-        <p className="m-caption" style={{ color: 'var(--text-secondary)' }}>{tr('Built from the clinic risk queue. Share the JSON or XML with the barangay health office.', 'Mula sa clinic risk queue. Ibahagi ang JSON o XML sa barangay health office.')}</p>
+        <p className="m-caption" style={{ color: 'var(--text-secondary)' }}>{tr('Built from the clinic risk queue. Start with the urgent patients.', 'Mula sa clinic risk queue. Unahin ang mga agaran.')}</p>
       </section>
-      <div className="m-seg" style={{ margin: '1rem 0' }} role="group" aria-label={tr('Format', 'Format')}>
-        {[['summary', tr('Summary', 'Buod')], ['json', 'JSON'], ['xml', 'XML']].map(([k, l]) => <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)}>{l}</button>)}
-      </div>
-      {tab === 'json' && <pre className="m-code">{JSON.stringify(digest, null, 2)}</pre>}
-      {tab === 'xml' && <pre className="m-code">{toXml(digest)}</pre>}
-      {tab === 'summary' && digest.digest.groups.filter((g) => g.patients.length).map((g) => (
+      {groups.filter((g) => g.items.length).map((g) => (
         <section key={g.priority}>
-          <div className="m-between"><h2 className="m-section-title">{tr(`${PRIORITY_WORD[g.priority][0]} (${g.priority})`, `${PRIORITY_WORD[g.priority][1]} (${g.priority})`)}</h2><strong style={{ color: 'var(--text-brand)' }}>{g.patients.length}</strong></div>
+          <div className="m-between"><h2 className="m-section-title">{tr(`${PRIORITY_WORD[g.priority][0]} (${g.priority})`, `${PRIORITY_WORD[g.priority][1]} (${g.priority})`)}</h2><strong style={{ color: 'var(--text-brand)' }}>{g.items.length}</strong></div>
           <div className="m-stack">
-            {g.patients.map((p) => (
-              <Link key={p.id} to={`${BASE}/patients/${p.id}`} className="m-list-row">
-                <span className={`m-avatar ${toneFor(p.name)}`} aria-hidden="true">{avatarInitials(p.name)}</span>
-                <span className="m-grow"><strong>{p.name}</strong><span className="m-sub">{p.reason}</span><Chip tone={PRIORITY_TONE[g.priority]} icon="alert">{tr('Score', 'Score')} {p.score}</Chip></span>
+            {g.items.map((i) => (
+              <Link key={i.id} to={`${BASE}/patients/${i.patient.id}`} className="m-list-row">
+                <span className={`m-avatar ${toneFor(i.patient.name)}`} aria-hidden="true">{avatarInitials(i.patient.name)}</span>
+                <span className="m-grow"><strong>{i.patient.name}</strong><span className="m-sub">{reasonLine(i)}</span><Chip tone={PRIORITY_TONE[g.priority]} icon="alert">{tr('Score', 'Score')} {i.scores.total}</Chip></span>
                 <Icon name="chevron" />
               </Link>
             ))}
           </div>
         </section>
       ))}
-      {tab === 'summary' && !total && <div className="m-note">{tr('No patients need follow-up right now.', 'Walang kailangang i-follow-up ngayon.')}</div>}
+      {!total && <div className="m-note">{tr('No patients need follow-up right now.', 'Walang kailangang i-follow-up ngayon.')}</div>}
     </>
   );
 }

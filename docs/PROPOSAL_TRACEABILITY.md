@@ -25,8 +25,8 @@ against the Docker stack.
 
 | Stakeholder | Interface | Status |
 |---|---|---|
-| Primary Caregiver | React Native app (`frontend/mobile`: check-in + duties), web check-in and **Care duties** pages, **SMS check-in / SOS** | ✅ |
-| Family Member / Sponsor | Family Dashboard (`FamilyDashboard.jsx`): trends, alerts, caregiver duties + adherence; SMS alerts with STOP/START | ✅ |
+| Primary Caregiver | Caregiver phone app (`frontend/web/src/mobile/caregiver.jsx`: 3-step check-in, offline outbox, **care duties**, medicines, alerts), React Native app (`frontend/mobile`), **SMS check-in / SOS** | ✅ |
+| Family Member / Sponsor | Family phone app (`frontend/web/src/mobile/family.jsx`): today, trends, alerts with plain-language reasons, medicines, caregiver duties + adherence; SMS alerts with STOP/START | ✅ |
 | Clinic Staff / Nurse | Clinic Portal risk queue + legacy EMR history + care plan editor (`ClinicQueue.jsx`, `PatientProfile.jsx`) | ✅ |
 | System Administrator | Admin View: service health, circuit breakers, accounts and roles, sign-in security, "sign out everywhere"; Alert Rules; Node-RED DLQ dashboard | ✅ |
 
@@ -128,8 +128,8 @@ against the Docker stack.
 | Interface | Status |
 |---|---|
 | Login View | ✅ |
-| Caregiver Check-In | ✅ web + React Native + SMS; **care duties** checklist (web + mobile) |
-| Family Dashboard | ✅ trends, sparklines, alert feed, caregiver duties + adherence, auto-refresh |
+| Caregiver Check-In | ✅ phone web app + React Native + SMS; **care duties** checklist |
+| Family Dashboard | ✅ phone app: today, 7/30-day trends, alert feed, caregiver duties + adherence, auto-refresh |
 | Clinic Risk Queue | ✅ priority summary, score breakdown, reasons, triage actions, EMR panel, case history (paged), care plan editor |
 | Admin View | ✅ service health, circuit breakers, **user accounts & roles**, sign-in security, alert rules, link to the DLQ dashboard |
 

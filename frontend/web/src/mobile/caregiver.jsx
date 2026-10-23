@@ -2,10 +2,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { Link, navigate } from '../router';
-import { age, relTime, initials } from '../format';
+import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
 import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications } from './common';
+import { DutiesScreen, DutiesSummary } from './duties';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
   isToday, clock, hhmm, manilaHour, toneFor, shortName, CLINIC_PHONE, EMERGENCY_PHONE, TONE,
@@ -17,12 +18,13 @@ const BASE = '/m/caregiver';
 function useElders(user) {
   const [elders, setElders] = useState(null);
   const load = useCallback(() => Promise.all(user.patients.map(async (id) => {
-    const [p, h, m] = await Promise.all([
+    const [p, h, m, v] = await Promise.all([
       api(`/api/patients/${id}`).catch(() => ({ id, fullName: id, conditions: [] })),
-      api(`/api/patients/${id}/history?days=2&limit=20`).catch(() => ({ checkins: [] })),
+      api(`/api/patients/${id}/history?days=7&limit=30`).catch(() => ({ checkins: [] })),
       api(`/api/patients/${id}/medications`).catch(() => ({ medications: [] })),
+      api(`/api/patients/${id}/visits?view=upcoming`).catch(() => ({ visits: [] })),
     ]);
-    return { ...p, checkins: h.checkins || [], meds: m.medications || [] };
+    return { ...p, checkins: h.checkins || [], meds: m.medications || [], visits: v.visits || [] };
   })).then(setElders), [user.patients]);
   useEffect(() => { load(); }, [load]);
   return [elders, load];
@@ -41,7 +43,7 @@ function useOutbox(userId) {
 
 const NAV = (tr) => [
   { to: BASE, icon: 'home', label: tr('Home', 'Home') },
-  { to: `${BASE}/check-in`, icon: 'clipboard', label: tr('Check-in', 'Check-in') },
+  { to: `${BASE}/duties`, icon: 'clipboard', label: tr('Duties', 'Gawain') },
   { to: `${BASE}/medicines`, icon: 'pill', label: tr('Meds', 'Gamot') },
   { to: `${BASE}/alerts`, icon: 'bell', label: tr('Alerts', 'Alerto'), exact: false },
   { to: `${BASE}/profile`, icon: 'user', label: tr('Me', 'Ako') },
@@ -53,9 +55,10 @@ export default function CaregiverApp({ user, path }) {
   let screen;
   if (sub.startsWith('/check-in')) screen = <CheckIn user={user} />;
   else if (sub === '/medicines') screen = <Medicines user={user} />;
+  else if (sub === '/duties') screen = <Duties user={user} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
   else if (sub === '/alerts') screen = <CaregiverAlerts user={user} />;
-  else if (sub === '/profile') screen = <Profile user={user} back={BASE} desktopTo="/caregiver" />;
+  else if (sub === '/profile') screen = <Profile user={user} back={BASE} />;
   else screen = <Home user={user} />;
   const wizard = sub.startsWith('/check-in');
   return (
@@ -134,6 +137,51 @@ function Home({ user }) {
           );
         })}
       </div>
+
+      {status.flatMap((e) => e.visits.map((v) => ({ ...v, who: e.fullName }))).slice(0, 1).map((v) => (
+        <section key={v.id} style={{ marginTop: '1rem' }}>
+          <h2 className="m-section-title">{tr('Upcoming visit', 'Darating na bisita')}</h2>
+          <div className="m-card m-row" style={{ alignItems: 'flex-start' }}>
+            <span className="m-thumb tone-ok" aria-hidden="true"><Icon name="calendar" /></span>
+            <div className="m-grow"><strong>{visitWhen(v)}</strong>
+              <p className="m-muted" style={{ fontSize: '.9375rem' }}>{VISIT_TYPE_LABEL[v.visitType]} · {v.who}</p>
+              <p className="m-caption">{v.destination}{v.location ? ` · ${v.location}` : ''}</p>
+              {v.notes && <p className="m-caption">{tr('Note from the nurse:', 'Tala ng nars:')} {v.notes}</p>}</div>
+          </div>
+        </section>
+      ))}
+
+      <div className="m-between"><h2 className="m-section-title">{tr('Care duties today', 'Mga gawain ngayon')}</h2></div>
+      {status.map((e) => <div key={e.id} style={{ marginBottom: '.75rem' }}><p className="m-caption" style={{ fontWeight: 700, marginBottom: '.35rem' }}>{e.fullName}</p><DutiesSummary patientId={e.id} to={`${BASE}/duties`} LinkComponent={Link} /></div>)}
+
+      <h2 className="m-section-title">{tr('This week', 'Ngayong linggo')}</h2>
+      <div className="m-stack">
+        {status.flatMap((e) => e.checkins.map((c) => ({ ...c, who: e.fullName }))).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 6).map((c) => (
+          <div key={c.id} className="m-card" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
+            <div className="m-between">
+              <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}</strong>
+              <Chip tone={TONE[c.severity] || 'ok'} icon={['none', 'low'].includes(c.severity) ? 'check' : 'alert'}>{SEVERITY_WORD[c.severity] ? tr(...SEVERITY_WORD[c.severity]) : c.severity}</Chip>
+            </div>
+            <p className="m-caption">{c.who} · {isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}
+              {[c.vitals.heartRate && ` · ${c.vitals.heartRate} bpm`, c.vitals.temperatureC && ` · ${c.vitals.temperatureC} °C`, c.vitals.spo2 && ` · ${c.vitals.spo2}%`, c.vitals.bloodGlucose && ` · ${c.vitals.bloodGlucose} mg/dL`].filter(Boolean).join('')}
+              {c.medication.taken === false ? tr(' · medicine missed', ' · hindi nainom ang gamot') : ''}</p>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+const SEVERITY_WORD = { none: ['Normal', 'Normal'], low: ['Normal', 'Normal'], moderate: ['Watch', 'Bantayan'], high: ['High', 'Mataas'], critical: ['Very high', 'Napakataas'] };
+
+function Duties({ user }) {
+  const tr = useT();
+  const [elders] = useElders(user);
+  return (
+    <>
+      <TopBar title={tr('Care duties', 'Mga gawain')} back={BASE} />
+      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('Tick off each duty when it is done. If you could not do one, skip it and say why.', 'Markahan ang bawat gawain kapag tapos na. Kung hindi nagawa, laktawan at sabihin kung bakit.')}</p>
+      {!elders ? <Loader /> : <DutiesScreen patients={elders} editable />}
     </>
   );
 }
@@ -184,7 +232,9 @@ const REASONS = [
   ['Forgot', 'Nakalimutan'],
   ['Could not swallow / vomited', 'Hindi malunok / nagsuka'],
 ];
-const EMPTY_VITALS = { systolic: '', diastolic: '', heartRate: '', temperatureC: '', spo2: '' };
+const EMPTY_VITALS = { systolic: '', diastolic: '', heartRate: '', temperatureC: '', spo2: '', bloodGlucose: '' };
+const MOBILITY = [['normal', 'Walks alone', 'Nakakalakad mag-isa'], ['assisted', 'Needs help', 'Kailangan ng tulong'], ['wheelchair', 'Wheelchair', 'Wheelchair'], ['bedridden', 'In bed', 'Nakahiga']];
+const MOOD = [['good', 'Good', 'Mabuti'], ['neutral', 'Okay', 'Okay lang'], ['low', 'Low / sad', 'Malungkot'], ['agitated', 'Agitated', 'Balisa']];
 
 function CheckIn({ user }) {
   const tr = useT();
@@ -197,6 +247,8 @@ function CheckIn({ user }) {
   const [given, setGiven] = useState({});
   const [reasons, setReasons] = useState({});
   const [symptoms, setSymptoms] = useState([]);
+  const [mobility, setMobility] = useState(null);
+  const [mood, setMood] = useState(null);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -230,8 +282,8 @@ function CheckIn({ user }) {
       recordedAt: new Date().toISOString(),
       ...(Object.keys(v).length ? { vitals: v } : {}),
       ...(answered.length ? { medication: { taken: missed.length === 0, missed } } : {}),
-      ...(symptoms.includes('fall') ? { mobilityStatus: 'fall_reported' } : {}),
-      ...(symptoms.includes('confused') ? { mood: 'confused' } : {}),
+      ...(symptoms.includes('fall') ? { mobilityStatus: 'fall_reported' } : mobility ? { mobilityStatus: mobility } : {}),
+      ...(symptoms.includes('confused') ? { mood: 'confused' } : mood ? { mood } : {}),
       ...(noteText ? { notes: noteText.slice(0, 2000) } : {}),
     };
   }
@@ -290,6 +342,7 @@ function CheckIn({ user }) {
             <label className="m-field"><span>{tr('Temperature (°C)', 'Temperatura (°C)')}</span><input inputMode="decimal" type="number" step="0.1" value={vitals.temperatureC} onChange={set('temperatureC')} /></label>
           </div>
           <label className="m-field"><span>{tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')}</span><input inputMode="numeric" type="number" value={vitals.spo2} onChange={set('spo2')} /><span className="m-hint">{tr('Normal is 95% or higher', 'Normal ang 95% pataas')}</span></label>
+          <label className="m-field"><span>{tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')}</span><input inputMode="numeric" type="number" value={vitals.bloodGlucose} onChange={set('bloodGlucose')} /></label>
           {warning && <Banner tone={warning.tone} role="alert">{lang === 'fil' ? warning.fil : warning.en}</Banner>}
           <div className="m-footer-actions"><Cta onClick={() => setStep(2)}>{tr('Next: medicines', 'Susunod: gamot')}</Cta></div>
         </div>
@@ -337,6 +390,12 @@ function CheckIn({ user }) {
               </label>
             );
           })}
+          <fieldset className="m-fieldset"><legend>{tr('Moving around', 'Paggalaw')}</legend>
+            <div className="m-pills">{MOBILITY.map(([k, en, fil]) => <button key={k} type="button" className="m-pill" aria-pressed={mobility === k} disabled={symptoms.includes('fall')} onClick={() => setMobility(mobility === k ? null : k)}>{tr(en, fil)}</button>)}</div>
+          </fieldset>
+          <fieldset className="m-fieldset"><legend>{tr('Mood', 'Pakiramdam')}</legend>
+            <div className="m-pills">{MOOD.map(([k, en, fil]) => <button key={k} type="button" className="m-pill" aria-pressed={mood === k} disabled={symptoms.includes('confused')} onClick={() => setMood(mood === k ? null : k)}>{tr(en, fil)}</button>)}</div>
+          </fieldset>
           <label className="m-field"><span>{tr('Notes for the nurse (optional)', 'Tala para sa nars (opsyonal)')}</span><textarea rows="3" maxLength={1500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
           {error && <p className="m-error" role="alert">{error}</p>}
           <div className="m-footer-actions"><Cta onClick={submit} disabled={busy}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send check-in', 'Ipadala ang check-in')}</Cta></div>

@@ -4,25 +4,23 @@ import { currentUser, logout, onSessionChange } from './api';
 import { matchRoute, navigate, usePath } from './router';
 import { ToastProvider } from './toast';
 import Shell from './components/Shell';
-import CaregiverCheckIn from './pages/CaregiverCheckIn';
-import FamilyDashboard from './pages/FamilyDashboard';
 import ClinicQueue from './pages/ClinicQueue';
 import PatientProfile from './pages/PatientProfile';
 import AddPatient from './pages/AddPatient';
 import ClinicVisits from './pages/ClinicVisits';
 import CaseHistory from './pages/CaseHistory';
-import CareDuties from './pages/CareDuties';
 import AlertRules from './pages/AlertRules';
 import { PrefsProvider } from './mobile/kit';
-import { Landing, RolePicker, SignIn } from './mobile/Onboarding';
+import { Landing, RolePicker, SignIn, NoAccount } from './mobile/Onboarding';
 import CaregiverApp from './mobile/caregiver';
 import FamilyApp from './mobile/family';
 import NurseApp from './mobile/nurse';
 import AdminConsole from './admin/AdminConsole';
 import './styles.css';
 
-// Phone-first apps for caregivers and families. Nurses get the phone app on small screens and the
-// desktop clinic pages on a computer (each links to the other). Admins use the web console.
+// Caregivers and families use only the phone app (on a computer it is shown in a phone-sized frame).
+// Nurses get the phone app on small screens and the desktop clinic pages on a computer (each links to
+// the other). Admins use the web console. Old desktop URLs (/caregiver, /family) redirect to the phone app.
 const isPhone = () => window.matchMedia('(max-width: 820px)').matches;
 export const HOME = {
   caregiver: '/m/caregiver',
@@ -32,7 +30,7 @@ export const HOME = {
 };
 const homeFor = (role) => (role === 'clinic_staff' && isPhone() ? '/m/nurse' : HOME[role] || '/');
 
-const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn };
+const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn, '/no-account': NoAccount };
 const CLINIC = ['clinic_staff', 'system_admin'];
 // Entries with `app` render full-screen and handle their own sub-paths (phone apps, admin console);
 // entries with `page` render inside the desktop Shell.
@@ -40,10 +38,7 @@ const ROUTES = {
   '/m/caregiver': { roles: ['caregiver'], app: CaregiverApp, layout: 'mobile', title: 'Caregiver' },
   '/m/family': { roles: ['family_member'], app: FamilyApp, layout: 'mobile', title: 'Family' },
   '/m/nurse': { roles: ['clinic_staff'], app: NurseApp, layout: 'mobile', title: 'Nurse' },
-  '/caregiver': { roles: ['caregiver'], page: CaregiverCheckIn, title: 'Daily check-in' },
-  '/caregiver/duties': { roles: ['caregiver'], page: CareDuties, title: 'Care duties' },
   '/clinic/alert-rules': { roles: CLINIC, page: AlertRules, title: 'Alert rules' },
-  '/family': { roles: ['family_member'], page: FamilyDashboard, title: 'Family dashboard' },
   '/clinic': { roles: CLINIC, page: ClinicQueue, title: 'Risk queue' },
   '/clinic/visits': { roles: CLINIC, page: ClinicVisits, title: 'Visits' },
   '/clinic/history': { roles: CLINIC, page: CaseHistory, title: 'Case history' },

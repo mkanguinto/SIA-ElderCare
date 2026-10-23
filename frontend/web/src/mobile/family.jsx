@@ -6,6 +6,8 @@ import Icon from './icons';
 import { todaysDoses, SLOTS, slotOf, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications, CallClinic } from './common';
 import { DoseRow } from './caregiver';
+import { DutiesScreen, DutiesSummary } from './duties';
+import { conditionLabel, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Chip, Loader, useT, usePrefs,
   isToday, clock, manilaDay, manilaHour, shortName, TONE, CLINIC_PHONE,
@@ -48,7 +50,8 @@ export default function FamilyApp({ user, path }) {
   else if (sub === '/medicines') screen = <Medicines patientId={patientId} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} callCaregiverLabel={tr('Call the caregiver', 'Tawagan ang tagapag-alaga')} />;
   else if (sub === '/alerts') screen = <AlertsList base={`${BASE}/alerts`} back={BASE} />;
-  else if (sub === '/profile') screen = <Profile user={user} back={BASE} desktopTo="/family" />;
+  else if (sub === '/profile') screen = <Profile user={user} back={BASE} />;
+  else if (sub === '/duties') screen = <FamilyDuties patientId={patientId} />;
   else screen = <Today user={user} patientId={patientId} />;
   return (
     <MobileFrame>
@@ -106,18 +109,27 @@ function Today({ user, patientId }) {
   return (
     <>
       <Greeting user={user} hello={tr('Hello,', 'Kumusta,')} alerts={newAlerts} alertsTo={`${BASE}/alerts`} />
-      <p className="m-caption" style={{ fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase' }}>{name} · {p.id}</p>
-      <h1 style={{ fontSize: '1.875rem', lineHeight: 1.15, color: 'var(--text-brand)', margin: '.25rem 0 .35rem' }}>
-        {needsAttention ? tr(`${name} needs attention`, `Kailangang bantayan si ${name}`) : today ? tr(`${name} is doing well`, `Maayos si ${name}`) : tr(`No check-in for ${name} yet today`, `Wala pang check-in si ${name} ngayon`)}
-      </h1>
-      <p className="m-muted" style={{ marginBottom: '1rem' }}>
+      {/* One home: a short status line, then the blood-pressure card (design suggestion: no second headline). */}
+      <div className="m-between" style={{ marginBottom: '.35rem' }}>
+        <p style={{ fontWeight: 700, fontSize: '1.125rem' }}>{p.fullName}</p>
+        <Chip tone={needsAttention ? 'critical' : today ? 'ok' : 'moderate'} icon={needsAttention ? 'alert' : today ? 'check' : 'clock'}>
+          {needsAttention ? tr('Needs attention', 'Kailangang bantayan') : today ? tr('Doing well', 'Maayos') : tr('No check-in yet', 'Wala pang check-in')}
+        </Chip>
+      </div>
+      <p className="m-muted" style={{ fontSize: '.9375rem' }}>
         {today ? tr(`Today's check-in was sent at ${clock(today.recordedAt)} by the caregiver.`, `Naipadala ang check-in ngayong ${clock(today.recordedAt)}.`)
-          : latest ? tr(`Last check-in ${clock(latest.recordedAt)}, ${manilaDay(latest.recordedAt)}.`, `Huling check-in ${manilaDay(latest.recordedAt)}.`) : ''}
+          : latest ? tr(`Last check-in ${clock(latest.recordedAt)}, ${manilaDay(latest.recordedAt)}.`, `Huling check-in ${manilaDay(latest.recordedAt)}.`) : tr('No check-ins yet.', 'Wala pang check-in.')}
       </p>
+      {(p.conditions.length > 0 || p.mobilityRestricted) && (
+        <div className="m-pills" style={{ margin: '.6rem 0 1rem', gap: '.35rem' }}>
+          {p.conditions.map((c) => <Chip key={c}>{conditionLabel(c)}</Chip>)}
+          {p.mobilityRestricted && <Chip tone="moderate">{tr('Limited mobility', 'Limitado ang galaw')}</Chip>}
+        </div>
+      )}
 
       {bpReading && (
         <>
-          <section className={`m-bp-hero tone-${bpTone === 'ok' ? 'ok' : bpTone}`} aria-label={tr('Blood pressure', 'Presyon ng dugo')}>
+          <section className={`m-bp-hero tone-${bpTone === 'ok' ? 'ok' : bpTone}`} style={{ paddingBottom: '1.25rem', marginTop: '.75rem' }} aria-label={tr('Blood pressure', 'Presyon ng dugo')}>
             <div className="m-between">
               <span style={{ fontSize: '.8125rem', fontWeight: 700, letterSpacing: '.05em' }}>{tr('BLOOD PRESSURE', 'PRESYON NG DUGO')}</span>
               <Chip className="on-light" tone={bpTone}><span style={{ width: '.5rem', height: '.5rem', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />{lang === 'fil' ? bpFil : bpEn}</Chip>
@@ -132,9 +144,8 @@ function Today({ user, patientId }) {
             </p>
             {todayAlert && <Link to={`${BASE}/alerts/${todayAlert.id}`} style={{ display: 'inline-block', marginTop: '.5rem', fontWeight: 700, textDecoration: 'none' }}>{tr('See details →', 'Tingnan →')}</Link>}
           </section>
-          {CLINIC_PHONE
-            ? <a className="m-float-btn" href={`tel:${CLINIC_PHONE}`}>{tr('CONTACT CLINIC', 'TAWAGAN ANG KLINIKA')}</a>
-            : <button type="button" className="m-float-btn" onClick={() => window.alert(tr('The clinic hotline is not set yet (VITE_CLINIC_PHONE).', 'Wala pang numero ng klinika.'))}>{tr('CONTACT CLINIC', 'TAWAGAN ANG KLINIKA')}</button>}
+          {/* Below the card, not overlapping it, so Big text never hides "See details". */}
+          <div style={{ marginTop: '.75rem' }}><CallClinic label={tr('Contact the clinic', 'Tawagan ang klinika')} /></div>
         </>
       )}
 
@@ -156,11 +167,14 @@ function Today({ user, patientId }) {
         {!doses.length && <div className="m-note">{tr('No medicines prescribed.', 'Walang nakatakdang gamot.')}</div>}
       </div>
 
+      <div className="m-between"><h2 className="m-section-title">{tr('Caregiver duties today', 'Gawain ng tagapag-alaga ngayon')}</h2></div>
+      <DutiesSummary patientId={p.id} to={`${BASE}/duties`} LinkComponent={Link} />
+
       {data.visits[0] && (
         <>
           <h2 className="m-section-title">{tr('Next clinic visit', 'Susunod na pagbisita')}</h2>
           <div className="m-card m-row"><span className="m-thumb tone-ok"><Icon name="calendar" /></span>
-            <div><strong>{data.visits[0].destination}</strong><p className="m-caption">{data.visits[0].visitDate} · {data.visits[0].visitTime}</p></div></div>
+            <div><strong>{visitWhen(data.visits[0])}</strong><p className="m-caption">{VISIT_TYPE_LABEL[data.visits[0].visitType]} · {data.visits[0].destination}</p></div></div>
         </>
       )}
     </>
@@ -222,6 +236,12 @@ function Trends({ patientId }) {
       <div className="m-seg" role="group" aria-label={tr('Period', 'Panahon')}>
         {[7, 30].map((d) => <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}>{tr(`${d} days`, `${d} araw`)}</button>)}
       </div>
+      <div className="m-stats">
+        <div><span>{tr('Check-ins', 'Check-in')}</span><strong>{data.trends.totalCheckins}</strong></div>
+        <div><span>{tr('Average BP', 'Average BP')}</span><strong>{data.trends.bloodPressure.avgSystolic ? `${data.trends.bloodPressure.avgSystolic}/${data.trends.bloodPressure.avgDiastolic}` : '–'}</strong></div>
+        <div><span>{tr('Days with missed medicine', 'Araw na hindi nainom ang gamot')}</span><strong>{data.trends.missedMedicationDays}</strong></div>
+        <div><span>{tr('Readings needing attention', 'Sukat na dapat bantayan')}</span><strong>{data.trends.highSeverityCheckins}</strong></div>
+      </div>
       <div className="m-days">
         {week.map((d, i) => {
           const dt = new Date(`${d.day}T12:00:00+08:00`);
@@ -253,7 +273,23 @@ function Trends({ patientId }) {
         </div>
         <HrChart series={series} tr={tr} />
       </section>
-      <p className="m-caption" style={{ marginTop: '.75rem' }}>{tr('Each bar shows the top and bottom blood pressure numbers (highest reading of the day). Green band = usual range. Tap a bar for details.', 'Bawat bar ay itaas at ibabang numero ng presyon. Berdeng banda = karaniwan.')}</p>
+      <details className="m-card m-details">
+        <summary>{tr('Show readings as a list', 'Ipakita bilang listahan')}</summary>
+        <table className="m-table">
+          <thead><tr><th>{tr('Day', 'Araw')}</th><th>BP</th><th>{tr('Heart', 'Puso')}</th><th>{tr('Status', 'Status')}</th></tr></thead>
+          <tbody>
+            {[...series].reverse().map((d) => (
+              <tr key={d.day}>
+                <td>{d.day.slice(5)}</td>
+                <td>{d.bp ? `${d.bp.vitals.systolic}/${d.bp.vitals.diastolic}` : '–'}</td>
+                <td>{d.hr || '–'}</td>
+                <td>{d.count ? WORD[TONE[d.worst]][lang === 'fil' ? 1 : 0] : tr('No reading', 'Walang sukat')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+      <p className="m-caption" style={{ marginTop: '.75rem' }}>{tr('Each bar shows the top and bottom blood pressure numbers (highest reading of the day). Green band = usual range. A grey dash = no reading that day. Tap a bar for details.', 'Bawat bar ay itaas at ibabang numero ng presyon. Berdeng banda = karaniwan. Abong guhit = walang sukat.')}</p>
     </>
   );
 }
@@ -285,7 +321,7 @@ function BpChart({ series, base, tr, lang }) {
           const cx = CH.left + step * i + step / 2;
           const show = series.length <= 7 || i % 5 === 0 || i === series.length - 1;
           const label = show && <text className="axis" x={cx} y={CH.h - 6} textAnchor="middle">{Number(s.day.slice(8))}</text>;
-          if (!s.bp) return <g key={s.day}>{label}</g>;
+          if (!s.bp) return <g key={s.day}><line x1={cx - 4} x2={cx + 4} y1={CH.h - CH.bottom - 4} y2={CH.h - CH.bottom - 4} stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round"><title>{tr('No reading', 'Walang sukat')}</title></line>{label}</g>;
           const tone = TONE[s.bp.severity] || 'ok';
           const t = y(s.bp.vitals.systolic);
           const b = y(s.bp.vitals.diastolic);
@@ -303,6 +339,7 @@ function BpChart({ series, base, tr, lang }) {
       {tip && <div className="m-tip" style={{ left: `${(tip.x / CH.w) * 100}%`, top: `${(tip.y / CH.h) * 100}%` }}>{tip.text}</div>}
       <div className="m-legend" aria-hidden="true">
         {['ok', 'moderate', 'high', 'critical'].map((k) => <span key={k}><i style={{ background: ACCENT[k] }} />{WORD[k][lang === 'fil' ? 1 : 0]}</span>)}
+        <span><i style={{ background: 'var(--text-muted)', height: '.2rem', verticalAlign: '.2rem' }} />{tr('No reading', 'Walang sukat')}</span>
       </div>
     </div>
   );
@@ -371,6 +408,17 @@ function Medicines({ patientId }) {
         {!shown.length && <div className="m-note">{tr('No medicines at this time of day.', 'Walang gamot sa oras na ito.')}</div>}
       </div>
       <p className="m-caption" style={{ marginTop: '1rem' }}>{tr('Only the clinic can change prescriptions. Family members can view, not edit.', 'Klinika lang ang puwedeng magbago ng reseta.')}</p>
+    </>
+  );
+}
+
+function FamilyDuties({ patientId }) {
+  const tr = useT();
+  return (
+    <>
+      <TopBar title={tr('Caregiver duties', 'Gawain ng tagapag-alaga')} back={BASE} />
+      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('What the caregiver has done today from the care plan the health center set up. View only.', 'Ang nagawa ng tagapag-alaga ngayon mula sa care plan ng health center.')}</p>
+      <DutiesScreen patients={[{ id: patientId, fullName: '' }]} editable={false} />
     </>
   );
 }
