@@ -527,10 +527,10 @@ const DEVICE_WORD = {
   digital_oral: 'oral thermometer', digital_axillary: 'underarm thermometer', infrared_forehead: 'forehead thermometer', infrared_ear: 'ear thermometer', fingertip: 'fingertip oximeter',
 };
 
-function useReviewQueue(patientId) {
+function useReviewQueue(patientId, view = 'pending') {
   const [data, setData] = useState(null);
-  const load = useCallback(() => api(`/api/checkins/review-queue?pageSize=30${patientId ? `&patientId=${encodeURIComponent(patientId)}` : ''}`)
-    .then(setData).catch((e) => setData({ error: e.message })), [patientId]);
+  const load = useCallback(() => api(`/api/checkins/review-queue?view=${view}&pageSize=30${patientId ? `&patientId=${encodeURIComponent(patientId)}` : ''}`)
+    .then(setData).catch((e) => setData({ error: e.message })), [patientId, view]);
   useEffect(() => { load(); }, [load]);
   return [data, load];
 }
@@ -540,26 +540,41 @@ function ReviewsLink() {
   const [data] = useReviewQueue();
   if (!data || data.error) return null;
   const n = data.pagination.totalItems;
+  const old = data.counts.historical;
   return (
     <Link to={`${BASE}/reviews`} className="m-list-row" style={{ marginTop: '.75rem' }}>
       <span className={`m-thumb ${n ? 'tone-moderate' : 'tone-ok'}`} aria-hidden="true"><Icon name="eye" /></span>
       <span className="m-grow"><strong>{n ? tr(`${n} check-in${n === 1 ? '' : 's'} to review`, `${n} check-in na susuriin`) : tr('All check-ins reviewed', 'Nasuri na ang lahat')}</strong>
-        <span className="m-sub">{tr('Mark them reviewed and record what you did', 'Markahan at itala ang ginawa')}</span></span>
+        <span className="m-sub">{old ? tr(`Including ${old} older one${old === 1 ? '' : 's'} still pending`, `Kasama ang ${old} lumang hindi pa nasusuri`) : tr('Mark them reviewed and record what you did', 'Markahan at itala ang ginawa')}</span></span>
       <Icon name="chevron" />
     </Link>
   );
 }
 
+const REVIEW_VIEWS = [
+  ['current', 'New', 'Bago', 'Most serious first. The caregiver and family see when you review a check-in and what you did.', 'Inuuna ang pinakaseryoso. Makikita ng tagapag-alaga at pamilya ang iyong pagsusuri.'],
+  ['historical', 'Older', 'Luma', 'Older check-ins that no nurse has reviewed yet, oldest first. They stay here until a nurse reviews them; age alone never marks them reviewed.', 'Mga lumang check-in na hindi pa nasusuri. Mananatili sila rito hanggang suriin ng nars.'],
+  ['archived', 'Demo', 'Demo', 'Demo and test records, archived separately. They were not reviewed and are not part of patient care.', 'Mga demo at test na record. Hindi ito nasuri at hindi bahagi ng pangangalaga.'],
+];
+
 function Reviews() {
   const tr = useT();
-  const [data, reload] = useReviewQueue();
+  const [view, setView] = useState('current');
+  const [data, reload] = useReviewQueue(undefined, view);
+  const counts = data && data.counts;
+  const [, , , en, fil] = REVIEW_VIEWS.find((v) => v[0] === view);
   return (
     <>
       <TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={BASE} />
-      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('Most serious first. The caregiver and family see when you review a check-in and what you did.', 'Inuuna ang pinakaseryoso. Makikita ng tagapag-alaga at pamilya ang iyong pagsusuri.')}</p>
+      <div className="m-seg" role="group" aria-label={tr('Which check-ins', 'Aling check-in')} style={{ marginBottom: '.75rem' }}>
+        {REVIEW_VIEWS.map(([k, en2, fil2]) => (
+          <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)}>{tr(en2, fil2)}{counts ? ` (${counts[k]})` : ''}</button>
+        ))}
+      </div>
+      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr(en, fil)}</p>
       {!data && <Loader />}
       {data && data.error && <p className="m-error">{data.error}</p>}
-      {data && data.checkins && !data.checkins.length && <div className="m-note"><strong>{tr('Nothing to review', 'Walang susuriin')}</strong>{tr('New check-ins appear here as they arrive.', 'Lalabas dito ang mga bagong check-in.')}</div>}
+      {data && data.checkins && !data.checkins.length && <div className="m-note"><strong>{view === 'archived' ? tr('No archived demo records', 'Walang demo record') : tr('Nothing to review', 'Walang susuriin')}</strong>{view === 'current' ? tr('New check-ins appear here as they arrive.', 'Lalabas dito ang mga bagong check-in.') : ''}</div>}
       <div className="m-stack">{data && data.checkins && data.checkins.map((c) => <ReviewCard key={c.id} c={c} onDone={reload} showPatient />)}</div>
       {data && data.pagination && data.pagination.totalItems > (data.checkins || []).length && <p className="m-caption" style={{ marginTop: '.75rem' }}>{tr(`Showing ${data.checkins.length} of ${data.pagination.totalItems}.`, `${data.checkins.length} sa ${data.pagination.totalItems}.`)}</p>}
     </>
@@ -609,9 +624,10 @@ function ReviewCard({ c, onDone, showPatient = false }) {
         </div>
         <StatusChip status={c.status} />
       </div>
+      {c.dataOrigin === 'demo' && <p className="m-caption" style={{ marginTop: '.3rem' }}><Chip tone="info">{tr('Demo record', 'Demo record')}</Chip>{c.archived ? ` ${tr('Archived', 'Naka-archive')} ${relTime(c.archived.at)}` : ''}</p>}
       {c.anomalies.length > 0 && <p style={{ marginTop: '.4rem', color: 'var(--text-critical)', fontSize: '.875rem', fontWeight: 700 }}>{c.anomalies.map((a) => a.message).join('; ')}</p>}
       {c.notes && <p className="m-muted" style={{ fontSize: '.875rem', marginTop: '.3rem' }}>“{c.notes}”</p>}
-      {!mode && (
+      {!mode && !c.archived && (
         <div className="m-grid-2" style={{ marginTop: '.75rem' }}>
           <button type="button" className="m-btn" onClick={() => setMode('review')}><Icon name="eye" size={18} />{tr('Mark reviewed', 'Markahang nasuri')}</button>
           <button type="button" className="m-btn is-dark" onClick={() => setMode('action')}><Icon name="check" size={18} />{tr('Record action', 'Itala ang aksyon')}</button>

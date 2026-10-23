@@ -30,6 +30,10 @@ const DEVICES = {
 const MISSING_REASONS = ['not_measured', 'no_device', 'unknown'];
 const MISSING_KEYS = { bp: ['systolic', 'diastolic'], heartRate: ['heartRate'], temperatureC: ['temperatureC'], spo2: ['spo2'], bloodGlucose: ['bloodGlucose'] };
 
+/** Idempotency keys used only by the automated test suites (Postman, smoke test, SMS tests). */
+const TEST_KEY = /^(pm-|offline-|sms-smoke|sms-pm|env-test-)/;
+const isTestRecordKey = (key) => typeof key === 'string' && TEST_KEY.test(key);
+
 function isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -145,6 +149,9 @@ function validateCheckin(body, now = new Date()) {
     }
   }
 
+  // Demo / test data is marked by the client that creates it (test suites); the route decides whether it is accepted.
+  if (body.dataOrigin !== undefined && !['live', 'demo'].includes(body.dataOrigin)) errors.push('dataOrigin must be live or demo');
+
   if (!Object.keys(vitals).length && !vitalsMissing && med.taken === undefined && !body.mobilityStatus && !body.notes) {
     errors.push('Provide at least one vital sign, medication status, mobility status or note');
   }
@@ -164,8 +171,9 @@ function validateCheckin(body, now = new Date()) {
       environment,
       measurementDevice,
       vitalsMissing,
+      dataOrigin: body.dataOrigin || 'live',
     },
   };
 }
 
-module.exports = { validateCheckin, RANGES, MOBILITY, MOOD, DEVICES, MISSING_REASONS, MISSING_KEYS };
+module.exports = { validateCheckin, isTestRecordKey, RANGES, MOBILITY, MOOD, DEVICES, MISSING_REASONS, MISSING_KEYS };

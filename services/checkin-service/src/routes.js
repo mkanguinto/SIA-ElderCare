@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { pool, withTransaction } = require('./db');
-const { validateCheckin } = require('./validation');
+const { validateCheckin, isTestRecordKey } = require('./validation');
 const { detectAnomalies } = require('./anomaly');
 const outbox = require('./outbox');
 const logger = require('./lib/logger');
@@ -77,6 +77,8 @@ function toCheckinDto(r) {
     environment: r.environment || null,
     measurementDevice: r.measurement_device || null,
     vitalsMissing: r.vitals_missing || null,
+    dataOrigin: r.data_origin || 'live',
+    archived: r.archived_at ? { at: r.archived_at, by: r.archived_by, reason: r.archive_reason } : null,
     status: r.status || 'received',
     review: r.reviewed_at ? { byId: r.reviewed_by_nurse, byName: r.reviewed_by_name, at: r.reviewed_at, note: r.review_note } : null,
     action: r.action_at ? { text: r.action_taken, byId: r.action_by, byName: r.action_by_name, at: r.action_at } : null,
@@ -108,6 +110,12 @@ async function createCheckin(caregiverId, allowedPatients, input, requestId, { c
   const result = validateCheckin(input);
   if (!result.ok) return { status: 422, body: { error: 'validation_failed', details: result.errors } };
   const c = result.value;
+  // Demo / test records are only accepted on demo deployments, where the automated suites run.
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    if (isTestRecordKey(c.idempotencyKey)) c.dataOrigin = 'demo';
+  } else if (c.dataOrigin === 'demo') {
+    return { status: 422, body: { error: 'validation_failed', details: ['dataOrigin "demo" is only accepted on demo deployments'] } };
+  }
   if (allowedPatients && !allowedPatients.includes(c.patientId)) {
     return { status: 403, body: { error: 'forbidden', message: 'You are not assigned to this patient' } };
   }
@@ -128,13 +136,13 @@ async function createCheckin(caregiverId, allowedPatients, input, requestId, { c
     const { rows } = await client.query(
       `INSERT INTO checkins (patient_id, caregiver_id, idempotency_key, recorded_at, systolic, diastolic, heart_rate,
                              temperature_c, spo2, blood_glucose, medication_taken, missed_medications, mobility_status,
-                             mood, notes, anomalies, severity, severity_score, environment, measurement_device, vitals_missing)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+                             mood, notes, anomalies, severity, severity_score, environment, measurement_device, vitals_missing, data_origin)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
       [c.patientId, caregiverId, c.idempotencyKey, c.recordedAt, c.vitals.systolic, c.vitals.diastolic, c.vitals.heartRate,
         c.vitals.temperatureC, c.vitals.spo2, c.vitals.bloodGlucose, c.medication.taken, c.medication.missed, c.mobilityStatus,
         c.mood, c.notes, JSON.stringify(detection.anomalies), detection.severity, detection.severityScore,
         c.environment ? JSON.stringify(c.environment) : null, c.measurementDevice ? JSON.stringify(c.measurementDevice) : null,
-        c.vitalsMissing ? JSON.stringify(c.vitalsMissing) : null],
+        c.vitalsMissing ? JSON.stringify(c.vitalsMissing) : null, c.dataOrigin],
     );
     await client.query(`INSERT INTO checkin_status_log (checkin_id, status, changed_by, changed_by_name, note) VALUES ($1, 'received', $2, $3, $4)`,
       [rows[0].id, caregiverId, caregiverName || null, viaSms ? 'received by SMS' : null]);

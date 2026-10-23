@@ -3,7 +3,8 @@
 // Optional: GATEWAY_URL=http://host:8080 npm run smoke
 const B=process.env.GATEWAY_URL||'http://localhost:8080'; let pass=0, fail=0;
 const ok=(c,m)=>{ c?pass++:fail++; console.log((c?'PASS ':'FAIL ')+m); };
-const call=async(method,path,token,body)=>{const r=await fetch(B+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let j;try{j=await r.json()}catch{j=null}return {s:r.status,j};};
+// Check-ins created by this test are demo data (archived at the end, never mixed with real records).
+const call=async(method,path,token,body)=>{if(method==='POST'&&path==='/api/checkins'&&body&&!body.dataOrigin)body={...body,dataOrigin:'demo'};const r=await fetch(B+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let j;try{j=await r.json()}catch{j=null}return {s:r.status,j};};
 const login=async u=>(await call('POST','/oauth/token',null,{grant_type:'password',username:u,password:'ElderCare@2026'})).j.access_token;
 const cg=await login('caregiver.maria'), fam=await login('family.jose'), nurse=await login('nurse.ana'), admin=await login('admin.harold');
 ok(cg&&fam&&nurse&&admin,'4 role logins');
@@ -44,7 +45,7 @@ const caseFor = async (pid) => (await call('GET', `/api/clinic/queue?patientId=$
 const pollCase = async (pid, pred, ms = 4000) => { const t = Date.now(); let c; while (Date.now() - t < ms) { c = await caseFor(pid); if (c && pred(c)) return c; await wait(150); } return c; };
 
 // Triage: a critical reading makes the case Urgent; a normal reading afterwards lowers it (QA vitals-sync bug)
-await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 188, diastolic: 119, heartRate: 108 }, medication: { taken: false } });
+const urgentCheckin = (await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 188, diastolic: 119, heartRate: 108 }, medication: { taken: false } })).j.checkin;
 let kase = await pollCase('P-1001', (c) => c.priority === 'P1');
 ok(kase && kase.priority === 'P1' && kase.category === 'urgent', `critical reading -> Urgent (${kase && kase.priorityRule})`);
 await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 124, diastolic: 80, heartRate: 72, temperatureC: 36.6, spo2: 98 }, medication: { taken: true } });
@@ -66,6 +67,8 @@ ok(r.s === 200 && r.j.visits.some((v) => v.id === visitId), 'caregiver sees the 
 ok((await call('GET', '/api/patients/P-1002/visits', fam)).s === 403, 'family cannot see another patient\'s visits (403)');
 r = await call('PATCH', `/api/clinic/visits/${visitId}`, nurse, { status: 'completed', outcome: 'BP 126/80 on recheck, medicines reviewed', resolveCase: true });
 ok(r.s === 200 && r.j.visit.status === 'completed' && r.j.item.status === 'resolved', 'completing the visit resolves the case');
+r = await call('GET', `/api/checkins/${urgentCheckin.id}`, nurse);
+ok(r.s === 200 && !r.j.checkin.review && ['received', 'awaiting_review'].includes(r.j.checkin.status), 'resolving the case does not mark its check-in reviewed (reviewed and resolved stay separate)');
 r = await call('GET', '/api/clinic/visits?view=recent&patientId=P-1001', nurse);
 ok(r.s === 200 && r.j.visits[0].id === visitId, 'completed visit appears under Recent visits');
 r = await call('GET', '/api/clinic/queue/history?patientId=P-1001', nurse);
@@ -271,6 +274,16 @@ ok(r.s === 200 && r.j.checkin.status === 'action_recorded', 'nurse records the a
 r = await call('GET', `/api/checkins/${statusId}`, fam);
 ok(r.s === 200 && r.j.statusLog.map((l) => l.status).join('>') === 'received>awaiting_review>reviewed>action_recorded', 'family sees the full timestamped timeline');
 ok((await call('POST', `/api/checkins/${statusId}/review`, nurse, {})).s === 409, 'a reviewed check-in cannot be reviewed again (409, status history is immutable)');
+ok((await call('POST', `/api/checkins/${statusId}/review`, admin, {})).s === 403, 'admin cannot review check-ins (403, nurses only)');
+r = await call('GET', `/api/checkins/${statusId}`, nurse);
+ok(r.j.checkin.review.byId && r.j.checkin.review.at && r.j.checkin.dataOrigin === 'demo', 'review keeps the nurse id and time; test check-ins are marked demo');
+
+// Pending lists: current, historical (older, still pending - never auto-reviewed), archived demo records
+r = await call('GET', '/api/checkins/review-queue?view=historical', nurse);
+ok(r.s === 200 && r.j.checkins.every((c) => !c.archived && ['received', 'awaiting_review'].includes(c.status)) && typeof r.j.counts.historical === 'number', `historical review list (${r.j.counts.current} current, ${r.j.counts.historical} historical, ${r.j.counts.archived} archived)`);
+ok((await call('GET', '/api/checkins/review-queue?view=old', nurse)).s === 422, 'unknown list view rejected (422)');
+ok((await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 70 }, dataOrigin: 'test' })).s === 422, 'unknown dataOrigin rejected (422)');
+ok((await call('POST', '/api/checkins/archive-demo', cg, {})).s === 403, 'caregiver cannot archive (403)');
 
 // Missing readings are a reason, never zero
 r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 76 }, vitalsMissing: { bp: 'no_device', spo2: 'not_measured', bloodGlucose: 'unknown' } });
@@ -279,5 +292,15 @@ r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { spo
 ok(r.s === 422 && r.j.details.some((d) => d.includes('cannot be 0')), 'a zero reading is rejected (422)');
 r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { systolic: 130, diastolic: 82 }, vitalsMissing: { bp: 'unknown' } });
 ok(r.s === 422, 'a value together with a missing reason is rejected (422)');
+
+// Archive this run's pending demo check-ins: they leave the pending lists without being marked reviewed.
+const lastDemo = (await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 71 } })).j.checkin;
+r = await call('POST', '/api/checkins/archive-demo', nurse, {});
+ok(r.s === 200 && r.j.archived >= 1, `nurse archives pending demo check-ins (${r.j && r.j.archived})`);
+r = await call('GET', `/api/checkins/${lastDemo.id}`, nurse);
+ok(r.j.checkin.archived && r.j.checkin.status !== 'reviewed' && !r.j.checkin.review, 'an archived demo record is not marked reviewed');
+ok((await call('POST', `/api/checkins/${lastDemo.id}/review`, nurse, {})).s === 409, 'archived demo record cannot be reviewed (409)');
+r = await call('GET', '/api/checkins/review-queue?view=pending&pageSize=200', nurse);
+ok(!r.j.checkins.some((c) => c.dataOrigin === 'demo'), 'no demo record left in the pending review lists');
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

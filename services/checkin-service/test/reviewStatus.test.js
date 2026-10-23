@@ -62,3 +62,12 @@ test('a missing vital is a reason, never zero', () => {
   // "All readings missing, with reasons" is still a valid check-in.
   assert.strictEqual(validateCheckin({ patientId: 'P-1001', vitalsMissing: { bp: 'no_device' } }).ok, true);
 });
+
+test('demo / test records are identified only by an explicit marker', () => {
+  const { isTestRecordKey } = require('../src/validation');
+  for (const k of ['pm-status-1', 'offline-1792677485146', 'sms-smoke1792676313565', 'sms-pm1792677204215951', 'env-test-0001']) assert.ok(isTestRecordKey(k), k);
+  for (const k of ['pwa-0b7c1c9e-1', 'sms-1792677485146', 'mobile-pm-1', null, undefined]) assert.ok(!isTestRecordKey(k), String(k));
+  assert.strictEqual(validateCheckin({ patientId: 'P-1001', vitals: { heartRate: 70 } }).value.dataOrigin, 'live');
+  assert.strictEqual(validateCheckin({ patientId: 'P-1001', vitals: { heartRate: 70 }, dataOrigin: 'demo' }).value.dataOrigin, 'demo');
+  assert.ok(validateCheckin({ patientId: 'P-1001', vitals: { heartRate: 70 }, dataOrigin: 'old' }).errors.includes('dataOrigin must be live or demo'));
+});

@@ -461,7 +461,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1003\",\n  \"vitals\": {\n    \"heartRate\": 70\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1003\",\n  \"vitals\": {\n    \"heartRate\": 70\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -598,7 +598,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 126,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 97\n  },\n  \"medication\": {\n    \"taken\": true\n  },\n  \"mobilityStatus\": \"assisted\",\n  \"mood\": \"good\",\n  \"notes\": \"Ate breakfast, walked with walker\"\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 126,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 97\n  },\n  \"medication\": {\n    \"taken\": true\n  },\n  \"mobilityStatus\": \"assisted\",\n  \"mood\": \"good\",\n  \"notes\": \"Ate breakfast, walked with walker\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -645,7 +645,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 400,\n    \"diastolic\": 500\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 400,\n    \"diastolic\": 500\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -700,7 +700,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"idempotencyKey\": \"{{idemKey}}\",\n  \"vitals\": {\n    \"heartRate\": 74\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"idempotencyKey\": \"{{idemKey}}\",\n  \"vitals\": {\n    \"heartRate\": 74\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1038,7 +1038,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 186,\n    \"diastolic\": 118,\n    \"heartRate\": 104,\n    \"temperatureC\": 37.1,\n    \"spo2\": 95\n  },\n  \"medication\": {\n    \"taken\": false,\n    \"missed\": [\n      \"Losartan\"\n    ]\n  },\n  \"mobilityStatus\": \"normal\",\n  \"mood\": \"neutral\",\n  \"notes\": \"Complains of headache and blurred vision\"\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 186,\n    \"diastolic\": 118,\n    \"heartRate\": 104,\n    \"temperatureC\": 37.1,\n    \"spo2\": 95\n  },\n  \"medication\": {\n    \"taken\": false,\n    \"missed\": [\n      \"Losartan\"\n    ]\n  },\n  \"mobilityStatus\": \"normal\",\n  \"mood\": \"neutral\",\n  \"notes\": \"Complains of headache and blurred vision\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1277,7 +1277,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 124,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 98\n  },\n  \"medication\": {\n    \"taken\": true\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 124,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 98\n  },\n  \"medication\": {\n    \"taken\": true\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4379,7 +4379,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"idempotencyKey\": \"pm-status-{{$timestamp}}\",\n  \"vitals\": {\n    \"systolic\": 152,\n    \"diastolic\": 96,\n    \"heartRate\": 88,\n    \"temperatureC\": 36.9\n  },\n  \"measurementDevice\": {\n    \"bp\": \"upper_arm_digital\",\n    \"thermometer\": \"digital_oral\"\n  }\n}"
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"idempotencyKey\": \"pm-status-{{$timestamp}}\",\n  \"vitals\": {\n    \"systolic\": 152,\n    \"diastolic\": 96,\n    \"heartRate\": 88,\n    \"temperatureC\": 36.9\n  },\n  \"measurementDevice\": {\n    \"bp\": \"upper_arm_digital\",\n    \"thermometer\": \"digital_oral\"\n  }\n}"
             }
           }
         },
@@ -4421,7 +4421,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 85\n  },\n  \"measurementDevice\": {\n    \"bp\": \"phone_camera\"\n  }\n}"
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 85\n  },\n  \"measurementDevice\": {\n    \"bp\": \"phone_camera\"\n  }\n}"
             }
           }
         },
@@ -4893,7 +4893,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"heartRate\": 76\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"no_device\",\n    \"spo2\": \"not_measured\",\n    \"bloodGlucose\": \"unknown\"\n  }\n}"
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"heartRate\": 76\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"no_device\",\n    \"spo2\": \"not_measured\",\n    \"bloodGlucose\": \"unknown\"\n  }\n}"
             }
           }
         },
@@ -4935,7 +4935,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"spo2\": 0\n  }\n}"
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"spo2\": 0\n  }\n}"
             }
           }
         },
@@ -4976,7 +4976,219 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 82\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"unknown\"\n  }\n}"
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 82\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"unknown\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin cannot review a check-in -> 403 (nurses only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Historical review list: older pending check-ins, never auto-reviewed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"only pending, not archived\", () => j.checkins.forEach((c) => { pm.expect(c.archived).to.eql(null); pm.expect([\"received\", \"awaiting_review\"]).to.include(c.status); }));",
+                  "pm.test(\"counts per list\", () => pm.expect(j.counts).to.have.keys(\"current\", \"historical\", \"archived\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?view=historical",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "view",
+                  "value": "historical"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caregiver cannot archive demo records -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/archive-demo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "archive-demo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Nurse archives pending demo check-ins (status unchanged) -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"count returned\", () => pm.expect(pm.response.json().archived).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/archive-demo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "archive-demo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Archived list holds demo records only, none reviewed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"demo only, still pending\", () => pm.response.json().checkins.forEach((c) => { pm.expect(c.dataOrigin).to.eql(\"demo\"); pm.expect(c.review).to.eql(null); }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?view=archived",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "view",
+                  "value": "archived"
+                }
+              ]
             }
           }
         }
