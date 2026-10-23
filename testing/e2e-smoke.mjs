@@ -270,5 +270,14 @@ r = await call('POST', `/api/checkins/${statusId}/action`, nurse, { action: 'Smo
 ok(r.s === 200 && r.j.checkin.status === 'action_recorded', 'nurse records the action');
 r = await call('GET', `/api/checkins/${statusId}`, fam);
 ok(r.s === 200 && r.j.statusLog.map((l) => l.status).join('>') === 'received>awaiting_review>reviewed>action_recorded', 'family sees the full timestamped timeline');
+ok((await call('POST', `/api/checkins/${statusId}/review`, nurse, {})).s === 409, 'a reviewed check-in cannot be reviewed again (409, status history is immutable)');
+
+// Missing readings are a reason, never zero
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 76 }, vitalsMissing: { bp: 'no_device', spo2: 'not_measured', bloodGlucose: 'unknown' } });
+ok(r.s === 201 && r.j.checkin.vitalsMissing.bp === 'no_device' && r.j.checkin.vitals.systolic === null, 'check-in stores "no device / not measured / unknown" instead of a value');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { spo2: 0 } });
+ok(r.s === 422 && r.j.details.some((d) => d.includes('cannot be 0')), 'a zero reading is rejected (422)');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { systolic: 130, diastolic: 82 }, vitalsMissing: { bp: 'unknown' } });
+ok(r.s === 422, 'a value together with a missing reason is rejected (422)');
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

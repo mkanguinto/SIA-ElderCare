@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { plan, validateNote } = require('../src/reviewStatus');
+const { ORDER, plan, validateNote } = require('../src/reviewStatus');
 const { validateCheckin } = require('../src/validation');
 
 test('review moves received / awaiting_review to reviewed', () => {
@@ -36,4 +36,29 @@ test('measurement devices are validated', () => {
   assert.strictEqual(bad.ok, false);
   assert.ok(bad.errors.some((e) => e.startsWith('measurementDevice.bp must be one of')));
   assert.ok(bad.errors.some((e) => e.includes('measurementDevice.scale is not a known device type')));
+});
+
+test('status transitions only move forward (immutable history)', () => {
+  // Every step plan() returns is later than the current status; nothing can go back to an earlier one.
+  for (const from of ORDER) {
+    for (const op of ['review', 'action']) {
+      const r = plan(from, op);
+      if (r.ok) for (const s of r.steps) assert.ok(ORDER.indexOf(s) >= ORDER.indexOf(from), `${op} from ${from} went back to ${s}`);
+    }
+  }
+  assert.strictEqual(plan('action_recorded', 'review').ok, false);
+});
+
+test('a missing vital is a reason, never zero', () => {
+  const ok = validateCheckin({ patientId: 'P-1001', vitals: { heartRate: 72 }, vitalsMissing: { bp: 'no_device', spo2: 'not_measured', bloodGlucose: 'unknown' } });
+  assert.strictEqual(ok.ok, true);
+  assert.deepStrictEqual(ok.value.vitalsMissing, { bp: 'no_device', spo2: 'not_measured', bloodGlucose: 'unknown' });
+  const zero = validateCheckin({ patientId: 'P-1001', vitals: { spo2: 0 } });
+  assert.ok(zero.errors.some((e) => e.includes('vitals.spo2 cannot be 0')));
+  const both = validateCheckin({ patientId: 'P-1001', vitals: { systolic: 130, diastolic: 85 }, vitalsMissing: { bp: 'unknown', weight: 'unknown', spo2: 'broken' } });
+  assert.ok(both.errors.includes('vitalsMissing.bp cannot be given together with a value'));
+  assert.ok(both.errors.some((e) => e.startsWith('vitalsMissing.weight is not a vital sign')));
+  assert.ok(both.errors.some((e) => e.startsWith('vitalsMissing.spo2 must be one of')));
+  // "All readings missing, with reasons" is still a valid check-in.
+  assert.strictEqual(validateCheckin({ patientId: 'P-1001', vitalsMissing: { bp: 'no_device' } }).ok, true);
 });

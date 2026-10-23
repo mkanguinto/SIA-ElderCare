@@ -4,7 +4,7 @@ import { api } from '../api';
 import { Link, navigate } from '../router';
 import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
-import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, vitalErrors, alertHeadline } from './data';
+import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, vitalErrors, alertHeadline, MISSING_REASONS, vitalsSummary } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications } from './common';
 import { DutiesScreen } from './duties';
 import { useOutsideWeather, WeatherCard, toEnvironment, DANGEROUS_HEAT } from './weather';
@@ -175,11 +175,10 @@ function Home({ user }) {
         {status.flatMap((e) => e.checkins.map((c) => ({ ...c, who: e.fullName }))).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 6).map((c) => (
           <Link key={c.id} to={`${BASE}/checkins/${c.id}`} className="m-card m-card-link" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
             <div className="m-between">
-              <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}</strong>
+              <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : c.vitalsMissing && c.vitalsMissing.bp ? tr('BP not taken', 'Walang BP') : tr('No BP', 'Walang BP')}</strong>
               <Chip tone={TONE[c.severity] || 'ok'} icon={['none', 'low'].includes(c.severity) ? 'check' : 'alert'}>{SEVERITY_WORD[c.severity] ? tr(...SEVERITY_WORD[c.severity]) : c.severity}</Chip>
             </div>
-            <p className="m-caption">{c.who} · {isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}
-              {[c.vitals.heartRate && ` · ${c.vitals.heartRate} bpm`, c.vitals.temperatureC && ` · ${c.vitals.temperatureC} °C`, c.vitals.spo2 && ` · ${c.vitals.spo2}%`, c.vitals.bloodGlucose && ` · ${c.vitals.bloodGlucose} mg/dL`].filter(Boolean).join('')}
+            <p className="m-caption">{c.who} · {isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)} · {vitalsSummary(c, tr)}
               {c.medication.taken === false ? tr(' · medicine missed', ' · hindi nainom ang gamot') : ''}</p>
             <div className="m-row" style={{ gap: '.5rem', marginTop: '.4rem', alignItems: 'center' }}>
               <StatusChip status={c.status} />
@@ -435,9 +434,8 @@ function CheckinDetail({ id }) {
       {c && (
         <>
           <section className="m-card">
-            <div className="m-between"><strong style={{ fontSize: '1.25rem' }}>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}</strong><StatusChip status={c.status} /></div>
-            <p className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}
-              {[c.vitals.heartRate && ` · ${c.vitals.heartRate} bpm`, c.vitals.temperatureC && ` · ${c.vitals.temperatureC} °C`, c.vitals.spo2 && ` · ${c.vitals.spo2}%`].filter(Boolean).join('')}</p>
+            <div className="m-between"><strong style={{ fontSize: '1.25rem' }}>{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}</strong><StatusChip status={c.status} /></div>
+            <p style={{ marginTop: '.25rem' }}>{vitalsSummary(c, tr)}</p>
             {c.notes && <p className="m-muted" style={{ marginTop: '.35rem' }}>“{c.notes}”</p>}
           </section>
           <section className="m-card">
@@ -464,16 +462,32 @@ function BackStep({ step, goTo }) {
 }
 
 /** Number input that shows its problem underneath straight away (red border + message). */
-function VitalField({ k, label, value, onChange, error, hint, placeholder, decimal }) {
+function VitalField({ k, label, value, onChange, error, hint, placeholder, decimal, missing }) {
   const { lang } = usePrefs();
   const id = `vital-${k}`;
   return (
-    <label className={`m-field ${error ? 'is-invalid' : ''}`} htmlFor={id}>
-      <span>{label}</span>
-      <input id={id} type="number" inputMode={decimal ? 'decimal' : 'numeric'} step={decimal ? '0.1' : '1'} min="0" value={value} onChange={onChange}
-        placeholder={placeholder} aria-invalid={error ? 'true' : undefined} aria-describedby={error ? `${id}-err` : undefined} />
-      {error ? <span className="m-field-error" id={`${id}-err`} role="alert">{lang === 'fil' ? error.fil : error.en}</span> : hint && <span className="m-hint">{hint}</span>}
-    </label>
+    <div className="m-stack" style={{ gap: '.4rem' }}>
+      <label className={`m-field ${error ? 'is-invalid' : ''}`} htmlFor={id}>
+        <span>{label}</span>
+        <input id={id} type="number" inputMode={decimal ? 'decimal' : 'numeric'} step={decimal ? '0.1' : '1'} min="1" value={value} onChange={onChange}
+          placeholder={placeholder} aria-invalid={error ? 'true' : undefined} aria-describedby={error ? `${id}-err` : undefined} />
+        {error ? <span className="m-field-error" id={`${id}-err`} role="alert">{lang === 'fil' ? error.fil : error.en}</span> : hint && <span className="m-hint">{hint}</span>}
+      </label>
+      {missing && value === '' && <MissingPicker label={label} {...missing} />}
+    </div>
+  );
+}
+
+/** "Not measured / No device / Unknown": why a reading is empty, so the nurse never mistakes it for 0 or normal. */
+function MissingPicker({ label, value, onChange }) {
+  const tr = useT();
+  return (
+    <div className="m-missing" role="radiogroup" aria-label={tr(`${label}: why is it empty?`, `${label}: bakit walang sukat?`)}>
+      <span>{tr('No reading?', 'Walang sukat?')}</span>
+      {MISSING_REASONS.map(([k, en, fil]) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} aria-pressed={value === k} onClick={() => onChange(value === k ? undefined : k)}>{tr(en, fil)}</button>
+      ))}
+    </div>
   );
 }
 
@@ -489,6 +503,9 @@ function CheckIn({ user }) {
   const [picking, setPicking] = useState(false);
   const [step, setStep] = useState(1);
   const [vitals, setVitals] = useState(EMPTY_VITALS);
+  const [missing, setMissingState] = useState({});
+  const setMissing = (k) => (reason) => setMissingState((m) => { const next = { ...m }; if (reason) next[k] = reason; else delete next[k]; return next; });
+  const missingFor = (k) => ({ value: missing[k], onChange: setMissing(k) });
   const [given, setGiven] = useState({});
   const [reasons, setReasons] = useState({});
   const [symptoms, setSymptoms] = useState([]);
@@ -532,11 +549,15 @@ function CheckIn({ user }) {
     }
   }
   const goTo = (n) => { setStep(n); window.scrollTo({ top: 0 }); };
-  const set = (k) => (e) => setVitals((v) => ({ ...v, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    setVitals((v) => ({ ...v, [k]: e.target.value }));
+    if (e.target.value !== '') setMissing(k === 'systolic' || k === 'diastolic' ? 'bp' : k)(undefined); // a value replaces the reason
+  };
 
   function buildBody() {
     const num = (x) => (x === '' ? undefined : Number(x));
     const v = Object.fromEntries(Object.entries(vitals).map(([k, x]) => [k, num(x)]).filter(([, x]) => x !== undefined));
+    const vitalsMissing = Object.fromEntries(Object.entries(missing).filter(([k]) => (k === 'bp' ? v.systolic === undefined && v.diastolic === undefined : v[k] === undefined)));
     const answered = meds.filter((m) => given[m.id] !== undefined);
     const missed = meds.filter((m) => given[m.id] === false).map((m) => `${m.name} ${m.dosage}${reasons[m.id] ? ` – ${reasons[m.id]}` : ''}`.slice(0, 100));
     const told = SYMPTOMS.filter((s) => symptoms.includes(s.key) && s.key !== 'fall' && s.key !== 'confused').map((s) => s.en);
@@ -546,6 +567,7 @@ function CheckIn({ user }) {
       idempotencyKey: `pwa-${crypto.randomUUID()}`,
       recordedAt: new Date().toISOString(),
       ...(Object.keys(v).length ? { vitals: v } : {}),
+      ...(Object.keys(vitalsMissing).length ? { vitalsMissing } : {}),
       ...(answered.length ? { medication: { taken: missed.length === 0, missed } } : {}),
       ...(symptoms.includes('fall') ? { mobilityStatus: 'fall_reported' } : mobility ? { mobilityStatus: mobility } : {}),
       ...(symptoms.includes('confused') ? { mood: 'confused' } : mood ? { mood } : {}),
@@ -621,11 +643,12 @@ function CheckIn({ user }) {
           <div className="m-grid-2">
             <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
             <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
-            <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} />
-            <VitalField k="temperatureC" decimal label={tr('Body temperature (°C)', 'Temperatura ng katawan (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} hint={tr('Use a thermometer', 'Gumamit ng thermometer')} />
           </div>
-          <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Normal is 95% or higher', 'Normal ang 95% pataas')} />
-          <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} />
+          {vitals.systolic === '' && vitals.diastolic === '' && <MissingPicker label={tr('Blood pressure', 'Presyon ng dugo')} {...missingFor('bp')} />}
+          <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} missing={missingFor('heartRate')} />
+          <VitalField k="temperatureC" decimal label={tr('Body temperature (°C)', 'Temperatura ng katawan (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} hint={tr('Use a thermometer', 'Gumamit ng thermometer')} missing={missingFor('temperatureC')} />
+          <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Normal is 95% or higher', 'Normal ang 95% pataas')} missing={missingFor('spo2')} />
+          <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} missing={missingFor('bloodGlucose')} />
           {hasErrors && <Banner tone="critical" role="alert">{tr('Please fix the fields marked in red to continue.', 'Ayusin muna ang mga pulang field para magpatuloy.')}</Banner>}
           {warning && <Banner tone={warning.tone} role="alert">{lang === 'fil' ? warning.fil : warning.en}</Banner>}
           <div className="m-footer-actions"><Cta onClick={() => { setTried(true); if (!Object.keys(vitalErrors(vitals, { pair: true })).length) goTo(2); }} disabled={hasErrors}>{tr('Next: medicines', 'Susunod: gamot')}</Cta></div>

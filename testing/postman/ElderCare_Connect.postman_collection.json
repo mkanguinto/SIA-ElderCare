@@ -4852,6 +4852,133 @@
               ]
             }
           }
+        },
+        {
+          "name": "Missing readings recorded as a reason (not measured / no device / unknown) -> 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"reasons stored\", () => pm.expect(c.vitalsMissing).to.eql({ bp: \"no_device\", spo2: \"not_measured\", bloodGlucose: \"unknown\" }));",
+                  "pm.test(\"no zero stored for the missing BP\", () => pm.expect(c.vitals.systolic).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"heartRate\": 76\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"no_device\",\n    \"spo2\": \"not_measured\",\n    \"bloodGlucose\": \"unknown\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A zero reading -> 422 (use vitalsMissing instead)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"explains why\", () => pm.expect(pm.response.json().details.join(\" \")).to.include(\"cannot be 0\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"spo2\": 0\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A value together with a missing reason -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 82\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"unknown\"\n  }\n}"
+            }
+          }
         }
       ]
     }

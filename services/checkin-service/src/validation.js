@@ -26,6 +26,9 @@ const DEVICES = {
   thermometer: ['digital_oral', 'digital_axillary', 'infrared_forehead', 'infrared_ear'],
   oximeter: ['fingertip'],
 };
+// Why a vital sign has no value. A missing reading is never sent or stored as 0.
+const MISSING_REASONS = ['not_measured', 'no_device', 'unknown'];
+const MISSING_KEYS = { bp: ['systolic', 'diastolic'], heartRate: ['heartRate'], temperatureC: ['temperatureC'], spo2: ['spo2'], bloodGlucose: ['bloodGlucose'] };
 
 function isNum(v) {
   return typeof v === 'number' && Number.isFinite(v);
@@ -46,6 +49,7 @@ function validateCheckin(body, now = new Date()) {
   for (const [field, [min, max]] of Object.entries(RANGES)) {
     if (v[field] === undefined || v[field] === null) continue;
     if (!isNum(v[field])) errors.push(`vitals.${field} must be a number`);
+    else if (v[field] === 0) errors.push(`vitals.${field} cannot be 0; leave it out and give a reason in vitalsMissing (${MISSING_REASONS.join(', ')})`);
     else if (v[field] < min || v[field] > max) errors.push(`vitals.${field} must be between ${min} and ${max}`);
     else vitals[field] = field === 'temperatureC' ? Math.round(v[field] * 10) / 10 : Math.round(v[field]);
   }
@@ -125,7 +129,23 @@ function validateCheckin(body, now = new Date()) {
     }
   }
 
-  if (!Object.keys(vitals).length && med.taken === undefined && !body.mobilityStatus && !body.notes) {
+  let vitalsMissing = null;
+  if (body.vitalsMissing !== undefined && body.vitalsMissing !== null) {
+    const m = body.vitalsMissing;
+    if (typeof m !== 'object' || Array.isArray(m)) errors.push('vitalsMissing must be an object');
+    else {
+      vitalsMissing = {};
+      for (const [k, reason] of Object.entries(m)) {
+        if (!MISSING_KEYS[k]) errors.push(`vitalsMissing.${k} is not a vital sign (${Object.keys(MISSING_KEYS).join(', ')})`);
+        else if (!MISSING_REASONS.includes(reason)) errors.push(`vitalsMissing.${k} must be one of: ${MISSING_REASONS.join(', ')}`);
+        else if (MISSING_KEYS[k].some((f) => vitals[f] !== undefined)) errors.push(`vitalsMissing.${k} cannot be given together with a value`);
+        else vitalsMissing[k] = reason;
+      }
+      if (!Object.keys(vitalsMissing).length) vitalsMissing = null;
+    }
+  }
+
+  if (!Object.keys(vitals).length && !vitalsMissing && med.taken === undefined && !body.mobilityStatus && !body.notes) {
     errors.push('Provide at least one vital sign, medication status, mobility status or note');
   }
 
@@ -143,8 +163,9 @@ function validateCheckin(body, now = new Date()) {
       idempotencyKey: body.idempotencyKey ? String(body.idempotencyKey) : null,
       environment,
       measurementDevice,
+      vitalsMissing,
     },
   };
 }
 
-module.exports = { validateCheckin, RANGES, MOBILITY, MOOD, DEVICES };
+module.exports = { validateCheckin, RANGES, MOBILITY, MOOD, DEVICES, MISSING_REASONS, MISSING_KEYS };

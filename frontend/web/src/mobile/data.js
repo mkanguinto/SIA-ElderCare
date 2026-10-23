@@ -177,6 +177,7 @@ export function vitalErrors(v, { pair = false } = {}) {
     if (raw === '' || raw == null) continue;
     const n = Number(raw);
     if (!Number.isFinite(n)) errors[k] = { en: 'Numbers only.', fil: 'Numero lang.' };
+    else if (n === 0) errors[k] = { en: 'Do not enter 0. If it was not measured, leave it empty and pick a reason.', fil: 'Huwag ilagay ang 0. Kung hindi nasukat, iwanang blangko at pumili ng dahilan.' };
     else if (n < 0) errors[k] = { en: 'Cannot be negative.', fil: 'Hindi puwedeng negatibo.' };
     else if (n < min || n > max) errors[k] = { en: `Must be ${min}–${max} ${unit}. Check the reading again.`, fil: `Dapat ${min}–${max} ${unit}. Tingnan muli ang sukat.` };
   }
@@ -190,4 +191,23 @@ export function vitalErrors(v, { pair = false } = {}) {
     }
   }
   return errors;
+}
+
+/** Why a vital sign has no value (sent as vitalsMissing; a missing reading is never 0). */
+export const MISSING_REASONS = [['not_measured', 'Not measured', 'Hindi nasukat'], ['no_device', 'No device', 'Walang gamit'], ['unknown', 'Unknown', 'Hindi alam']];
+const MISSING_WORD = Object.fromEntries(MISSING_REASONS.map(([k, en, fil]) => [k, [en, fil]]));
+
+/** "BP 130/85 · 72 bpm · SpO₂ not measured" - readings, plus the reason for each missing one. */
+export function vitalsSummary(c, tr, { glucose = true } = {}) {
+  const v = c.vitals || {};
+  const m = c.vitalsMissing || {};
+  const why = (k) => tr(...MISSING_WORD[m[k]]).toLowerCase();
+  const parts = [
+    v.systolic ? `BP ${v.systolic}/${v.diastolic}` : m.bp ? `BP ${why('bp')}` : null,
+    v.heartRate ? `${v.heartRate} bpm` : m.heartRate ? tr(`Pulse ${why('heartRate')}`, `Pulso ${why('heartRate')}`) : null,
+    v.temperatureC ? `${v.temperatureC} °C` : m.temperatureC ? tr(`Temp ${why('temperatureC')}`, `Temp ${why('temperatureC')}`) : null,
+    v.spo2 ? `SpO₂ ${v.spo2}%` : m.spo2 ? `SpO₂ ${why('spo2')}` : null,
+    glucose && (v.bloodGlucose ? `${v.bloodGlucose} mg/dL` : m.bloodGlucose ? tr(`Sugar ${why('bloodGlucose')}`, `Sugar ${why('bloodGlucose')}`) : null),
+  ];
+  return parts.filter(Boolean).join(' · ') || tr('No readings', 'Walang sukat');
 }

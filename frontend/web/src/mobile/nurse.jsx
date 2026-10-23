@@ -8,6 +8,7 @@ import Icon from './icons';
 import { Profile } from './common';
 import { WeekStrip } from './caregiver';
 import { StatusChip } from './status';
+import { vitalsSummary } from './data';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
   isToday, clock, manilaDay, hhmm, toneFor, PRIORITY_TONE,
@@ -603,8 +604,7 @@ function ReviewCard({ c, onDone, showPatient = false }) {
       <div className="m-between" style={{ alignItems: 'flex-start' }}>
         <div className="m-grow">
           {showPatient && <Link to={`${BASE}/patients/${c.patientId}`} className="m-link" style={{ padding: 0 }}>{c.patientName}</Link>}
-          <strong style={{ display: 'block', fontSize: '1.125rem' }}>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : tr('No BP', 'Walang BP')}
-            {c.vitals.heartRate ? ` · ${c.vitals.heartRate} bpm` : ''}{c.vitals.temperatureC ? ` · ${c.vitals.temperatureC} °C` : ''}</strong>
+          <strong style={{ display: 'block', fontSize: '1.125rem' }}>{vitalsSummary(c, tr)}</strong>
           <span className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}{devices ? ` · ${devices}` : ''}</span>
         </div>
         <StatusChip status={c.status} />
