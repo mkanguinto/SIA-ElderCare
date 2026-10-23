@@ -183,6 +183,7 @@ services:
     environment:
       PORT: 4003
       SERVICE_NAME: clinic-risk-service
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       DATABASE_URL: "postgres://clinic_svc:${CLINIC_DB_PASSWORD:-clinic_pass}@clinic-db:5432/clinic_db"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
       EVENT_TRANSPORT: rabbitmq

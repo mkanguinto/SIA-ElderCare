@@ -6,6 +6,7 @@ import { ROLE_LABEL, initials, relTime } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, toneFor } from '../mobile/kit';
 import { SecurityPanel } from './SecurityPanel';
+import { CareTeams } from './CareTeams';
 import { reasonLine } from '../mobile/nurse';
 import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/admin', label: 'Integration monitor', icon: 'flow' },
   { to: '/admin/health', label: 'Service health', icon: 'server' },
   { to: '/admin/users', label: 'Users & roles', icon: 'users' },
+  { to: '/admin/care-teams', label: 'Care teams', icon: 'heartPulse' },
   { to: '/admin/dlq', label: 'Dead-letter queue', icon: 'inbox' },
   { to: '/admin/digest', label: 'Digest export', icon: 'file' },
 ];
@@ -49,6 +51,7 @@ export default function AdminConsole({ user, path }) {
   let page;
   if (sub === '/admin/health') page = <Health live={live} />;
   else if (sub === '/admin/users') page = <Users />;
+  else if (sub === '/admin/care-teams') page = <CareTeams Head={Head} />;
   else if (sub === '/admin/dlq') page = <Dlq live={live} reload={reload} />;
   else if (sub === '/admin/digest') page = <DigestExport />;
   else page = <Monitor live={live} />;

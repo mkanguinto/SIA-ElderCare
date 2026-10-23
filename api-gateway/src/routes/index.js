@@ -30,6 +30,13 @@
  * | POST   | /api/clinic/queue/:itemId/visits    | clinic                              | Clinic Risk Queue      |
  * | GET    | /api/clinic/visits                  | clinic, admin                       | Clinic Risk Queue      |
  * | PATCH  | /api/clinic/visits/:visitId         | clinic                              | Clinic Risk Queue      |
+ * | POST   | /api/clinic/handover[/:id/accept|decline|cancel] | clinic                 | Clinic Risk Queue      |
+ * | GET    | /api/clinic/my-cases, /queue/pending-handovers, /patients/:id/care | clinic | Clinic Risk Queue   |
+ * | GET/PUT| /api/clinic/duty[/me]               | clinic (admin may read)             | Clinic Risk Queue      |
+ * | GET    | /api/clinic/care-teams              | clinic, admin                       | Clinic Risk Queue      |
+ * | POST/DELETE | /api/clinic/care-teams[/:id/members[/:nurseId]] | admin              | Clinic Risk Queue      |
+ * | PUT    | /api/clinic/patients/:id/care       | admin                               | Clinic Risk Queue      |
+ * | GET    | /api/clinic/care-log                | admin                               | Clinic Risk Queue      |
  * | GET/POST/DELETE | /api/alerts/subscribers    | clinic, admin                       | Family Alert & Notif.  |
  * v2 Batch 2:
  * | GET    | /api/alerts/rules[/:code]           | clinic, admin                       | Family Alert & Notif.  |
@@ -173,6 +180,22 @@ router.get('/clinic/queue/history', authorize(ROLES.CLINIC, ROLES.ADMIN), forwar
 router.post('/clinic/queue/:itemId/visits', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.get('/clinic/visits', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
 router.patch('/clinic/visits/:visitId', authorize(ROLES.CLINIC), forwardTo('clinic'));
+
+// Care teams, case ownership and nurse handover (a case moves only when the incoming nurse accepts).
+// Duty coverage is set by the nurse and is independent of login sessions.
+router.post('/clinic/handover', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.post('/clinic/handover/:id/:op(accept|decline|cancel)', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.get('/clinic/my-cases', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.get('/clinic/queue/pending-handovers', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.get('/clinic/patients/:id/care', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.put('/clinic/patients/:id/care', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.get('/clinic/duty', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
+router.put('/clinic/duty/me', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.get('/clinic/care-teams', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
+router.post('/clinic/care-teams', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.post('/clinic/care-teams/:id/members', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.delete('/clinic/care-teams/:id/members/:nurseId', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.get('/clinic/care-log', authorize(ROLES.ADMIN), forwardTo('clinic'));
 
 router.patch(
   '/clinic/queue/:itemId',

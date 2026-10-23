@@ -5193,6 +5193,814 @@
           }
         }
       ]
+    },
+    {
+      "name": "11. Batch 2 - Care team and nurse handover (submit -> accept -> case in the new nurse's queue)",
+      "item": [
+        {
+          "name": "Login - nurse.ben (incoming nurse)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"benToken\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ben\",\n  \"password\": \"{{demoPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Care team of P-1001: Ana holds the case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"team with several nurses\", () => pm.expect(j.members.length).to.be.at.least(2));",
+                  "pm.test(\"Ana is the case nurse\", () => pm.expect(j.caseNurse.id).to.eql(\"U-CS-001\"));",
+                  "pm.test(\"monitoring plan linked\", () => pm.expect(j.monitoringPlan.id).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "A nurse who does not hold the case cannot hand it over -> 403",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-001\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Handover without pending action -> 422",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-002\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ana submits handover to Ben -> 201 pending",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const h = pm.response.json().handover;",
+                  "pm.test(\"pending\", () => pm.expect(h.status).to.eql(\"pending\"));",
+                  "pm.test(\"all four fields kept\", () => { pm.expect(h.concern).to.be.a(\"string\"); pm.expect(h.actionTaken).to.be.a(\"string\"); pm.expect(h.pendingAction).to.be.a(\"string\"); pm.expect(h.dueTime).to.be.a(\"string\"); });",
+                  "pm.collectionVariables.set(\"handoverId\", h.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-002\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "While pending, the case is not in Ben's cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"not transferred yet\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.not.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ben sees it under Pending handover",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"incoming\", () => pm.expect(pm.response.json().incoming.map((h) => h.id)).to.include(pm.collectionVariables.get(\"handoverId\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue/pending-handovers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue",
+                "pending-handovers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "The outgoing nurse cannot accept -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Ben accepts -> 200, case moves",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"accepted\", () => pm.expect(j.handover.status).to.eql(\"accepted\"));",
+                  "pm.test(\"Ben now holds the case\", () => pm.expect(j.caseNurse.id).to.eql(\"U-CS-002\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Case is now in Ben's My cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"transferred\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "... and no longer in Ana's",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"gone\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.not.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Accepting twice -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Handover chain: from, to, acceptance time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const h = pm.response.json().handovers.find((x) => x.id === pm.collectionVariables.get(\"handoverId\"));",
+                  "pm.test(\"logged\", () => { pm.expect(h.fromNurse.id).to.eql(\"U-CS-001\"); pm.expect(h.toNurse.id).to.eql(\"U-CS-002\"); pm.expect(h.respondedAt).to.be.a(\"string\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin sees care teams (no clinical content)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"teams and plans\", () => { pm.expect(j.teams.length).to.be.at.least(2); pm.expect(j.monitoringPlans.length).to.be.at.least(3); });",
+                  "pm.test(\"no handover concern text\", () => pm.expect(pm.response.text()).to.not.include(\"dizzy\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/care-teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "care-teams"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read the handover chain -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot move a held case -> 409 handover required",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"careTeamId\": \"CT-MNL-A\",\n  \"caseNurseId\": \"U-CS-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Assignment log records the accepted handover",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"handover_accepted entry\", () => pm.expect(pm.response.json().entries.some((e) => e.action === \"handover_accepted\" && e.details.handoverId === pm.collectionVariables.get(\"handoverId\"))).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/care-log",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "care-log"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ben hands the case back to Ana -> 201",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"handoverBackId\", pm.response.json().handover.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-001\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ana accepts -> 200 (demo back to the start)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Ana holds it again\", () => pm.expect(pm.response.json().caseNurse.id).to.eql(\"U-CS-001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverBackId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverBackId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -5282,6 +6090,22 @@
     },
     {
       "key": "statusCheckinId",
+      "value": ""
+    },
+    {
+      "key": "benToken",
+      "value": ""
+    },
+    {
+      "key": "handoverId",
+      "value": ""
+    },
+    {
+      "key": "handoverBackId",
+      "value": ""
+    },
+    {
+      "key": "handoverDue",
       "value": ""
     }
   ]

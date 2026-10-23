@@ -40,6 +40,7 @@ const P = {
   message: <><path d="M4 5h16v11H9l-5 4z" /><path d="M8 9h8M8 12h5" /></>,
   fall: <><circle cx="15" cy="5" r="2" /><path d="M4 21h16M6 17l4-2 3 2 4-6M10 15l1-5 4 1" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
+  swap: <><path d="M4 8h14l-3.5-3.5" /><path d="M20 16H6l3.5 3.5" /></>,
   monitor: <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></>,
   sliders: <><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></>,
 };

@@ -493,3 +493,40 @@
   background: var(--bg-surface); color: var(--text-primary); font-weight: 700; font-size: .8125rem; cursor: pointer;
 }
 .m-missing button[aria-pressed='true'] { background: var(--text-secondary); border-color: var(--text-secondary); color: #fff; }
+
+/* Batch 2: duty toggle, handover cards, care team */
+.m-duty { display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left; padding: .75rem 1rem; border-radius: 1rem;
+  border: 1.5px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
+.m-duty strong { display: block; }
+.m-duty .m-sub { margin: 0; }
+.m-duty-dot { flex: none; width: .75rem; height: .75rem; border-radius: 50%; background: var(--border-default); }
+.m-duty.is-on .m-duty-dot, .m-duty-dot.is-on { background: var(--accent-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-ok) 25%, transparent); }
+.m-badge { display: inline-grid; place-items: center; min-width: 1.35rem; height: 1.35rem; margin-left: .35rem; padding: 0 .3rem; border-radius: 999px;
+  background: var(--accent-critical); color: #fff; font-size: .75rem; }
+.m-handover { display: grid; grid-template-columns: max-content 1fr; gap: .35rem .75rem; margin: .75rem 0 0; font-size: .9375rem; }
+.m-handover dt { color: var(--text-secondary); font-weight: 700; font-size: .8125rem; padding-top: .1rem; }
+.m-handover dd { margin: 0; }
+.m-handover dd.is-overdue { color: var(--text-critical); font-weight: 700; }
+.m-team { list-style: none; margin: .5rem 0 .75rem; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+.m-team li { display: flex; align-items: center; gap: .6rem; }
+.m-team .m-sub { display: block; margin: 0; }
+.m-choice { display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left; padding: .75rem 1rem; border-radius: 1rem;
+  border: 1.5px solid var(--border-default); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; min-height: 3.5rem; }
+.m-choice .m-sub { display: block; margin: 0; }
+.m-choice.is-on { border-color: var(--bg-primary); box-shadow: inset 0 0 0 1px var(--bg-primary); }
+.m-chain summary { cursor: pointer; font-weight: 700; font-size: .9375rem; color: var(--text-secondary); min-height: 2.75rem; display: flex; align-items: center; }
+.m-chain ol { margin: .25rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .5rem; font-size: .9375rem; }
+.m-chain .m-sub { display: block; margin: 0; }
+
+/* Admin: care teams */
+.ad-grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+.ad-grid-2 > .ad-panel { margin-bottom: 0; }
+.ad-members { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-direction: column; gap: .75rem; }
+.ad-members li { display: flex; align-items: center; gap: .6rem; }
+.ad-members .m-sub { display: block; font-size: .8125rem; color: var(--text-muted); }
+.ad-inline-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: 1rem; }
+.ad-inline-form input, .ad-inline-form select, .ad-table select {
+  min-height: 2.75rem; border-radius: .75rem; border: 1.5px solid var(--border-default); background: var(--bg-surface); padding: 0 .75rem; font: inherit; font-size: .9375rem; }
+.ad-inline-form input { flex: 1 1 10rem; }
+.ad-panel .ad-inline-form[style*='column'] input { flex: none; }
+.ad-table .m-chip { margin-top: .35rem; }

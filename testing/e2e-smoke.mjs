@@ -293,6 +293,80 @@ ok(r.s === 422 && r.j.details.some((d) => d.includes('cannot be 0')), 'a zero re
 r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { systolic: 130, diastolic: 82 }, vitalsMissing: { bp: 'unknown' } });
 ok(r.s === 422, 'a value together with a missing reason is rejected (422)');
 
+// ---- Batch 2: care team + nurse handover (the case moves only when the incoming nurse accepts) ----
+console.log('\n-- Care team and handover --');
+const ben = await login('nurse.ben'), carla = await login('nurse.carla');
+const caseIds = async (t) => (await call('GET', '/api/clinic/my-cases', t)).j.cases.map((c) => c.patient.id);
+// Start from a known state: whoever holds P-1001's case hands it to Ana (needed when the test is run again).
+let care = (await call('GET', '/api/clinic/patients/P-1001/care', nurse)).j;
+ok(care.careTeam && care.members.length >= 2 && care.monitoringPlan, `P-1001 belongs to a care team (${care.careTeam && care.careTeam.name}, ${care.members.length} nurses, plan ${care.monitoringPlan && care.monitoringPlan.id})`);
+const due = new Date(Date.now() + 2 * 3600000).toISOString();
+const hand = (from, to, extra = {}) => call('POST', '/api/clinic/handover', from, { patientId: 'P-1001', toNurseId: to, concern: 'BP 168/100 this morning, dizzy on standing', actionTaken: 'Called the caregiver, advised rest and fluids', pendingAction: 'Recheck BP at 6 PM and call the caregiver back', dueTime: due, ...extra });
+for (const h of (await call('GET', '/api/clinic/queue/pending-handovers', nurse)).j.outgoing) await call('POST', `/api/clinic/handover/${h.id}/cancel`, nurse, {});
+for (const h of (await call('GET', '/api/clinic/queue/pending-handovers', ben)).j.outgoing) await call('POST', `/api/clinic/handover/${h.id}/cancel`, ben, {});
+if (care.caseNurse.id === 'U-CS-002') { const back = (await hand(ben, 'U-CS-001')).j.handover; await call('POST', `/api/clinic/handover/${back.id}/accept`, nurse, {}); }
+ok((await caseIds(nurse)).includes('P-1001'), 'Ana holds the P-1001 case');
+await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 172, diastolic: 104, heartRate: 96 } });
+const openCase = await pollCase('P-1001', (c) => Boolean(c));
+ok(openCase && openCase.assignedTo === 'U-CS-001', 'a new clinic case is assigned to the elder\'s case nurse (Ana)');
+
+ok((await hand(ben, 'U-CS-001')).s === 403, 'a nurse who does not hold the case cannot hand it over (403)');
+ok((await hand(nurse, 'U-CS-003')).s === 422, 'the incoming nurse must be on the care team (422)');
+ok((await hand(nurse, 'U-CS-002', { pendingAction: '' })).s === 422, 'pending action is required (422)');
+ok((await hand(cg, 'U-CS-002')).s === 403, 'caregiver cannot submit a handover (403)');
+r = await hand(nurse, 'U-CS-002');
+const hid = r.j && r.j.handover && r.j.handover.id;
+ok(r.s === 201 && r.j.handover.status === 'pending', 'Ana submits the handover to Ben (201, pending)');
+ok((await hand(nurse, 'U-CS-002')).s === 409, 'only one pending handover per elder (409)');
+ok((await caseIds(nurse)).includes('P-1001') && !(await caseIds(ben)).includes('P-1001'), 'while pending, the case stays with Ana (not yet in Ben\'s cases)');
+r = await call('GET', '/api/clinic/queue/pending-handovers', ben);
+ok(r.s === 200 && r.j.incoming.some((h) => h.id === hid && h.pendingAction && h.dueTime), "Ben sees it under Pending handover with concern, action, pending action and due time");
+ok((await call('GET', '/api/clinic/queue?patientId=P-1001', nurse)).j.items[0].handoverStatus === 'pending', 'queue item shows handover_status = pending');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, nurse, {})).s === 403, 'the outgoing nurse cannot accept her own handover (403)');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, carla, {})).s === 403, 'another nurse cannot accept it (403)');
+r = await call('POST', `/api/clinic/handover/${hid}/accept`, ben, {});
+ok(r.s === 200 && r.j.handover.status === 'accepted' && r.j.caseNurse.id === 'U-CS-002', 'Ben accepts (200)');
+ok((await caseIds(ben)).includes('P-1001') && !(await caseIds(nurse)).includes('P-1001'), 'after acceptance the case is in Ben\'s My cases, not Ana\'s');
+const qi = (await call('GET', '/api/clinic/queue?patientId=P-1001', nurse)).j.items[0];
+ok(qi.id === openCase.id && qi.assignedTo === 'U-CS-002' && qi.handoverStatus === 'accepted', 'the open queue item follows the case to Ben (handover_status = accepted)');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, ben, {})).s === 409, 'a handover is answered once (409)');
+care = (await call('GET', '/api/clinic/patients/P-1001/care', ben)).j;
+const link = care.handovers.find((h) => h.id === hid);
+ok(link && link.fromNurse.id === 'U-CS-001' && link.toNurse.id === 'U-CS-002' && link.respondedAt, 'handover chain logged: from, to, acceptance time');
+ok((await call('PATCH', `/api/clinic/queue/${qi.id}`, nurse, { assignedTo: 'U-CS-001' })).s === 409, '"Assign to me" cannot take a case another nurse holds (409, handover required)');
+ok((await call('GET', '/api/patients/P-1001', cg)).s === 200 && (await call('GET', '/api/patients/P-1001', fam)).s === 200, 'caregiver and family keep access after the nurse change');
+
+// Decline keeps the case where it is; the chain shows it
+r = await hand(ben, 'U-CS-001');
+ok((await call('POST', `/api/clinic/handover/${r.j.handover.id}/decline`, nurse, {})).s === 422, 'declining needs a reason (422)');
+ok((await call('POST', `/api/clinic/handover/${r.j.handover.id}/decline`, nurse, { note: 'Off duty from 2 PM, ask Carla' })).s === 200 && (await caseIds(ben)).includes('P-1001'), 'declined handover leaves the case with Ben');
+// Hand it back so the demo starts from Ana again
+r = await hand(ben, 'U-CS-001');
+await call('POST', `/api/clinic/handover/${r.j.handover.id}/accept`, nurse, {});
+ok((await caseIds(nurse)).includes('P-1001'), 'handed back to Ana');
+
+// Duty coverage is separate from sessions
+r = await call('PUT', '/api/clinic/duty/me', nurse, { onDuty: false });
+ok(r.s === 200 && r.j.onDuty === false && r.j.cases >= 1 && r.j.warning, 'going off duty keeps the cases and warns (no automatic handover)');
+await call('PUT', '/api/clinic/duty/me', nurse, { onDuty: true });
+ok((await caseIds(nurse)).includes('P-1001'), 'duty change did not move the case');
+
+// Admin: care teams without clinical content
+r = await call('GET', '/api/clinic/care-teams', admin);
+ok(r.s === 200 && r.j.teams.length >= 2 && r.j.monitoringPlans.length >= 3 && !JSON.stringify(r.j).includes('dizzy'), 'admin sees teams, elders and plans, without clinical notes');
+ok((await call('GET', '/api/clinic/patients/P-1001/care', admin)).s === 403, 'admin cannot read the handover chain (clinical, 403)');
+ok((await call('POST', '/api/clinic/handover', admin, {})).s === 403, 'admin cannot submit handovers (403)');
+ok((await call('PUT', '/api/clinic/patients/P-1001/care', admin, { careTeamId: 'CT-MNL-A', caseNurseId: 'U-CS-002' })).s === 409, 'admin cannot move a held case (409, handover required)');
+const teamId = 'CT-TEST-SMOKE'; // fixed id: created on the first run, reused afterwards
+r = await call('POST', '/api/clinic/care-teams', admin, { id: teamId, name: 'Test team (smoke test)', clinicId: 'RHU-MNL-01' });
+ok(r.s === 201 || r.s === 409, `admin creates a care team (${r.s === 201 ? 'created' : 'already there: 409'})`);
+ok((await call('POST', `/api/clinic/care-teams/${teamId}/members`, admin, { nurseId: 'U-CS-003', nurseName: 'Carla Mendoza, RN' })).s === 201, 'admin adds a nurse to it');
+ok((await call('DELETE', `/api/clinic/care-teams/CT-MNL-A/members/U-CS-001`, admin)).s === 409, 'a nurse holding cases cannot be removed from the team (409)');
+ok((await call('DELETE', `/api/clinic/care-teams/${teamId}/members/U-CS-003`, admin)).s === 200, 'a nurse without cases can be removed');
+r = await call('GET', '/api/clinic/care-log?limit=50', admin);
+ok(r.s === 200 && r.j.entries.some((e) => e.action === 'handover_accepted' && e.details.handoverId === hid) && r.j.entries.some((e) => e.action === 'team_created'), 'assignment log records handovers and team changes with who and when');
+ok((await call('GET', '/api/clinic/care-log', nurse)).s === 403, 'nurse cannot read the admin assignment log (403)');
+
 // Archive this run's pending demo check-ins: they leave the pending lists without being marked reviewed.
 const lastDemo = (await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 71 } })).j.checkin;
 r = await call('POST', '/api/checkins/archive-demo', nurse, {});

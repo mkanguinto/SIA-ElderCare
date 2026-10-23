@@ -9,6 +9,7 @@ import { Profile } from './common';
 import { WeekStrip } from './caregiver';
 import { StatusChip } from './status';
 import { vitalsSummary } from './data';
+import { DutyToggle, PendingHandovers, MyCases, CareTeamCard, HandoverForm, usePendingHandovers, useMyCases } from './handover';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
   isToday, clock, manilaDay, hhmm, toneFor, PRIORITY_TONE,
@@ -33,6 +34,7 @@ export default function NurseApp({ user, path }) {
   let nav = true;
   if (sub === '/patients/new') { screen = <AddPatient />; nav = false; }
   else if (parts[0] === 'patients' && parts[2] === 'schedule') { screen = <ScheduleVisit patientId={parts[1]} />; nav = false; }
+  else if (parts[0] === 'patients' && parts[2] === 'handover') { screen = <HandoverForm user={user} patientId={parts[1]} />; nav = false; }
   else if (parts[0] === 'patients' && parts[1]) screen = <PatientDetail user={user} patientId={parts[1]} />;
   else if (sub === '/patients') screen = <Patients />;
   else if (sub === '/visits') screen = <Visits />;
@@ -74,7 +76,10 @@ function Queue({ user }) {
   const tr = useT();
   const [q] = useQueue();
   const [filter, setFilter] = useState(null);
-  const [mine, setMine] = useState(false);
+  const [tab, setTabState] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'all');
+  const setTab = (t) => { setTabState(t); window.history.replaceState(null, '', t === 'all' ? BASE : `${BASE}?tab=${t}`); };
+  const [handovers, reloadHandovers] = usePendingHandovers();
+  const [myCases, reloadMyCases] = useMyCases();
   const [search, setSearch] = useState('');
   const [staff, setStaff] = useState({});
   useEffect(() => {
@@ -86,7 +91,6 @@ function Queue({ user }) {
   const s = q.summary;
   const items = q.items
     .filter((i) => !filter || i.priority === filter)
-    .filter((i) => !mine || i.assignedTo === user.id)
     .filter((i) => !search || `${i.patient.name} ${i.patient.zipCode} ${i.patient.id}`.toLowerCase().includes(search.toLowerCase()));
   const weather = q.items.flatMap((i) => i.reasons.filter((r) => r.type === 'environmental_risk' && isToday(r.at)).map((r) => ({ ...r, patient: i.patient.name })));
   const urgent = (s.P1 || 0) + (s.P2 || 0);
@@ -105,20 +109,24 @@ function Queue({ user }) {
           <Banner tone="info" icon="bell">{weather[0].detail}. {tr(`${new Set(weather.map((w) => w.patient)).size} patient(s) flagged by the weather check.`, `${new Set(weather.map((w) => w.patient)).size} pasyente ang na-flag dahil sa panahon.`)}</Banner>
         </div>
       )}
+      <DutyToggle user={user} />
       <ReviewsLink />
       <label className="m-search" style={{ marginTop: '.75rem' }}>
         <Icon name="search" />
         <span className="m-sr">{tr('Search', 'Hanapin')}</span>
         <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tr('Search patient or ZIP code', 'Hanapin ang pasyente o ZIP')} />
       </label>
-      <div className="m-between">
-        <h2 className="m-section-title">{tr('Needs action now', 'Kailangang aksyunan')}</h2>
-        <div className="m-seg" role="group" aria-label={tr('Show', 'Ipakita')} style={{ padding: '.2rem' }}>
-          <button type="button" aria-pressed={!mine} onClick={() => setMine(false)} style={{ minHeight: '2.25rem', padding: '0 .75rem' }}>{tr('All', 'Lahat')}</button>
-          <button type="button" aria-pressed={mine} onClick={() => setMine(true)} style={{ minHeight: '2.25rem', padding: '0 .75rem' }}>{tr('Mine', 'Akin')}</button>
-        </div>
+      <div className="m-seg" role="tablist" aria-label={tr('Show', 'Ipakita')} style={{ marginTop: '1rem' }}>
+        <button type="button" role="tab" aria-selected={tab === 'all'} aria-pressed={tab === 'all'} onClick={() => setTab('all')}>{tr('All', 'Lahat')}</button>
+        <button type="button" role="tab" aria-selected={tab === 'mine'} aria-pressed={tab === 'mine'} onClick={() => setTab('mine')}>{tr('My cases', 'Aking kaso')}{myCases && myCases.cases ? ` (${myCases.cases.length})` : ''}</button>
+        <button type="button" role="tab" aria-selected={tab === 'handover'} aria-pressed={tab === 'handover'} onClick={() => setTab('handover')}>
+          {tr('Handover', 'Handover')}{handovers && handovers.incoming && handovers.incoming.length ? <span className="m-badge">{handovers.incoming.length}</span> : ''}
+        </button>
       </div>
-      <div className="m-stack">
+      {tab === 'mine' && <><h2 className="m-section-title">{tr('Cases you hold', 'Mga kasong hawak mo')}</h2><MyCases data={myCases} reasonLine={reasonLine} /></>}
+      {tab === 'handover' && <PendingHandovers data={handovers} reload={() => { reloadHandovers(); reloadMyCases(); }} />}
+      {tab === 'all' && <h2 className="m-section-title">{tr('Needs action now', 'Kailangang aksyunan')}</h2>}
+      {tab === 'all' && <div className="m-stack">
         {items.map((i) => (
           <Link key={i.id} to={`${BASE}/patients/${i.patient.id}`} className="m-list-row">
             <span className={`m-avatar ${toneFor(i.patient.name)}`} aria-hidden="true">{avatarInitials(i.patient.name)}</span>
@@ -132,8 +140,8 @@ function Queue({ user }) {
             <Icon name="chevron" />
           </Link>
         ))}
-        {!items.length && <div className="m-note"><strong>{tr('Nothing here', 'Wala rito')}</strong>{mine ? tr('No cases are assigned to you. Open a patient and tap "Assign to me".', 'Walang kasong nakatalaga sa iyo.') : tr('No patients match. Clear the filter or search.', 'Walang tugma.')}</div>}
-      </div>
+        {!items.length && <div className="m-note"><strong>{tr('Nothing here', 'Wala rito')}</strong>{tr('No patients match. Clear the filter or search.', 'Walang tugma.')}</div>}
+      </div>}
     </>
   );
 }
@@ -160,26 +168,34 @@ function PatientDetail({ user, patientId }) {
   const [emr, setEmr] = useState(null);
   const [week, setWeek] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [care, setCare] = useState(null);
+  const loadCare = useCallback(() => api(`/api/clinic/patients/${encodeURIComponent(patientId)}/care`).then(setCare)
+    .catch((e) => setCare(e.status === 404 ? null : { error: e.message })), [patientId]);
   const loadItem = useCallback(() => api(`/api/clinic/queue?patientId=${encodeURIComponent(patientId)}`).then((r) => setItem(r.items[0] || null)).catch(() => setItem(null)), [patientId]);
   useEffect(() => {
     api(`/api/patients/${encodeURIComponent(patientId)}`).then(setPatient).catch((e) => setPatient({ error: e.message }));
     api(`/api/patients/${encodeURIComponent(patientId)}/history?days=7&limit=60`).then((h) => setWeek(h.checkins)).catch(() => setWeek([]));
     api(`/api/clinic/patients/${encodeURIComponent(patientId)}/emr-history`).then((r) => setEmr(r.history)).catch((e) => setEmr({ error: e.message }));
     loadItem();
-  }, [patientId, loadItem]);
+    loadCare();
+  }, [patientId, loadItem, loadCare]);
 
   async function update(body, done) {
     setBusy(true);
     try {
       await api(`/api/clinic/queue/${item.id}`, { method: 'PATCH', body });
       setToast(done);
-      await loadItem();
+      await Promise.all([loadItem(), loadCare()]);
     } catch (e) { setToast(e.message); } finally { setBusy(false); }
   }
 
   if (!patient || item === undefined) return <><TopBar title={tr('Patient', 'Pasyente')} back={BASE} /><Loader /></>;
   if (patient.error) return <><TopBar title={tr('Patient', 'Pasyente')} back={BASE} /><div className="m-error">{patient.error}</div></>;
   const phone = patient.emergencyContact && patient.emergencyContact.phone;
+  // The case moves only through an accepted handover, so "Assign to me" is offered only when nobody else holds it.
+  const holder = care && !care.error && care.caseNurse ? care.caseNurse : null;
+  const heldByOther = Boolean(holder && holder.id !== user.id);
+  const heldBy = holder ? holder.name : '';
   const ringTone = item ? `var(--accent-${PRIORITY_TONE[item.priority] === 'ok' ? 'ok' : PRIORITY_TONE[item.priority]})` : 'var(--accent-ok)';
   const score = item ? item.scores.total : 0;
   const r = 26; const c = 2 * Math.PI * r;
@@ -223,6 +239,8 @@ function PatientDetail({ user, patientId }) {
         </section>
       )}
 
+      <CareTeamCard user={user} patientId={patientId} care={care} />
+
       <PatientReviews patientId={patientId} />
 
       {week && (
@@ -259,7 +277,9 @@ function PatientDetail({ user, patientId }) {
       {item && (
         <div className="m-footer-actions">
           <div className="m-grid-2">
-            <button type="button" className="m-btn" disabled={busy || item.assignedTo === user.id} onClick={() => update({ assignedTo: user.id, ...(item.status === 'open' ? { status: 'in_review' } : {}) }, tr('Assigned to you', 'Nakatalaga sa iyo'))}>{item.assignedTo === user.id ? tr('Assigned', 'Nakatalaga') : tr('Assign to me', 'Sa akin')}</button>
+            {heldByOther
+              ? <button type="button" className="m-btn" disabled>{tr(`Held by ${heldBy.split(',')[0]}`, `Hawak ni ${heldBy.split(',')[0]}`)}</button>
+              : <button type="button" className="m-btn" disabled={busy || item.assignedTo === user.id} onClick={() => update({ assignedTo: user.id, ...(item.status === 'open' ? { status: 'in_review' } : {}) }, tr('Assigned to you', 'Nakatalaga sa iyo'))}>{item.assignedTo === user.id ? tr('Assigned', 'Nakatalaga') : tr('Assign to me', 'Sa akin')}</button>}
             <button type="button" className="m-btn" disabled={busy} onClick={() => update({ status: 'resolved', notes: 'Resolved from the phone app' }, tr('Case resolved', 'Nalutas')).then(() => navigate(BASE))}>{tr('Resolve', 'Lutasin')}</button>
           </div>
           <Cta onClick={() => navigate(`${BASE}/patients/${patientId}/schedule`)}>{item.status === 'scheduled' ? tr('Reschedule visit', 'I-reschedule') : tr('Schedule a visit', 'Mag-iskedyul ng bisita')}</Cta>

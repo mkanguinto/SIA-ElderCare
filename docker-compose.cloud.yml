@@ -70,6 +70,7 @@ services:
     <<: *prod
     environment:
       NODE_ENV: production
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-false}"
     deploy: { resources: { limits: { memory: 256m } } }
 
   legacy-emr-adapter:

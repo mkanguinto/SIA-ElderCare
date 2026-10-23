@@ -151,7 +151,9 @@ Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/
 |---|---|---|
 | `caregiver.maria` | caregiver | P-1001, P-1002 |
 | `family.jose` | family_member | P-1001 |
-| `nurse.ana` | clinic_staff | all |
+| `nurse.ana` | clinic_staff | all · holds P-1001 (lead, Team A; also on Team B) |
+| `nurse.ben` | clinic_staff | all · holds P-1003 (Team A) |
+| `nurse.carla` | clinic_staff | all · holds P-1002 (lead, Team B) |
 | `admin.harold` | system_admin | all |
 
 Users live in `api-gateway/data/users.json` with scrypt hashes. New hash: `node api-gateway/scripts/hash-password.js "NewPassword"`.
@@ -308,6 +310,15 @@ Every queue item gets a total score (0–100) from health (latest check-in), env
 * Weather risk expires after `ENV_RISK_TTL_HOURS` (24 h) without a new weather event.
 * The queue is sorted by priority, then total score; `GET /api/clinic/queue` returns the thresholds.
 
+### Care teams and nurse handover
+
+* Each elder belongs to a **care team** (several nurses) and has a **monitoring plan** (check-ins per day, review time). One nurse on the team **holds the case**.
+* **Handover:** the nurse holding the case sends concern, action taken, pending action and due time (`POST /api/clinic/handover`). The case stays with her while the handover is **pending**; it moves only when the incoming nurse **accepts** (`POST /api/clinic/handover/:id/accept`). Declining (reason required) or cancelling leaves it where it was. One pending handover per elder; the chain (`from_nurse`, `to_nurse`, `responded_at`) cannot be edited or deleted.
+* `GET /api/clinic/my-cases` (cases I hold) and `GET /api/clinic/queue/pending-handovers` (`incoming` / `outgoing`) back the nurse's **My cases** and **Handover** tabs. Open queue items follow the case (`assigned_to`, `handover_status`). "Assign to me" only works when nobody holds the case.
+* **Duty coverage** (`PUT /api/clinic/duty/me`) is separate from login sessions: going off duty or signing out never moves a case.
+* **Admin** (`/admin/care-teams`) creates teams, adds/removes nurses, links elders to a team and plan and records the *first* case nurse. It cannot move a held case, read handover content, or remove a nurse who still holds cases. Every change is in `GET /api/clinic/care-log`.
+* Caregiver and family links are per elder, so they are unaffected by nurse changes.
+
 ### Visits and Recent Visits
 
 * "Schedule visit" opens a form; the API validates a real date, `HH:MM` time (Manila), visit type, destination (2–120 chars) and location (3–300 chars). Not in the past, at most 180 days ahead, home/clinic visits between 06:00 and 19:59. Setting a case to `scheduled` without a visit is rejected (422).
@@ -415,7 +426,8 @@ Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 | Layer | Tool | Asset |
 |---|---|---|
 | Unit | `node --test` | `*/test/*.test.js` – 60 tests: vitals + patient validation, anomaly rules, heat index, triage thresholds, visit validation, TextBee client + webhook signature, SMS parsing, EMR mapping, gateway auth/RBAC |
-| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 41 checks through the gateway (incl. triage de-escalation, visits, history, medicines, onboarding) |
+| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 142 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
+| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – nurse handover: pending list, Accept, case moves to My cases |
 | Weather demo / failure | fake OpenWeatherMap | `testing/mocks/fake-openweathermap.js` – heatwave + typhoon on demand, no API key |
 | Functional + security | Postman | `testing/postman/ElderCare_Connect.postman_collection.json` (folders 0–4) |
 | Integration (saga) | Postman / Newman | folder **5. Integration** – check-in → family alert → clinic queue → EMR history → triage update |

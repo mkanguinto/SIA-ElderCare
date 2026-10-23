@@ -32,6 +32,7 @@ function toDto(r) {
     status: r.status,
     reasons: r.reasons,
     assignedTo: r.assigned_to,
+    handoverStatus: r.handover_status || 'none',
     lastEventAt: r.last_event_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -138,8 +139,11 @@ async function upsertQueueItem(patient, signal, reason, options = {}) {
     }
     const { rows: [row] } = await client.query(
       `INSERT INTO risk_queue (patient_id, patient_name, zip_code, assigned_clinic, conditions, mobility_restricted,
-                               health_score, environment_score, emr_score, total_score, priority, reasons, category, priority_rule, environment_at, health_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+                               health_score, environment_score, emr_score, total_score, priority, reasons, category, priority_rule, environment_at, health_at,
+                               assigned_to, handover_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+               (SELECT case_nurse_id FROM patient_care WHERE patient_id = $1),
+               CASE WHEN EXISTS (SELECT 1 FROM handover_record WHERE patient_id = $1 AND status = 'pending') THEN 'pending' ELSE 'none' END) RETURNING *`,
       [patient.id, patient.fullName || patient.id, patient.zipCode || null, patient.assignedClinic || null, conditions, mobilityRestricted,
         health, environment, emr, c.total, c.priority, JSON.stringify([reason]), c.category, c.rule, environmentAt, healthAt],
     );
@@ -206,6 +210,22 @@ router.patch('/api/clinic/queue/:itemId', async (req, res, next) => {
       if (!item) return { status: 404, body: { error: 'not_found' } };
       if (status !== undefined && status !== item.status && !score.VALID_TRANSITIONS[item.status].includes(status)) {
         return { status: 409, body: { error: 'invalid_transition', message: `Cannot move from ${item.status} to ${status}` } };
+      }
+      // A case moves to another nurse only through a handover that nurse accepts. "Assign to me" is allowed
+      // only when nobody holds the elder's case yet (or you already do).
+      if (assignedTo !== undefined) {
+        if (assignedTo !== req.user.id) {
+          return { status: 409, body: { error: 'handover_required', message: 'A case moves to another nurse only through a handover they accept (POST /api/clinic/handover)' } };
+        }
+        const { rows: [care] } = await client.query('SELECT case_nurse_id, case_nurse_name FROM patient_care WHERE patient_id = $1 FOR UPDATE', [item.patient_id]);
+        const holder = (care && care.case_nurse_id) || (item.assigned_to !== req.user.id ? item.assigned_to : null);
+        if (holder && holder !== req.user.id) {
+          return { status: 409, body: { error: 'handover_required', message: `${(care && care.case_nurse_name) || 'Another nurse'} holds this case. Ask them to hand it over to you.` } };
+        }
+        if (care && !care.case_nurse_id) {
+          await client.query('UPDATE patient_care SET case_nurse_id = $2, case_nurse_name = $3, case_since = now(), updated_by = $2, updated_at = now() WHERE patient_id = $1',
+            [item.patient_id, req.user.id, req.user.name || req.user.id]);
+        }
       }
       if (status === 'scheduled' && item.status !== 'scheduled') {
         return { status: 422, body: { error: 'visit_details_required', message: 'Use POST /api/clinic/queue/:itemId/visits with date, time, destination and location to schedule a visit' } };
@@ -304,8 +324,8 @@ router.post('/api/clinic/queue/:itemId/visits', async (req, res, next) => {
           v.destination, v.location, v.contactPhone || null, v.notes || null, v.assignedTo || req.user.id, req.user.id],
       );
       const { rows: [updated] } = await client.query(
-        `UPDATE risk_queue SET status = 'scheduled', assigned_to = $2, updated_at = now() WHERE id = $1 RETURNING *`,
-        [item.id, v.assignedTo || req.user.id],
+        `UPDATE risk_queue SET status = 'scheduled', assigned_to = coalesce(assigned_to, $2), updated_at = now() WHERE id = $1 RETURNING *`,
+        [item.id, req.user.id],
       );
       await logAction(client, item.id, replaced.length ? 'visit_rescheduled' : 'visit_scheduled', item.status, 'scheduled',
         `${v.visitType.replace('_', ' ')} on ${v.visitDate} ${v.visitTime} at ${v.destination} (${v.location})${v.notes ? `. ${v.notes}` : ''}`, req.user.id);
@@ -534,3 +554,4 @@ router.post('/internal/events', async (req, res, next) => {
 module.exports = router;
 module.exports.upsertQueueItem = upsertQueueItem;
 module.exports.handleEvent = handleEvent;
+module.exports.toDto = toDto;

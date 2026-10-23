@@ -16,7 +16,17 @@ npm run smoke
 # with the Batch 3 checks (signed TextBee webhooks, DLQ dashboard):
 TEXTBEE_WEBHOOK_SECRET=<gateway value> DASHBOARD_PASSWORD=<value> NODE_RED_URL=http://localhost:1880 npm run smoke
 ```
-95 checks across all batches. Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
+142 checks across all batches. Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
+Check-ins created by the test are sent with `dataOrigin: "demo"` and archived at the end, so they never sit in a nurse's review list.
+
+## Browser tests (headless Chrome)
+```bash
+npm run test:browser            # every testing/browser/*.test.mjs
+SHOTS=out node testing/browser/run.mjs handover   # one test, with screenshots
+```
+Needs the stack and the web app running (`WEB_URL`, default `http://127.0.0.1:3000`; `GATEWAY_URL`, default `http://localhost:8080`) and Chrome
+(`CHROME_PATH` if it is not in the default place). No npm dependencies: `cdp.mjs` drives Chrome over the DevTools protocol.
+- `handover.test.mjs` – Ana hands P-1001 to Ben in the phone UI; Ben sees it under Pending handover, taps Accept case, and it moves from Ana's My cases to Ben's. The case is handed back afterwards.
 
 ## Postman – functional, security and integration
 1. Postman → Import → `postman/ElderCare_Connect.postman_collection.json` and `postman/ElderCare_Connect.local.postman_environment.json`.
@@ -42,9 +52,11 @@ v2 folders:
   `textbeeSecret` to the gateway's `TEXTBEE_WEBHOOK_SECRET` to sign them (pre-request script, HMAC-SHA256);
   left empty, the requests go unsigned and the tests expect `401`.
 - **9. Batch 4** – care plan: categories, plan, checklist, tick off / upsert / skip rules, clinic add / edit / retire, adherence.
+- **10. Batch 5.1** – check-in status: received → awaiting review → reviewed → action recorded, missing readings (never 0), historical and archived demo lists.
+- **11. Batch 2 (handover)** – submit → still pending → wrong nurse cannot accept → accept → case in the new nurse's My cases, chain logged, admin limits; ends by handing the case back.
 
 Postman CLI: `postman collection run postman/ElderCare_Connect.postman_collection.json -e postman/ElderCare_Connect.local.postman_environment.json --env-var textbeeSecret=<secret>`
-(last run on the v2 stack: 95 requests, 157 assertions, 0 failures).
+(last run: 134 requests, 226 assertions, 0 failures).
 
 ## SoapUI – legacy SOAP integration
 1. Make sure the mock EMR (`:4005`) and the adapter (`:4004`) are running (both are published by docker compose).

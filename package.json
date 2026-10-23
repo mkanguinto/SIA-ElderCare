@@ -10,6 +10,7 @@
     "install:all": "node scripts/run-all.js install",
     "test": "node scripts/run-all.js test",
     "smoke": "node testing/e2e-smoke.mjs",
+    "test:browser": "node testing/browser/run.mjs",
     "sync-shared": "node scripts/sync-shared.js",
     "secrets:generate": "node scripts/generate-secrets.js",
     "up": "docker compose up --build",

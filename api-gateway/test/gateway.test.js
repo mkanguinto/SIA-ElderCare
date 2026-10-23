@@ -140,7 +140,7 @@ test('admin can list users without password hashes; nurse cannot', async () => {
   const admin = await login('admin.harold');
   const r = await call('GET', '/api/admin/users', { token: admin.access_token });
   assert.strictEqual(r.status, 200);
-  assert.strictEqual(r.body.total, 4);
+  assert.strictEqual(r.body.total, 6); // caregiver, family, three nurses (care team handover), admin
   assert.ok(r.body.users.every((u) => !('passwordHash' in u)));
   const nurse = await login('nurse.ana');
   assert.strictEqual((await call('GET', '/api/admin/users', { token: nurse.access_token })).status, 403);
@@ -178,6 +178,36 @@ test('new v1.1 routes enforce roles', async () => {
   assert.strictEqual(v.status, 200);
   assert.strictEqual(v.body.path, '/api/clinic/visits?patientId=P-1001&view=recent');
   assert.strictEqual((await call('POST', '/api/clinic/queue/x/visits', { token: nurse.access_token, body: {} })).status, 200);
+});
+
+test('care team and handover routes: nurses hand over, only the admin manages teams, admin never sees handover content', async () => {
+  const nurse = (await login('nurse.ana')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  const cg = (await login('caregiver.maria')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const nurseOnly = [['POST', '/api/clinic/handover'], ['POST', '/api/clinic/handover/abc/accept'], ['POST', '/api/clinic/handover/abc/decline'],
+    ['POST', '/api/clinic/handover/abc/cancel'], ['GET', '/api/clinic/my-cases'], ['GET', '/api/clinic/queue/pending-handovers'],
+    ['GET', '/api/clinic/patients/P-1001/care'], ['PUT', '/api/clinic/duty/me']];
+  for (const [method, path] of nurseOnly) {
+    const body = method === 'GET' ? undefined : {};
+    assert.strictEqual((await call(method, path, { token: nurse, body })).status, 200, `${method} ${path} as nurse`);
+    for (const [who, t] of [['admin', admin], ['caregiver', cg], ['family', fam]]) {
+      assert.strictEqual((await call(method, path, { token: t, body })).status, 403, `${method} ${path} as ${who}`);
+    }
+  }
+  const adminOnly = [['POST', '/api/clinic/care-teams'], ['POST', '/api/clinic/care-teams/CT-A/members'], ['DELETE', '/api/clinic/care-teams/CT-A/members/U-CS-002'],
+    ['PUT', '/api/clinic/patients/P-1001/care'], ['GET', '/api/clinic/care-log']];
+  for (const [method, path] of adminOnly) {
+    const body = method === 'GET' ? undefined : {};
+    assert.strictEqual((await call(method, path, { token: admin, body })).status, 200, `${method} ${path} as admin`);
+    assert.strictEqual((await call(method, path, { token: nurse, body })).status, 403, `${method} ${path} as nurse`);
+  }
+  for (const path of ['/api/clinic/care-teams', '/api/clinic/duty']) {
+    assert.strictEqual((await call('GET', path, { token: nurse })).status, 200);
+    assert.strictEqual((await call('GET', path, { token: admin })).status, 200);
+    assert.strictEqual((await call('GET', path, { token: cg })).status, 403);
+  }
+  assert.strictEqual((await call('POST', '/api/clinic/handover/abc/approve', { token: nurse, body: {} })).status, 404);
 });
 
 test('alert rules: clinic staff can read, only admins can change; pagination params are forwarded', async () => {

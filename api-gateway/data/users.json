@@ -42,6 +42,32 @@
     "passwordHash": "scrypt$1520c5b2d6e2cebad6b47a003f26e3ee$34e46c4c91441d558126c3483d1bd87da67605fec02081cebeafbd0e3761349d5f58da8384ee3b7f4298e2b865a9449d13d9b99a8499da93cebfb1f0761106a8"
   },
   {
+    "id": "U-CS-002",
+    "username": "nurse.ben",
+    "name": "Ben Lim, RN",
+    "role": "clinic_staff",
+    "patients": [],
+    "scopes": [
+      "clinic:read",
+      "clinic:write",
+      "alerts:dispatch"
+    ],
+    "passwordHash": "scrypt$61b61b12a649f2def99ad93904f686f7$a28b7cddae364e5033ab8a0fd33c933f069025f36e56a23639826c6e0a17796580399b5ef75055b5444711977336213f492cf51f7014924d7c6abc7dcd758602"
+  },
+  {
+    "id": "U-CS-003",
+    "username": "nurse.carla",
+    "name": "Carla Mendoza, RN",
+    "role": "clinic_staff",
+    "patients": [],
+    "scopes": [
+      "clinic:read",
+      "clinic:write",
+      "alerts:dispatch"
+    ],
+    "passwordHash": "scrypt$8cd94abe9e4d58e7314f584f5bb44ced$8e1d9819422fb7ec18d2bed7ecd3dd99d8ae347d1f8ec0afb616c125249bbd866d1f9030dfaba89856e95ac0ceee4b1bfde6ac55789cdfcdd4c5af765516077a"
+  },
+  {
     "id": "U-AD-001",
     "username": "admin.harold",
     "name": "Harold Bermudez",
