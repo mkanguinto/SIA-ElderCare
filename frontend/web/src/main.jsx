@@ -16,6 +16,7 @@ import CaregiverApp from './mobile/caregiver';
 import FamilyApp from './mobile/family';
 import NurseApp from './mobile/nurse';
 import AdminConsole from './admin/AdminConsole';
+import ServerWake from './components/ServerWake';
 import './styles.css';
 
 // Caregivers and families use only the phone app (on a computer it is shown in a phone-sized frame).
@@ -97,4 +98,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<><App /><ServerWake /></>);

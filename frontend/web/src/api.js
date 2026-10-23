@@ -4,7 +4,7 @@
 // The gateway rotates refresh tokens and treats a reused one as theft, so concurrent 401s share ONE
 // refresh request, and signing out revokes the session on the server (POST /oauth/revoke).
 
-const BASE = import.meta.env.VITE_API_BASE_URL || ''; // '' => same origin (Vite proxy in dev)
+export const BASE = import.meta.env.VITE_API_BASE_URL || ''; // '' => same origin (Vite proxy in dev)
 const KEY = 'eldercare.session';
 const listeners = new Set();
 

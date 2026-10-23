@@ -462,6 +462,26 @@ Every service has a `.env.example`. Most important:
 
 ## 10. Deploying to the cloud (Section 14)
 
+### Free-tier deployment used for the class demo: Render + Neon + CloudAMQP
+
+| Piece | Where | Notes |
+|---|---|---|
+| Web app (phone UI, clinic pages, admin console) | Render static site `eldercare-web` | always on, served from a CDN |
+| API gateway, check-in, alert, clinic risk, care plan, legacy EMR adapter, mock legacy EMR, Node-RED | 8 Render free web services (Docker, Singapore) | sleep after 15 min idle; the app shows "Starting the servers…" and wakes them via `GET /health/wake` (about 1 min) |
+| PostgreSQL | Neon, one database + one non-superuser login per service | `checkin_db`, `alert_db`, `clinic_db`, `care_db` |
+| RabbitMQ | CloudAMQP free instance | exchanges, retry tiers and DLQs are declared by the services |
+
+1. Put three values in `.env`: `RENDER_API_KEY` (Render > Account settings > API keys), `NEON_DATABASE_URL`
+   (Neon > your project > Connection string) and `CLOUDAMQP_URL` (CloudAMQP > your instance > AMQP URL).
+2. Run `node scripts/deploy-render.mjs`. It creates the Neon databases and logins, creates or updates the Render
+   services, wires their URLs together and starts the deploys. Generated secrets go to `.env.render` (git-ignored).
+3. `node scripts/deploy-render.mjs --status` shows each deploy. Builds take 5–10 minutes the first time.
+
+Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
+`/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share
+750 hours a month, which is plenty when they only run while someone is using the app.
+
+### Other options
 Single VM (EC2 / Azure VM / GCP): `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. Only the gateway is exposed (on 127.0.0.1, behind a TLS proxy); databases, RabbitMQ and internal services stay private. Full walkthrough: `docs/SUBMISSION_GUIDE.md` §2.
 
 Managed AWS outline:

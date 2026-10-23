@@ -577,3 +577,11 @@ h3.first { margin-top: 0; }
   .adherence li { grid-template-columns: 1fr 48px; }
   .adherence-track { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Free-hosting wake-up notice (components/ServerWake.jsx) */
+.server-wake { position: fixed; z-index: 100; left: 50%; transform: translateX(-50%); bottom: 6.5rem; width: min(28rem, calc(100% - 2rem));
+  display: flex; gap: .75rem; align-items: flex-start; padding: .875rem 1rem; border-radius: 1rem; background: #fbf0d9; color: #85570a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15); font-size: .9375rem; line-height: 1.4; }
+.server-wake-spin { flex: none; width: 1.1rem; height: 1.1rem; margin-top: .15rem; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: server-wake-spin .8s linear infinite; }
+@keyframes server-wake-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .server-wake-spin { animation: none; } }

@@ -15,6 +15,7 @@ const config = require('./src/config'); // loads .env first and fails fast on mi
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 
 const logger = require('./src/lib/logger');
@@ -77,6 +78,22 @@ const authLimiter = rateLimit({
 
 // Public endpoints
 app.get('/health', (req, res) => res.json({ status: 'up', service: 'api-gateway', uptimeSec: Math.round(process.uptime()) }));
+
+// GET /health/wake : public, no data. On free hosting (Render free tier) idle services sleep and take
+// ~1 minute to start, so the app calls this when it opens: every downstream /health is pinged in parallel
+// (which starts the sleeping ones) and the reply says which are already up. Only up/down is returned.
+app.get('/health/wake', async (req, res) => {
+  const results = await Promise.all(Object.entries(config.services).map(async ([name, url]) => {
+    try {
+      const r = await axios.get(`${url}/health`, { timeout: Number(process.env.WAKE_PROBE_TIMEOUT_MS || 4000), validateStatus: () => true });
+      return [name, r.status === 200];
+    } catch {
+      return [name, false];
+    }
+  }));
+  const services = Object.fromEntries(results);
+  res.set('Cache-Control', 'no-store').json({ ready: results.every(([, up]) => up), services });
+});
 app.use('/oauth', authLimiter, oauthRoutes);
 // TextBee (Android SMS gateway): delivery receipts + incoming SMS (check-ins, SOS, STOP/START) from
 // caregivers without internet (Risk 3). No JWT (TextBee cannot send one); X-Signature is verified instead:
