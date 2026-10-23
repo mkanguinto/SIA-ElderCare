@@ -18,6 +18,8 @@ import {
 } from './kit';
 
 const BASE = '/m/nurse';
+// The same screens run in the phone app (/m/nurse) and the desktop clinic console (/clinic): links stay in the app they are shown in.
+export const base = () => (window.location.pathname.startsWith('/clinic') ? '/clinic' : BASE);
 const NAV = (tr) => [
   { to: BASE, icon: 'clipboard', label: tr('Queue', 'Queue') },
   { to: `${BASE}/patients`, icon: 'users', label: tr('Patients', 'Pasyente'), exact: false },
@@ -75,12 +77,12 @@ export function reasonLine(item) {
 }
 
 /* ------------------------------ N1 risk queue ------------------------------ */
-function Queue({ user }) {
+export function Queue({ user }) {
   const tr = useT();
   const [q] = useQueue();
   const [filter, setFilter] = useState(null);
   const [tab, setTabState] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'all');
-  const setTab = (t) => { setTabState(t); window.history.replaceState(null, '', t === 'all' ? BASE : `${BASE}?tab=${t}`); };
+  const setTab = (t) => { setTabState(t); window.history.replaceState(null, '', t === 'all' ? base() : `${base()}?tab=${t}`); };
   const [handovers, reloadHandovers] = usePendingHandovers();
   const [myCases, reloadMyCases] = useMyCases();
   const [search, setSearch] = useState('');
@@ -88,7 +90,7 @@ function Queue({ user }) {
   useEffect(() => {
     api('/api/directory/users?role=clinic_staff').then((r) => setStaff(Object.fromEntries(r.users.map((u) => [u.id, u.name])))).catch(() => {});
   }, []);
-  if (!q) return <><Greeting user={user} alertsTo={`${BASE}/digest`} /><Loader /></>;
+  if (!q) return <><Greeting user={user} alertsTo={`${base()}/digest`} /><Loader /></>;
   if (q.error) return <div className="m-error">{q.error}</div>;
 
   const s = q.summary;
@@ -99,7 +101,7 @@ function Queue({ user }) {
   const urgent = (s.P1 || 0) + (s.P2 || 0);
   return (
     <>
-      <Greeting user={user} alerts={urgent} alertsTo={`${BASE}/digest`} />
+      <Greeting user={user} alerts={urgent} alertsTo={`${base()}/digest`} />
       <MessagesBanner />
       <div className="m-counts" role="group" aria-label={tr('Filter by priority', 'Salain ayon sa priority')}>
         {['P1', 'P2', 'P3'].map((p) => (
@@ -132,7 +134,7 @@ function Queue({ user }) {
       {tab === 'all' && <h2 className="m-section-title">{tr('Needs action now', 'Kailangang aksyunan')}</h2>}
       {tab === 'all' && <div className="m-stack">
         {items.map((i) => (
-          <Link key={i.id} to={`${BASE}/patients/${i.patient.id}`} className="m-list-row">
+          <Link key={i.id} to={`${base()}/patients/${i.patient.id}`} className="m-list-row">
             <span className={`m-avatar ${toneFor(i.patient.name)}`} aria-hidden="true">{avatarInitials(i.patient.name)}</span>
             <span className="m-grow">
               <strong>{i.patient.name}</strong>
@@ -164,7 +166,7 @@ function breakdown(item, patient) {
   return rows.sort((a, b) => b[2] - a[2]);
 }
 
-function PatientDetail({ user, patientId }) {
+export function PatientDetail({ user, patientId }) {
   const tr = useT();
   const [toast, setToast] = useMobileToast();
   const [patient, setPatient] = useState(null);
@@ -193,8 +195,8 @@ function PatientDetail({ user, patientId }) {
     } catch (e) { setToast(e.message); } finally { setBusy(false); }
   }
 
-  if (!patient || item === undefined) return <><TopBar title={tr('Patient', 'Pasyente')} back={BASE} /><Loader /></>;
-  if (patient.error) return <><TopBar title={tr('Patient', 'Pasyente')} back={BASE} /><div className="m-error">{patient.error}</div></>;
+  if (!patient || item === undefined) return <><TopBar title={tr('Patient', 'Pasyente')} back={base()} /><Loader /></>;
+  if (patient.error) return <><TopBar title={tr('Patient', 'Pasyente')} back={base()} /><div className="m-error">{patient.error}</div></>;
   const phone = patient.emergencyContact && patient.emergencyContact.phone;
   // The case moves only through an accepted handover, so "Assign to me" is offered only when nobody else holds it.
   const holder = care && !care.error && care.caseNurse ? care.caseNurse : null;
@@ -206,7 +208,7 @@ function PatientDetail({ user, patientId }) {
   return (
     <>
       {toast}
-      <TopBar title={tr('Patient', 'Pasyente')} back={BASE}
+      <TopBar title={tr('Patient', 'Pasyente')} back={base()}
         action={phone ? <a className="m-icon-btn" href={`tel:${phone}`} aria-label={tr(`Call ${patient.emergencyContact.name}`, `Tawagan si ${patient.emergencyContact.name}`)}><Icon name="phone" /></a> : <span />} />
       <section className="m-card">
         <div className="m-row">
@@ -284,9 +286,9 @@ function PatientDetail({ user, patientId }) {
             {heldByOther
               ? <button type="button" className="m-btn" disabled>{tr(`Held by ${heldBy.split(',')[0]}`, `Hawak ni ${heldBy.split(',')[0]}`)}</button>
               : <button type="button" className="m-btn" disabled={busy || item.assignedTo === user.id} onClick={() => update({ assignedTo: user.id, ...(item.status === 'open' ? { status: 'in_review' } : {}) }, tr('Assigned to you', 'Nakatalaga sa iyo'))}>{item.assignedTo === user.id ? tr('Assigned', 'Nakatalaga') : tr('Assign to me', 'Sa akin')}</button>}
-            <button type="button" className="m-btn" disabled={busy} onClick={() => update({ status: 'resolved', notes: 'Resolved from the phone app' }, tr('Case resolved', 'Nalutas')).then(() => navigate(BASE))}>{tr('Resolve', 'Lutasin')}</button>
+            <button type="button" className="m-btn" disabled={busy} onClick={() => update({ status: 'resolved', notes: 'Resolved from the phone app' }, tr('Case resolved', 'Nalutas')).then(() => navigate(base()))}>{tr('Resolve', 'Lutasin')}</button>
           </div>
-          <Cta onClick={() => navigate(`${BASE}/patients/${patientId}/schedule`)}>{item.status === 'scheduled' ? tr('Reschedule visit', 'I-reschedule') : tr('Schedule a visit', 'Mag-iskedyul ng bisita')}</Cta>
+          <Cta onClick={() => navigate(`${base()}/patients/${patientId}/schedule`)}>{item.status === 'scheduled' ? tr('Reschedule visit', 'I-reschedule') : tr('Schedule a visit', 'Mag-iskedyul ng bisita')}</Cta>
         </div>
       )}
     </>
@@ -295,7 +297,7 @@ function PatientDetail({ user, patientId }) {
 
 /* ------------------------------ N3 schedule visit ------------------------------ */
 const TIMES = ['09:00', '10:00', '14:00', '16:00'];
-function ScheduleVisit({ patientId }) {
+export function ScheduleVisit({ patientId }) {
   const tr = useT();
   const [patient, setPatient] = useState(null);
   const [item, setItem] = useState(undefined);
@@ -330,14 +332,14 @@ function ScheduleVisit({ patientId }) {
         method: 'POST',
         body: { visitType: type, visitDate: dates[day], visitTime: time, destination, location: location || destination, contactPhone: phone.replace(/\s/g, '') || undefined, notes: notes.trim() || undefined },
       });
-      navigate(`${BASE}/visits`);
+      navigate(`${base()}/visits`);
     } catch (e) { setError((e.details || [e.message]).join('. ')); setBusy(false); }
   }
 
-  if (!patient || item === undefined) return <><TopBar title={tr('Schedule visit', 'Iskedyul ng bisita')} back={`${BASE}/patients/${patientId}`} />{error ? <div className="m-error">{error}</div> : <Loader />}</>;
+  if (!patient || item === undefined) return <><TopBar title={tr('Schedule visit', 'Iskedyul ng bisita')} back={`${base()}/patients/${patientId}`} />{error ? <div className="m-error">{error}</div> : <Loader />}</>;
   return (
     <>
-      <TopBar title={tr('Schedule visit', 'Iskedyul ng bisita')} back={`${BASE}/patients/${patientId}`} />
+      <TopBar title={tr('Schedule visit', 'Iskedyul ng bisita')} back={`${base()}/patients/${patientId}`} />
       <div className="m-stack">
         <div className="m-card m-row" style={{ padding: '.875rem 1rem' }}>
           <span className={`m-avatar ${toneFor(patient.fullName)}`} aria-hidden="true" style={{ width: '2.5rem', height: '2.5rem', fontSize: '.875rem' }}>{avatarInitials(patient.fullName)}</span>
@@ -372,7 +374,7 @@ const CONDITIONS = [
   ['cardiovascular', 'Heart disease', 'Sakit sa puso'],
   ['copd', 'Lung disease (COPD)', 'Sakit sa baga'],
 ];
-function AddPatient() {
+export function AddPatient() {
   const tr = useT();
   const [f, setF] = useState({ fullName: '', birthDate: '', sex: 'F', barangay: '', city: 'Manila', zipCode: '', ecName: '', ecPhone: '' });
   const [conditions, setConditions] = useState([]);
@@ -407,7 +409,7 @@ function AddPatient() {
       const pid = r.patient.id;
       for (const uid of [caregiverId, familyId].filter(Boolean)) await api(`/api/directory/users/${uid}/patients`, { method: 'PUT', body: { add: [pid] } }).catch(() => {});
       if (f.ecPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.ecName || 'Family contact', relation: 'family', phone: f.ecPhone.replace(/\s/g, '') } }).catch(() => {});
-      navigate(`${BASE}/patients/${pid}`);
+      navigate(`${base()}/patients/${pid}`);
     } catch (err) {
       setErrors(err.status === 409 ? [tr('This patient already exists (same name and birth date).', 'Mayroon nang ganitong pasyente.')] : err.details || [err.message]);
       setBusy(false);
@@ -416,7 +418,7 @@ function AddPatient() {
 
   return (
     <>
-      <TopBar title={tr('Add patient', 'Magdagdag ng pasyente')} back={BASE} />
+      <TopBar title={tr('Add patient', 'Magdagdag ng pasyente')} back={base()} />
       <form className="m-stack" onSubmit={submit}>
         <label className="m-field"><span>{tr('Full name', 'Buong pangalan')}</span><input required minLength={3} value={f.fullName} onChange={set('fullName')} autoComplete="off" /></label>
         <div className="m-grid-2">
@@ -450,7 +452,7 @@ function AddPatient() {
 }
 
 /* ------------------------------ patients / visits ------------------------------ */
-function Patients() {
+export function Patients() {
   const tr = useT();
   const [list, setList] = useState(null);
   const [q] = useQueue();
@@ -460,14 +462,14 @@ function Patients() {
   const shown = (list || []).filter((p) => !search || `${p.fullName} ${p.id} ${p.zipCode}`.toLowerCase().includes(search.toLowerCase()));
   return (
     <>
-      <TopBar title={tr('Patients', 'Mga pasyente')} action={<Link to={`${BASE}/patients/new`} className="m-icon-btn" aria-label={tr('Add patient', 'Magdagdag')}><Icon name="plus" /></Link>} />
+      <TopBar title={tr('Patients', 'Mga pasyente')} action={<Link to={`${base()}/patients/new`} className="m-icon-btn" aria-label={tr('Add patient', 'Magdagdag')}><Icon name="plus" /></Link>} />
       <label className="m-search"><Icon name="search" /><span className="m-sr">{tr('Search', 'Hanapin')}</span><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tr('Search name, ID or ZIP', 'Hanapin')} /></label>
       <div className="m-stack" style={{ marginTop: '1rem' }}>
         {!list && <Loader />}
         {shown.map((p) => {
           const it = byPatient[p.id];
           return (
-            <Link key={p.id} to={`${BASE}/patients/${p.id}`} className="m-list-row">
+            <Link key={p.id} to={`${base()}/patients/${p.id}`} className="m-list-row">
               <span className={`m-avatar ${toneFor(p.fullName)}`} aria-hidden="true">{avatarInitials(p.fullName)}</span>
               <span className="m-grow"><strong>{p.fullName}</strong><span className="m-sub">{p.id} · {[age(p.birthDate) && `${age(p.birthDate)} yrs`, p.addressLine].filter(Boolean).join(' · ')}</span>
                 {it ? <Chip tone={PRIORITY_TONE[it.priority]} icon="alert">{it.priority} · {it.scores.total}</Chip> : <Chip tone="ok" icon="check">{tr('No open case', 'Walang kaso')}</Chip>}</span>
@@ -480,7 +482,7 @@ function Patients() {
   );
 }
 
-function Visits() {
+export function Visits() {
   const tr = useT();
   const [visits, setVisits] = useState(null);
   useEffect(() => { api('/api/clinic/visits?view=upcoming&pageSize=50').then((r) => setVisits(r.visits)).catch(() => setVisits([])); }, []);
@@ -491,7 +493,7 @@ function Visits() {
       {visits && !visits.length && <div className="m-note"><strong>{tr('No visits booked', 'Walang naka-book')}</strong>{tr('Schedule one from a patient in the queue.', 'Mag-iskedyul mula sa queue.')}</div>}
       <div className="m-stack">
         {(visits || []).map((v) => (
-          <Link key={v.id} to={`${BASE}/patients/${v.patient.id}`} className="m-list-row">
+          <Link key={v.id} to={`${base()}/patients/${v.patient.id}`} className="m-list-row">
             <span className="m-thumb tone-ok" aria-hidden="true"><Icon name="calendar" /></span>
             <span className="m-grow"><strong>{v.patient.name}</strong>
               <span className="m-sub">{VISIT_TYPE_LABEL[v.visitType]} · {v.visitDate === manilaDay() ? tr('today', 'ngayon') : v.visitDate} {hhmm(v.visitTime)}</span>
@@ -505,17 +507,17 @@ function Visits() {
 }
 
 /* ------------------------------ N5 daily digest ------------------------------ */
-function Digest() {
+export function Digest() {
   const tr = useT();
   const [q, reload] = useQueue();
   const groups = useMemo(() => (q && q.items ? ['P1', 'P2', 'P3'].map((p) => ({ priority: p, items: q.items.filter((i) => i.priority === p) })) : []), [q]);
-  if (!q) return <><TopBar title={tr('Daily digest', 'Daily digest')} back={BASE} /><Loader /></>;
+  if (!q) return <><TopBar title={tr('Daily digest', 'Daily digest')} back={base()} /><Loader /></>;
   if (q.error) return <div className="m-error">{q.error}</div>;
   const t = { P1: q.summary.P1 || 0, P2: q.summary.P2 || 0, P3: q.summary.P3 || 0 };
   const total = t.P1 + t.P2 + t.P3;
   return (
     <>
-      <TopBar title={tr('Daily digest', 'Daily digest')} back={BASE} action={<button type="button" className="m-icon-btn" onClick={reload} aria-label={tr('Refresh', 'I-refresh')}><Icon name="refresh" /></button>} />
+      <TopBar title={tr('Daily digest', 'Daily digest')} back={base()} action={<button type="button" className="m-icon-btn" onClick={reload} aria-label={tr('Refresh', 'I-refresh')}><Icon name="refresh" /></button>} />
       <section className="m-hero">
         <div className="m-between"><span className="m-eyebrow">{manilaDay()} · {clock(q.generatedAt)}</span><Chip className="on-light" icon="checkCircle">{tr('From the queue', 'Mula sa queue')}</Chip></div>
         <h2 style={{ marginTop: '.5rem' }}>{tr(`${total} patient${total === 1 ? ' needs' : 's need'} follow-up`, `${total} pasyente ang kailangang i-follow-up`)}</h2>
@@ -531,7 +533,7 @@ function Digest() {
           <div className="m-between"><h2 className="m-section-title">{tr(`${PRIORITY_WORD[g.priority][0]} (${g.priority})`, `${PRIORITY_WORD[g.priority][1]} (${g.priority})`)}</h2><strong style={{ color: 'var(--text-brand)' }}>{g.items.length}</strong></div>
           <div className="m-stack">
             {g.items.map((i) => (
-              <Link key={i.id} to={`${BASE}/patients/${i.patient.id}`} className="m-list-row">
+              <Link key={i.id} to={`${base()}/patients/${i.patient.id}`} className="m-list-row">
                 <span className={`m-avatar ${toneFor(i.patient.name)}`} aria-hidden="true">{avatarInitials(i.patient.name)}</span>
                 <span className="m-grow"><strong>{i.patient.name}</strong><span className="m-sub">{reasonLine(i)}</span><Chip tone={PRIORITY_TONE[g.priority]} icon="alert">{tr('Score', 'Score')} {i.scores.total}</Chip></span>
                 <Icon name="chevron" />
@@ -566,7 +568,7 @@ function ReviewsLink() {
   const n = data.pagination.totalItems;
   const old = data.counts.historical;
   return (
-    <Link to={`${BASE}/reviews`} className="m-list-row" style={{ marginTop: '.75rem' }}>
+    <Link to={`${base()}/reviews`} className="m-list-row" style={{ marginTop: '.75rem' }}>
       <span className={`m-thumb ${n ? 'tone-moderate' : 'tone-ok'}`} aria-hidden="true"><Icon name="eye" /></span>
       <span className="m-grow"><strong>{n ? tr(`${n} check-in${n === 1 ? '' : 's'} to review`, `${n} check-in na susuriin`) : tr('All check-ins reviewed', 'Nasuri na ang lahat')}</strong>
         <span className="m-sub">{old ? tr(`Including ${old} older one${old === 1 ? '' : 's'} still pending`, `Kasama ang ${old} lumang hindi pa nasusuri`) : tr('Mark them reviewed and record what you did', 'Markahan at itala ang ginawa')}</span></span>
@@ -581,7 +583,7 @@ const REVIEW_VIEWS = [
   ['archived', 'Demo', 'Demo', 'Demo and test records, archived separately. They were not reviewed and are not part of patient care.', 'Mga demo at test na record. Hindi ito nasuri at hindi bahagi ng pangangalaga.'],
 ];
 
-function Reviews() {
+export function Reviews() {
   const tr = useT();
   const [view, setView] = useState('current');
   const [data, reload] = useReviewQueue(undefined, view);
@@ -589,7 +591,7 @@ function Reviews() {
   const [, , , en, fil] = REVIEW_VIEWS.find((v) => v[0] === view);
   return (
     <>
-      <TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={BASE} />
+      <TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={base()} />
       <div className="m-seg" role="group" aria-label={tr('Which check-ins', 'Aling check-in')} style={{ marginBottom: '.75rem' }}>
         {REVIEW_VIEWS.map(([k, en2, fil2]) => (
           <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)}>{tr(en2, fil2)}{counts ? ` (${counts[k]})` : ''}</button>
@@ -645,7 +647,7 @@ function ReviewCard({ c, onDone, showPatient = false }) {
     <article className="m-card" style={{ marginTop: 0 }}>
       <div className="m-between" style={{ alignItems: 'flex-start' }}>
         <div className="m-grow">
-          {showPatient && <Link to={`${BASE}/patients/${c.patientId}`} className="m-link" style={{ padding: 0 }}>{c.patientName}</Link>}
+          {showPatient && <Link to={`${base()}/patients/${c.patientId}`} className="m-link" style={{ padding: 0 }}>{c.patientName}</Link>}
           <strong style={{ display: 'block', fontSize: '1.125rem' }}>{vitalsSummary(c, tr)}</strong>
           <span className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}{devices ? ` · ${devices}` : ''}</span>
         </div>

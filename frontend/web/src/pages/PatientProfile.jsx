@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../toast';
-import { navigate } from '../router';
-import { PageHeader, PriorityTag, StatusPill, SeverityBadge, Empty, ErrorNote, Loading, Chip } from '../components/ui';
+import { PriorityTag, SeverityBadge, Empty, ErrorNote, Loading } from '../components/ui';
 import TrendChart from '../components/TrendChart';
 import { VisitCard } from '../components/visits';
 import { EmrPanel } from './ClinicQueue';
 import { CarePlanEditor, CareToday } from '../components/care';
-import { conditionLabel, age, bp, relTime, dateTime, ROLE_LABEL, STATUS_LABEL } from '../format';
+import { bp, relTime, dateTime, ROLE_LABEL, STATUS_LABEL } from '../format';
 
 const BLANK_MED = { name: '', dosage: '', frequency: 'Once daily', times: '08:00', instructions: '' };
 const BLANK_CONTACT = { name: '', relation: 'family', phone: '', userId: '' };
@@ -214,130 +213,76 @@ function CareTeam({ patientId, canEdit }) {
   );
 }
 
-export default function PatientProfile({ user, params }) {
-  const patientId = params.id;
+/**
+ * The clinic records of one patient for the desktop console, shown beside the phone patient screen (which has
+ * the summary, current case, reviews, care team and case actions): trends, medicines, visits, SMS contacts,
+ * care plan, resolved cases and the legacy health-center record.
+ */
+export default function PatientRecords({ user, patientId }) {
   const canEdit = user.role === 'clinic_staff';
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
   const load = useCallback(() => Promise.all([
     api(`/api/patients/${encodeURIComponent(patientId)}/history?days=30&limit=200`),
-    api(`/api/clinic/queue?patientId=${encodeURIComponent(patientId)}`),
     api(`/api/clinic/queue/history?patientId=${encodeURIComponent(patientId)}&limit=20`),
     api(`/api/clinic/visits?patientId=${encodeURIComponent(patientId)}&view=all&limit=20`),
     api(`/api/clinic/patients/${encodeURIComponent(patientId)}/emr-history`).catch((e) => ({ error: e.status === 404 ? 'No record for this patient in the health center records system yet.' : e.message })),
-  ]).then(([history, queue, cases, visits, emr]) => {
-    setData({ history, active: queue.items[0] || null, cases: cases.cases, visits: visits.visits, emr });
+  ]).then(([history, cases, visits, emr]) => {
+    setData({ history, cases: cases.cases, visits: visits.visits, emr });
     setError('');
   }).catch((e) => setError(e.status === 404 ? `Patient ${patientId} was not found.` : e.message)), [patientId]);
   useEffect(() => { load(); }, [load]);
 
-  if (error) return <><PageHeader title="Patient profile" /><ErrorNote error={error} onRetry={load} /><button type="button" className="btn btn-secondary" onClick={() => navigate('/clinic')}>Back to risk queue</button></>;
-  if (!data) return <Loading label="Loading patient profile" />;
+  if (error) return <ErrorNote error={error} onRetry={load} />;
+  if (!data) return <Loading label="Loading clinic records" />;
 
   const p = data.history.patient;
-  const latest = data.history.checkins[0];
   const chrono = [...data.history.checkins].reverse().map((c) => ({ t: c.recordedAt, sys: c.vitals.systolic, dia: c.vitals.diastolic, hr: c.vitals.heartRate, flag: ['high', 'critical'].includes(c.severity) }));
-  const base = p.baseline || {};
 
   return (
-    <>
-      <PageHeader title={p.fullName} subtitle={[`Patient ${p.id}`, age(p.birthDate) && `${age(p.birthDate)} years old`, p.sex && { F: 'female', M: 'male', X: 'other' }[p.sex]].filter(Boolean).join(', ')}>
-        <button type="button" className="btn btn-quiet" onClick={() => navigate('/clinic')}>Back to risk queue</button>
-      </PageHeader>
-      <div className="chips-row">
-        {p.conditions.map((c) => <Chip key={c}>{conditionLabel(c)}</Chip>)}
-        {p.mobilityRestricted && <Chip tone="chip-warn">Limited mobility</Chip>}
-      </div>
-
-      <div className="profile-grid">
-        <section className="panel">
-          <h2 className="panel-title">Details</h2>
-          <dl className="facts">
-            <div><dt>Address</dt><dd>{[p.addressLine, p.zipCode].filter(Boolean).join(', ') || '–'}</dd></div>
-            <div><dt>Health center</dt><dd>{p.assignedClinic || '–'}</dd></div>
-            <div><dt>Emergency contact</dt><dd>{p.emergencyContact ? `${p.emergencyContact.name || ''}${p.emergencyContact.relation ? ` (${p.emergencyContact.relation})` : ''} ${p.emergencyContact.phone || ''}` : '–'}</dd></div>
-            <div><dt>Usual readings</dt><dd>{base.systolic ? `BP ${base.systolic}/${base.diastolic}` : ''}{base.heartRate ? `, HR ${base.heartRate}` : ''}{base.spo2 ? `, SpO₂ ${base.spo2}%` : ''}{!base.systolic && !base.heartRate ? '–' : ''}</dd></div>
-            {p.notes && <div><dt>Notes</dt><dd>{p.notes}</dd></div>}
-          </dl>
-        </section>
-
-        <section className={`panel case-card ${data.active ? `case-${data.active.priority}` : ''}`}>
-          <h2 className="panel-title">Current case</h2>
-          {!data.active ? <p className="muted">No open case. The patient appears in the risk queue when a check-in, missed check-in or weather alert needs attention.</p> : (
-            <>
-              <div className="row between"><span><PriorityTag value={data.active.priority} long /> <StatusPill value={data.active.status} /></span><span className="case-score">{data.active.scores.total}</span></div>
-              {data.active.priorityRule && <p className="small">{data.active.priorityRule}</p>}
-              <p className="muted small">Opened {relTime(data.active.createdAt)}, last update {relTime(data.active.lastEventAt)}</p>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => navigate(`/clinic?case=${data.active.id}`)}>Open in risk queue</button>
-            </>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2 className="panel-title">Latest check-in</h2>
-          {!latest ? <p className="muted">No check-ins in the last 30 days.</p> : (
-            <>
-              <p><span className="big">{bp(latest.vitals)}</span> <SeverityBadge value={latest.severity} /></p>
-              <p className="muted small">{[latest.vitals.heartRate && `${latest.vitals.heartRate} bpm`, latest.vitals.temperatureC && `${latest.vitals.temperatureC} °C`, latest.vitals.spo2 && `SpO₂ ${latest.vitals.spo2}%`].filter(Boolean).join(', ')}</p>
-              <p className="muted small" title={dateTime(latest.recordedAt)}>{relTime(latest.recordedAt)}{latest.medication.taken === false ? ', medicines missed' : ''}</p>
-            </>
-          )}
-        </section>
-      </div>
-
-      <div className="layout-split">
-        <section className="panel">
-          <h2 className="panel-title">Blood pressure, last 30 days</h2>
-          <TrendChart points={chrono} unit="mmHg" band={[90, 140]} label="Blood pressure trend"
-            series={[{ key: 'sys', label: 'Top number', className: 's-primary' }, { key: 'dia', label: 'Bottom number', className: 's-secondary' }]} />
-          <h3>Recent check-ins</h3>
-          {data.history.checkins.length === 0 ? <p className="muted small">None yet.</p> : (
-            <table className="table">
-              <thead><tr><th>When</th><th>BP</th><th>HR</th><th>Status</th></tr></thead>
-              <tbody>{data.history.checkins.slice(0, 8).map((c) => (
-                <tr key={c.id}><td title={dateTime(c.recordedAt)}>{relTime(c.recordedAt)}</td><td>{bp(c.vitals)}</td><td>{c.vitals.heartRate ?? '–'}</td><td><SeverityBadge value={c.severity} /></td></tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
-        <Medications patientId={p.id} canEdit={canEdit} />
-      </div>
-
-      <div className="layout-split">
-        <section className="panel">
-          <h2 className="panel-title">Visits</h2>
-          {data.visits.length === 0 ? <Empty title="No visits yet">Schedule one from the patient's case in the risk queue.</Empty>
-            : data.visits.map((v) => <VisitCard key={v.id} visit={v} canAct={canEdit} onChanged={load} />)}
-        </section>
-        <CareTeam patientId={p.id} canEdit={canEdit} />
-      </div>
-
-      <div className="layout-split">
-        <section className="panel">
-          <h2 className="panel-title">Care plan – caregiver duties</h2>
-          <CarePlanEditor patientId={p.id} readOnly={!canEdit} />
-        </section>
-        <section className="panel">
-          <h2 className="panel-title">Duties today</h2>
-          <CareToday patientId={p.id} compact />
-        </section>
-      </div>
-
-      <div className="layout-split">
-        <section className="panel">
-          <h2 className="panel-title">Resolved cases</h2>
-          {data.cases.length === 0 ? <p className="muted">No resolved cases.</p> : (
-            <ul className="plain-list">{data.cases.map((c) => (
-              <li key={c.id}><span><strong>{STATUS_LABEL[c.status]}</strong> {relTime(c.resolvedAt)}{c.resolutionNotes ? `: ${c.resolutionNotes}` : ''}</span><PriorityTag value={c.priority} /></li>
-            ))}</ul>
-          )}
-        </section>
-        <section className="panel">
-          <h2 className="panel-title">Health center records</h2>
-          <EmrPanel state={data.emr} />
-        </section>
-      </div>
-    </>
+    <div className="ad-records">
+      <section className="panel">
+        <h2 className="panel-title">Blood pressure, last 30 days</h2>
+        <TrendChart points={chrono} unit="mmHg" band={[90, 140]} label="Blood pressure trend"
+          series={[{ key: 'sys', label: 'Top number', className: 's-primary' }, { key: 'dia', label: 'Bottom number', className: 's-secondary' }]} />
+        <h3>Recent check-ins</h3>
+        {data.history.checkins.length === 0 ? <p className="muted small">None yet.</p> : (
+          <table className="table">
+            <thead><tr><th>When</th><th>BP</th><th>HR</th><th>Status</th></tr></thead>
+            <tbody>{data.history.checkins.slice(0, 8).map((c) => (
+              <tr key={c.id}><td title={dateTime(c.recordedAt)}>{relTime(c.recordedAt)}</td><td>{bp(c.vitals)}</td><td>{c.vitals.heartRate ?? '–'}</td><td><SeverityBadge value={c.severity} /></td></tr>
+            ))}</tbody>
+          </table>
+        )}
+      </section>
+      <Medications patientId={p.id} canEdit={canEdit} />
+      <section className="panel">
+        <h2 className="panel-title">Visits</h2>
+        {data.visits.length === 0 ? <Empty title="No visits yet">Schedule one from the case on the left.</Empty>
+          : data.visits.map((v) => <VisitCard key={v.id} visit={v} canAct={canEdit} onChanged={load} />)}
+      </section>
+      <CareTeam patientId={p.id} canEdit={canEdit} />
+      <section className="panel">
+        <h2 className="panel-title">Care plan – caregiver duties</h2>
+        <CarePlanEditor patientId={p.id} readOnly={!canEdit} />
+      </section>
+      <section className="panel">
+        <h2 className="panel-title">Duties today</h2>
+        <CareToday patientId={p.id} compact />
+      </section>
+      <section className="panel">
+        <h2 className="panel-title">Resolved cases</h2>
+        {data.cases.length === 0 ? <p className="muted">No resolved cases.</p> : (
+          <ul className="plain-list">{data.cases.map((c) => (
+            <li key={c.id}><span><strong>{STATUS_LABEL[c.status]}</strong> {relTime(c.resolvedAt)}{c.resolutionNotes ? `: ${c.resolutionNotes}` : ''}</span><PriorityTag value={c.priority} /></li>
+          ))}</ul>
+        )}
+      </section>
+      <section className="panel">
+        <h2 className="panel-title">Health center records</h2>
+        <EmrPanel state={data.emr} />
+      </section>
+    </div>
   );
 }

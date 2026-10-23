@@ -8,6 +8,8 @@ import { Chip } from '../mobile/kit';
 import { SecurityPanel } from './SecurityPanel';
 import { CareTeams } from './CareTeams';
 import { Accounts, AuditLog } from './Accounts';
+import AlertRules from '../pages/AlertRules';
+import { ToastProvider } from '../toast';
 import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
 
@@ -55,8 +57,10 @@ export default function AdminConsole({ user, path }) {
   else if (sub === '/admin/care-teams') page = <CareTeams Head={Head} />;
   else if (sub === '/admin/dlq') page = <Dlq live={live} reload={reload} />;
   else if (sub === '/admin/digest') page = <DigestExport />;
+  else if (sub === '/admin/alert-rules') page = <AlertRules user={user} />;
   else page = <Monitor live={live} />;
   return (
+    <ToastProvider>
     <div className="ad-app">
       <aside className="ad-side">
         <div className="ad-brand">
@@ -66,7 +70,7 @@ export default function AdminConsole({ user, path }) {
         <nav aria-label="Admin" style={{ display: 'contents' }}>
           {NAV.map((n) => <Link key={n.to} to={n.to} activeClassName="is-active"><Icon name={n.icon} />{n.label}</Link>)}
           <span className="ad-sep">Settings</span>
-          <Link to="/clinic/alert-rules" activeClassName="is-active"><Icon name="sliders" />Alert rules</Link>
+          <Link to="/admin/alert-rules" activeClassName="is-active"><Icon name="sliders" />Alert rules</Link>
         </nav>
         <button type="button" className="ad-bottom" onClick={requestSignOut}><Icon name="logout" />Log out</button>
       </aside>
@@ -75,6 +79,7 @@ export default function AdminConsole({ user, path }) {
         {page}
       </main>
     </div>
+    </ToastProvider>
   );
 }
 

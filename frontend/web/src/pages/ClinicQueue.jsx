@@ -41,7 +41,7 @@ function groupReasons(reasons) {
   return out;
 }
 
-function weatherSentence(s) {
+export function weatherSentence(s) {
   if (!s) return '';
   if (s.areasChecked === 0) return 'No patient areas to check.';
   if (s.areasFailed === s.areasChecked) return 'Could not get weather for any area. Check the OpenWeatherMap key and internet connection, then try again.';

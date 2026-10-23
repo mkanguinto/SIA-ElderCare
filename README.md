@@ -87,7 +87,7 @@ flowchart TB
 | Node-RED EAI layer | `integration/node-red/` | none (flows): SMS content-based router, weather orchestration, DLQ dashboard (Batch 3) |
 | Legacy EMR Adapter | `services/legacy-emr-adapter/` | none (stateless translator) |
 | Mock Legacy EMR | `services/mock-legacy-emr/` | demo data for SoapUI / dev (zero dependencies) |
-| Web app | `frontend/web/` | React (Vite) – phone-first caregiver, family and nurse apps, desktop clinic pages, admin console |
+| Web app | `frontend/web/` | React (Vite) – phone-first caregiver, family and nurse apps, clinic console and admin console in the same design |
 | Caregiver mobile | `frontend/mobile/` | React Native (Expo), offline-first check-ins |
 | Test assets | `testing/` | Postman, JMeter, SoapUI |
 
@@ -141,9 +141,14 @@ cd frontend/web && npm install && npm run dev      # http://localhost:3000 (prox
 ```
 Open it, tap **Get started** and pick a role (one-tap demo sign-in, on in development or with `VITE_DEMO_LOGIN=true`).
 Caregivers and families use only the phone app (`/m/caregiver`, `/m/family`; on a computer it shows in a phone-sized
-frame); nurses get `/m/nurse` on a phone and the desktop clinic pages (`/clinic`) on a computer; admins get the web
-console (`/admin`), which also exports the daily digest as JSON / XML. Set `VITE_CLINIC_PHONE` to the
-health center hotline to enable the "Call the clinic" buttons. Use Chrome DevTools' device toolbar to see the phone layout.
+frame); nurses get `/m/nurse` on a phone and the **clinic console** (`/clinic`) on a computer; admins get the web
+console (`/admin`), which also exports the daily digest as JSON / XML. Both consoles use the phone design in a web layout
+(sidebar, wider content): the clinic console runs the same nurse screens - queue with My cases / Handover, check-in
+reviews, family messages, patients, digest, add patient, schedule visit, handover - and the patient page shows the phone
+patient screen beside the clinic records (BP trend, medicines, visits, SMS contacts, care plan, resolved cases, health
+center record). Visits, case history and alert rules keep their desktop pages in the same look; the admin's alert
+rules are at `/admin/alert-rules`. Set `CLINIC_HOTLINE` for the clinic number shown on "Contact the clinic". Use Chrome
+DevTools' device toolbar to see the phone layout.
 Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/mobile/app.json` to your computer's LAN IP, then `cd frontend/mobile && npm install && npx expo start`.
 
 ### Demo accounts (password `ElderCare@2026` – change before any real use)
@@ -173,7 +178,7 @@ Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gat
 ### Contacting the clinic (with proof)
 * Family members and caregivers tap **Contact the clinic** (`/m/family/contact`, `/m/caregiver/contact`): the clinic name, phone number (`CLINIC_HOTLINE`) and hours, a reason, an optional message and *Please call me back*, then **Call now** or **Send message**.
 * Every contact gets a reference (`CR-000012`) and an append-only timeline: sent / call started (the app cannot tell whether a call connected) → SMS notice to the clinic phone (its real delivery state; *simulated* and *failed* are shown as NOT sent) → **seen by** a named nurse → the nurse's **reply** or closing note, each with the time. The family sees the same timeline.
-* Nurses answer in **Messages** (`/m/nurse/messages`; banner on the queue). API: `POST/GET /api/patients/:id/clinic-contact`, `GET /api/clinic/contact-requests`, `POST /api/clinic/contact-requests/:id/seen|reply|close`, `GET /api/clinic/contact-info`. The admin has no access (patient data). At most 6 contacts per person per hour.
+* Nurses answer in **Messages** (`/m/nurse/messages`, or *Family messages* with an unseen badge in the clinic console; banner on the queue). API: `POST/GET /api/patients/:id/clinic-contact`, `GET /api/clinic/contact-requests`, `POST /api/clinic/contact-requests/:id/seen|reply|close`, `GET /api/clinic/contact-info`. The admin has no access (patient data). At most 6 contacts per person per hour.
 * Set `CLINIC_HOTLINE` (and optionally `CLINIC_HOTLINE_NAME`, `CLINIC_HOURS`) in `.env`; for real SMS notices the number must be on `SMS_RECIPIENT_ALLOWLIST`.
 
 ---

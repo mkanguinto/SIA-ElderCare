@@ -1,0 +1,48 @@
+// Browser test: the nurse desktop console (/clinic) and the admin console use the phone design in a web layout.
+// Every nurse page loads in the sidebar layout, links stay inside /clinic, and the patient page shows the phone
+// patient screen beside the clinic records; the admin's alert rules are inside the admin console.
+import { launch, harness, sleep } from './cdp.mjs';
+
+const PAGES = [
+  ['/clinic', 'Needs action now', 'risk queue (phone queue with My cases / Handover tabs)'],
+  ['/clinic/reviews', 'Check-ins to review', 'check-in reviews'],
+  ['/clinic/messages', 'Messages from families', 'family messages'],
+  ['/clinic/patients', 'Patients', 'patient list'],
+  ['/clinic/visits', 'Scheduled visits', 'visits'],
+  ['/clinic/history', 'Case history', 'case history'],
+  ['/clinic/digest', 'Daily digest', 'daily digest'],
+  ['/clinic/alert-rules', 'Alert rules', 'alert rules'],
+  ['/clinic/patients/new', 'Add patient', 'add patient'],
+];
+
+export default async function run({ shots } = {}) {
+  const { check, result } = harness('desktop consoles');
+  const page = await launch({ width: 1440, height: 1000 });
+  try {
+    await page.login('nurse.ana');
+    for (const [p, text, label] of PAGES) {
+      await page.goto(p);
+      const ok = await page.waitFor(text) && await page.evaluate("!!document.querySelector('.ad-app.ad-clinic .ad-side') && !document.querySelector('.m-bottomnav, .m-nav')");
+      check(ok, `nurse desktop: ${label} in the sidebar layout`);
+    }
+    await page.goto('/clinic');
+    await page.waitFor('Needs action now');
+    const href = await page.evaluate("[...document.querySelectorAll('.ad-main a.m-list-row')].map((a) => a.getAttribute('href')).find((h) => h && h.includes('/patients/'))");
+    check(href && href.startsWith('/clinic/patients/'), `queue rows open the desktop patient page (${href})`);
+    await page.goto('/clinic/patients/P-1001');
+    check(await page.waitFor('Clinic records') && await page.waitFor('Prescribed medicines') && await page.waitFor('Care team'), 'patient page: phone patient screen beside the clinic records (medicines, care team)');
+    if (shots) await page.screenshot(`${shots}/desktop-patient.png`);
+    const color = await page.evaluate("getComputedStyle(document.querySelector('.panel')).borderRadius");
+    check(parseFloat(color) >= 16, `desktop-only panels take the phone look (radius ${color})`);
+
+    await page.login('admin.harold');
+    await page.goto('/admin/alert-rules');
+    check(await page.waitFor('Alert rules') && await page.evaluate("!!document.querySelector('.ad-app .ad-side')"), 'admin: alert rules inside the admin console');
+    await page.goto('/clinic');
+    await sleep(800);
+    check(await page.evaluate("location.pathname.startsWith('/admin')"), 'admin cannot open the nurse console (patient data)');
+  } finally {
+    await page.close();
+  }
+  return result();
+}

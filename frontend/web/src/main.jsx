@@ -2,14 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { currentUser, hasNotice, requestSignOut, onSessionChange } from './api';
 import { matchRoute, navigate, usePath } from './router';
-import { ToastProvider } from './toast';
-import Shell from './components/Shell';
-import ClinicQueue from './pages/ClinicQueue';
-import PatientProfile from './pages/PatientProfile';
-import AddPatient from './pages/AddPatient';
-import ClinicVisits from './pages/ClinicVisits';
-import CaseHistory from './pages/CaseHistory';
-import AlertRules from './pages/AlertRules';
+import ClinicConsole from './clinic/ClinicConsole';
 import { PrefsProvider } from './mobile/kit';
 import { Landing, RolePicker, SignIn, NoAccount } from './mobile/Onboarding';
 import { Activate, ResetPassword } from './mobile/Account';
@@ -22,8 +15,8 @@ import ServerWake from './components/ServerWake';
 import './styles.css';
 
 // Caregivers and families use only the phone app (on a computer it is shown in a phone-sized frame).
-// Nurses get the phone app on small screens and the desktop clinic pages on a computer (each links to
-// the other). Admins use the web console. Old desktop URLs (/caregiver, /family) redirect to the phone app.
+// Nurses get the phone app on small screens and the clinic console on a computer - the same screens and
+// design in a web layout (each links to the other). Admins use the admin console, built the same way.
 const isPhone = () => window.matchMedia('(max-width: 820px)').matches;
 export const HOME = {
   caregiver: '/m/caregiver',
@@ -34,20 +27,13 @@ export const HOME = {
 const homeFor = (role) => (role === 'clinic_staff' && isPhone() ? '/m/nurse' : HOME[role] || '/');
 
 const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn, '/no-account': NoAccount, '/activate': Activate, '/reset-password': ResetPassword };
-// The desktop clinic pages show patient records: nurses only. The admin keeps the alert-rule settings.
-const CLINIC = ['clinic_staff'];
-// Entries with `app` render full-screen and handle their own sub-paths (phone apps, admin console);
-// entries with `page` render inside the desktop Shell.
+// Every entry renders full-screen and handles its own sub-paths. The clinic console shows patient
+// records: nurses only (the admin's alert-rule settings are in the admin console).
 const ROUTES = {
   '/m/caregiver': { roles: ['caregiver'], app: CaregiverApp, layout: 'mobile', title: 'Caregiver' },
   '/m/family': { roles: ['family_member'], app: FamilyApp, layout: 'mobile', title: 'Family' },
   '/m/nurse': { roles: ['clinic_staff'], app: NurseApp, layout: 'mobile', title: 'Nurse' },
-  '/clinic/alert-rules': { roles: ['clinic_staff', 'system_admin'], page: AlertRules, title: 'Alert rules' },
-  '/clinic': { roles: CLINIC, page: ClinicQueue, title: 'Risk queue' },
-  '/clinic/visits': { roles: CLINIC, page: ClinicVisits, title: 'Visits' },
-  '/clinic/history': { roles: CLINIC, page: CaseHistory, title: 'Case history' },
-  '/clinic/patients/new': { roles: CLINIC, page: AddPatient, title: 'Add patient' },
-  '/clinic/patients/:id': { roles: CLINIC, page: PatientProfile, title: 'Patient profile' },
+  '/clinic': { roles: ['clinic_staff'], app: ClinicConsole, layout: 'desktop', title: 'Clinic' },
   '/admin': { roles: ['system_admin'], app: AdminConsole, layout: 'admin', title: 'Admin' },
 };
 const MOBILE_PREFIXES = Object.keys(ROUTES).filter((k) => ROUTES[k].app);
@@ -88,20 +74,8 @@ function App() {
   if (!user) return Public ? <PrefsProvider><Public /></PrefsProvider> : null;
   if (!allowed) return null;
 
-  if (route.app) {
-    const AppScreen = route.app;
-    return <SessionLock user={user}><PrefsProvider key={user.id}><AppScreen user={user} path={path} /></PrefsProvider></SessionLock>;
-  }
-  const Page = route.page;
-  return (
-    <SessionLock user={user}>
-      <ToastProvider key={user.id}>
-        <Shell key={user.id} user={user} onSignOut={requestSignOut}>
-          <Page key={path} user={user} params={params} />
-        </Shell>
-      </ToastProvider>
-    </SessionLock>
-  );
+  const AppScreen = route.app;
+  return <SessionLock user={user}><PrefsProvider key={user.id}><AppScreen user={user} path={path} /></PrefsProvider></SessionLock>;
 }
 
 createRoot(document.getElementById('root')).render(<><App /><ServerWake /></>);

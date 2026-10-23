@@ -18,6 +18,12 @@ export default async function run({ shots } = {}) {
     await page.click('Worried about their condition');
     await page.type('textarea', note);
     await page.click('Send message');
+    await page.waitFor({ expr: "/Recorded as CR-|several times this hour/.test(document.body.innerText)" });
+    if ((await page.text()).includes('several times this hour')) {
+      // At most 6 contacts per person per hour: re-running the test within the hour hits it.
+      console.log('SKIP [contact the clinic] Jose reached the 6-per-hour contact limit (shown to him as a message); run again later');
+      return result();
+    }
     check(await page.waitFor('Recorded as CR-'), 'sending gives a reference number and time');
     const text = await page.text();
     check(/SMS notice (delivered|sent|waiting|NOT sent)/.test(text), 'says honestly what happened to the SMS notice to the clinic phone');

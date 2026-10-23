@@ -50,7 +50,7 @@
 :where(.m-app, .ad-app) :where(h1, h2, h3, p) { margin: 0; }
 :where(.m-app, .ad-app) :where(button, input, textarea, select) { font: inherit; color: inherit; }
 :where(.m-app, .ad-app) :where(a) { color: inherit; }
-.m-app :focus-visible { outline: 3px solid var(--border-strong); outline-offset: 2px; }
+:is(.m-app, .ad-app) :focus-visible { outline: 3px solid var(--border-strong); outline-offset: 2px; }
 .m-stack { display: flex; flex-direction: column; gap: .75rem; }
 .m-row { display: flex; align-items: center; gap: .75rem; }
 .m-between { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
@@ -149,7 +149,7 @@
 .m-field { display: flex; flex-direction: column; gap: .4rem; }
 .m-field > span { font-size: .875rem; font-weight: 700; color: var(--text-secondary); }
 /* :is(.m-app, .m-lock) outranks the desktop styles.css input rule, which turns inputs dark on phones in dark mode. */
-:is(.m-app, .m-lock) .m-field :is(input, textarea, select) {
+:is(.m-app, .m-lock, .ad-clinic) .m-field :is(input, textarea, select) {
   width: 100%; min-height: 3.5rem; border-radius: 1rem; border: 1.5px solid var(--border-default); background: var(--bg-surface);
   color: var(--text-primary); padding: .75rem 1.125rem; font-size: 1.0625rem;
 }
@@ -555,3 +555,57 @@
 .m-contact-steps { list-style: none; margin: .6rem 0 0; padding: 0 0 0 .9rem; border-left: 2px solid var(--border-default); display: grid; gap: .35rem; }
 .m-contact-steps li { display: grid; gap: .05rem; font-size: .875rem; line-height: 1.35; }
 .m-contact-steps li.is-bad span:last-child { color: var(--text-critical); font-weight: 700; }
+
+/* ---------------- Nurse desktop console (/clinic) and desktop pages inside the web consoles ----------------
+   The phone screens run at a comfortable width; the desktop-only pages (records, visits, case history,
+   alert rules) keep their markup but take the phone design: the classic tokens are remapped here. */
+.ad-app {
+  --paper: var(--bg-app); --surface: var(--bg-surface); --surface-2: var(--bg-muted);
+  --ink: var(--text-primary); --ink-2: var(--text-secondary); --ink-3: var(--text-muted);
+  --line: var(--border-default); --line-strong: #c3d3c9;
+  --action: var(--bg-primary); --action-hover: var(--text-brand); --action-ink: #fff; --action-soft: var(--bg-primary-soft); --focus: var(--border-strong);
+  --critical: var(--text-critical); --critical-soft: var(--bg-critical); --high: var(--text-high); --high-soft: var(--bg-high);
+  --moderate: var(--text-moderate); --moderate-soft: var(--bg-moderate); --low: var(--text-info); --low-soft: var(--bg-info);
+  --ok: var(--text-ok); --ok-soft: var(--bg-ok);
+  --radius-sm: .75rem; --radius: 1rem; --radius-lg: 1.5rem; --shadow: var(--shadow-card);
+  --font: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  color-scheme: light;
+}
+.ad-page { max-width: 46rem; }
+.ad-page.is-wide { max-width: 82rem; }
+.ad-toolbar { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .75rem; margin-bottom: .5rem; }
+.ad-toolbar .m-btn { width: auto; }
+.ad-weather { flex-basis: 100%; }
+.ad-badge { margin-left: auto; min-width: 1.5rem; height: 1.5rem; padding: 0 .4rem; border-radius: 999px; background: var(--accent-critical); color: #fff; font-size: .8125rem; display: grid; place-items: center; }
+.ad-side .ad-bottom-group { margin-top: auto; display: grid; gap: .25rem; }
+.ad-side .ad-bottom-group .ad-bottom { margin-top: 0; }
+.ad-side .ad-user { display: flex; align-items: center; gap: .65rem; padding: .5rem 1rem; }
+.ad-side .ad-user strong { display: block; font-size: .9375rem; }
+.ad-side .ad-user .m-sub { color: #9fb0a8; font-size: .8125rem; }
+.ad-side .ad-user .m-avatar { width: 2.25rem; height: 2.25rem; font-size: .8125rem; }
+.ad-clinic .m-topbar { position: static; background: none; }
+.ad-patient { display: grid; grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr); gap: 2rem; align-items: start; }
+.ad-patient-records { min-width: 0; }
+.ad-records { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: 1rem; align-items: start; }
+@media (max-width: 1100px) { .ad-patient { grid-template-columns: 1fr; } }
+
+/* Classic desktop markup, phone look */
+.ad-app :is(.panel, .card) { background: var(--bg-surface); border: 0; border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 1.25rem 1.5rem; }
+.ad-records .panel { margin: 0; }
+.ad-app .panel-title { font-size: 1.125rem; }
+.ad-app .page-header h1 { font-size: 1.75rem; }
+.ad-app .btn { border-radius: 999px; font-weight: 700; min-height: 2.75rem; padding: .55rem 1.15rem; }
+.ad-app .btn-primary { background: var(--bg-cta); border-color: var(--bg-cta); color: #fff; }
+.ad-app .btn-primary:hover:not(:disabled) { background: #000; }
+.ad-app .btn-secondary { background: var(--bg-surface); border: 1.5px solid var(--border-default); color: var(--text-primary); }
+.ad-app .btn-quiet { background: none; color: var(--text-brand); }
+.ad-app .btn-sm { min-height: 2.25rem; padding: .35rem .9rem; }
+.ad-app :is(input:not([type=radio]):not([type=checkbox]), select, textarea) { background: var(--bg-surface); color: var(--text-primary); border: 1.5px solid var(--border-default); border-radius: .875rem; }
+.ad-app :is(input, select, textarea):focus { border-color: var(--border-strong); outline: 3px solid var(--bg-primary-soft); }
+.ad-app .table th { color: var(--text-secondary); font-weight: 400; }
+.ad-app :is(.pill, .chip, .badge) { border-radius: 999px; }
+.ad-app .note { border-radius: 1rem; border: 0; }
+.ad-app .panel-flush { padding: .5rem 0; overflow: hidden; }
+.ad-app .panel-flush .table :is(th, td):first-child { padding-left: 1.5rem; }
+.ad-app .panel-flush .table :is(th, td):last-child { padding-right: 1.5rem; }
+.ad-page { max-width: 52rem; }

@@ -175,7 +175,7 @@ export function ClinicMessages({ user }) {
   }, [load]);
   return (
     <>
-      <TopBar title={tr('Messages from families', 'Mga mensahe')} back="/m/nurse" />
+      <TopBar title={tr('Messages from families', 'Mga mensahe')} back={window.location.pathname.startsWith('/clinic') ? '/clinic' : '/m/nurse'} />
       <div className="m-seg" role="group" aria-label={tr('Show', 'Ipakita')}>
         <button type="button" aria-pressed={!all} onClick={() => setAll(false)}>{tr('Open', 'Bukas')}{data && typeof data.open === 'number' ? ` (${data.open})` : ''}</button>
         <button type="button" aria-pressed={all} onClick={() => setAll(true)}>{tr('All', 'Lahat')}</button>
@@ -240,7 +240,7 @@ export function MessagesBanner() {
   }, []);
   if (!n || !n.open) return null;
   return (
-    <Link to="/m/nurse/messages" style={{ textDecoration: 'none', display: 'block', marginBottom: '.75rem' }}>
+    <Link to={window.location.pathname.startsWith('/clinic') ? '/clinic/messages' : '/m/nurse/messages'} style={{ textDecoration: 'none', display: 'block', marginBottom: '.75rem' }}>
       <Banner tone={n.unseen ? 'warning' : 'info'} icon="message">
         <strong>{n.unseen ? tr(`${n.unseen} new message${n.unseen === 1 ? '' : 's'} from families`, `${n.unseen} bagong mensahe`) : tr(`${n.open} open message${n.open === 1 ? '' : 's'} from families`, `${n.open} bukas na mensahe`)}</strong> · {tr('Open Messages', 'Buksan')}
       </Banner>

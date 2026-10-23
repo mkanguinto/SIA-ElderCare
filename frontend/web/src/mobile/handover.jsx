@@ -10,6 +10,7 @@ import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast, isToday, clock, manilaDay, toneFor, PRIORITY_TONE } from './kit';
 
 const BASE = '/m/nurse';
+const base = () => (window.location.pathname.startsWith('/clinic') ? '/clinic' : BASE);
 const when = (ts) => (isToday(ts) ? clock(ts) : `${new Date(ts).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' })} ${clock(ts)}`);
 const avatar = (name = '') => name.replace(/^(Lola|Lolo) /, '').split(' ').slice(0, 2).map((w) => w[0]).join('');
 
@@ -86,7 +87,7 @@ function HandoverCard({ h, mode, onDone }) {
     <article className="m-card" style={{ marginTop: 0 }}>
       <div className="m-between" style={{ alignItems: 'flex-start' }}>
         <div className="m-grow">
-          <Link to={`${BASE}/patients/${h.patient.id}`} className="m-link" style={{ padding: 0 }}>{h.patient.name}</Link>
+          <Link to={`${base()}/patients/${h.patient.id}`} className="m-link" style={{ padding: 0 }}>{h.patient.name}</Link>
           <span className="m-caption" style={{ display: 'block' }}>{mode === 'incoming' ? tr(`From ${other.name} · ${relTime(h.createdAt)}`, `Mula kay ${other.name} · ${relTime(h.createdAt)}`) : tr(`To ${other.name} · waiting for acceptance`, `Kay ${other.name} · hinihintay ang pagtanggap`)}</span>
         </div>
         {h.priority && <Chip tone={PRIORITY_TONE[h.priority]} icon="alert">{h.priority}</Chip>}
@@ -160,7 +161,7 @@ export function MyCases({ data, reasonLine }) {
   return (
     <div className="m-stack">
       {data.cases.map((c) => (
-        <Link key={c.patient.id} to={`${BASE}/patients/${c.patient.id}`} className="m-list-row">
+        <Link key={c.patient.id} to={`${base()}/patients/${c.patient.id}`} className="m-list-row">
           <span className={`m-avatar ${toneFor(c.patient.name)}`} aria-hidden="true">{avatar(c.patient.name)}</span>
           <span className="m-grow">
             <strong>{c.patient.name}</strong>
@@ -200,7 +201,7 @@ export function CareTeamCard({ user, patientId, care }) {
         ))}
       </ul>
       {pending && <Banner tone="moderate" icon="swap">{tr(`Handover to ${pending.toNurse.name} is waiting for acceptance. ${pending.fromNurse.name} holds the case until then.`, `Hinihintay ang pagtanggap ni ${pending.toNurse.name}.`)}</Banner>}
-      {mine && !pending && <Cta onClick={() => navigate(`${BASE}/patients/${patientId}/handover`)}>{tr('Hand over this case', 'Ipasa ang kaso')}</Cta>}
+      {mine && !pending && <Cta onClick={() => navigate(`${base()}/patients/${patientId}/handover`)}>{tr('Hand over this case', 'Ipasa ang kaso')}</Cta>}
       {care.handovers.length > 0 && (
         <details className="m-chain" style={{ marginTop: '.75rem' }}>
           <summary>{tr(`Handover history (${care.handovers.length})`, `Kasaysayan ng handover (${care.handovers.length})`)}</summary>
@@ -247,7 +248,7 @@ export function HandoverForm({ user, patientId }) {
       if (it && !d.concern) setConcern(it.reasons.slice(0, 2).map((x) => x.detail).join('; ').slice(0, 300));
     }).catch(() => setItem(null));
   }, [patientId]);
-  const back = `${BASE}/patients/${patientId}`;
+  const back = `${base()}/patients/${patientId}`;
   if (!care || item === undefined) return <><TopBar title={tr('Hand over case', 'Ipasa ang kaso')} back={back} /><Loader /></>;
   if (care.error) return <><TopBar title={tr('Hand over case', 'Ipasa ang kaso')} back={back} /><p className="m-error">{care.error}</p></>;
   const others = care.members.filter((m) => m.id !== user.id);
@@ -262,7 +263,7 @@ export function HandoverForm({ user, patientId }) {
       await api('/api/clinic/handover', { method: 'POST', body: { patientId, toNurseId: to, concern, actionTaken, pendingAction, dueTime: dueTime.toISOString() } });
       setDone(true);
       clearDraft(`handover:${patientId}`);
-      navigate(`${BASE}?tab=handover`);
+      navigate(`${base()}?tab=handover`);
     } catch (err) { setError((err.details || [err.message]).join('. ')); setBusy(false); }
   }
   return (
