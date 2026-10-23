@@ -476,6 +476,8 @@ Every service has a `.env.example`. Most important:
 2. Run `node scripts/deploy-render.mjs`. It creates the Neon databases and logins, creates or updates the Render
    services, wires their URLs together and starts the deploys. Generated secrets go to `.env.render` (git-ignored).
 3. `node scripts/deploy-render.mjs --status` shows each deploy. Builds take 5–10 minutes the first time.
+4. To ship new code, push and run the script again: Render pulls the public repo by URL, so a push alone does not
+   start a deploy (unless you connect the GitHub account in Render). Set `RENDER_BRANCH` to deploy a branch other than `main`.
 
 Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
 `/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share
