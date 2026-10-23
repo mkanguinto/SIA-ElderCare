@@ -1,6 +1,6 @@
 // Admin web console (Figma A1 "Integration monitor" and A2 "Service health & users"): dark sidebar layout.
 import React, { useCallback, useEffect, useState } from 'react';
-import { api, logout } from '../api';
+import { api, requestSignOut } from '../api';
 import { Link } from '../router';
 import { relTime } from '../format';
 import Icon from '../mobile/icons';
@@ -68,7 +68,7 @@ export default function AdminConsole({ user, path }) {
           <span className="ad-sep">Settings</span>
           <Link to="/clinic/alert-rules" activeClassName="is-active"><Icon name="sliders" />Alert rules</Link>
         </nav>
-        <button type="button" className="ad-bottom" onClick={logout}><Icon name="logout" />Log out</button>
+        <button type="button" className="ad-bottom" onClick={requestSignOut}><Icon name="logout" />Log out</button>
       </aside>
       <main className="ad-main" id="main">
         <p className="m-banner tone-info ad-phone-note" role="note"><Icon name="monitor" />The admin console is made for a computer. On a phone you can check status, but use a computer to manage the system.</p>

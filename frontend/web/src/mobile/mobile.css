@@ -1,6 +1,6 @@
 /* Phone-first UI (Figma "ElderCare Connect – Phone-First UI"). Tokens are copied from the Foundations page.
    Everything is sized in rem so "Big text" (html font-size 118.75%) scales the whole screen. */
-.m-app, .ad-app, .m-lock {
+.m-app, .ad-app, .m-lock, .m-idle-warn {
   --bg-app: #eef3ef;
   --bg-surface: #ffffff;
   --bg-muted: #e3ece6;
@@ -28,7 +28,7 @@
 }
 @media (prefers-color-scheme: dark) {
   /* The design is light-only for now; keep it light rather than half-inverting it. */
-  .m-app, .ad-app, .m-lock { color-scheme: light; }
+  .m-app, .ad-app, .m-lock, .m-idle-warn { color-scheme: light; }
 }
 
 .m-root { min-height: 100dvh; background: var(--bg-app); display: flex; justify-content: center; }
@@ -538,3 +538,15 @@
 .m-lock .m-cta { justify-content: center; }
 .ad-manage { background: var(--bg-app); border-radius: 1rem; padding: 1rem; }
 .ad-select { min-height: 2.75rem; border-radius: .75rem; border: 1.5px solid var(--border-default); background: var(--bg-surface); padding: 0 .75rem; font: inherit; }
+
+/* Inactivity warning: shown for the last 2 minutes before the lock, above every screen (phone and desktop). */
+.m-idle-warn {
+  position: fixed; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 999;
+  width: min(30rem, calc(100% - 2rem)); display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
+  background: var(--bg-surface); color: var(--text-primary); border: 2px solid var(--border-warning, #b45309);
+  border-radius: 1.25rem; padding: .875rem 1rem; box-shadow: 0 10px 40px rgb(0 0 0 / .18); font-family: inherit;
+}
+.m-idle-warn p { flex: 1 1 14rem; margin: 0; font-size: .95rem; line-height: 1.35; }
+.m-idle-warn strong { font-variant-numeric: tabular-nums; }
+.m-idle-warn button { min-height: 2.75rem; padding: 0 1.1rem; border-radius: 999px; border: 0; font: inherit; font-weight: 700;
+  background: var(--bg-primary); color: var(--text-on-primary, #fff); cursor: pointer; }

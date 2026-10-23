@@ -4,7 +4,8 @@ const express = require('express');
 const { pool } = require('./db');
 const { dispatchAlert, SEVERITY_RANK } = require('./notifier');
 const mashup = require('./weatherAlertMashup');
-const { verifyWebhookSignature } = require('./textbeeClient');
+const { verifyWebhookSignature, batchStatus, gatewayHealth } = require('./textbeeClient');
+const { sentToday, DAILY_LIMIT } = require('./smsWorker');
 const { sendSms, normalizePhone, mode: smsMode, allowlist } = require('./smsSender');
 const logger = require('./lib/logger');
 const { requireInternalToken, internalHeaders } = require('./lib/internalAuth');
@@ -469,22 +470,81 @@ const SMS_ROUTE_HANDLERS = {
  * carries a one-time secret; only its length and the outcome are logged.
  */
 const ACCOUNT_PURPOSES = ['activation', 'password_reset', 'family_activation'];
+const maskNumber = (n) => `${n.slice(0, 3)} ${n.slice(3, 4)}•• ••• ${n.slice(-4)}`;
+
+/**
+ * Account messages for the gateway (activation code, password-reset link). The answer says honestly what
+ * happened: 'simulated' means NOTHING was sent (dry-run, or the number is not allow-listed); 'queued' means
+ * TextBee accepted it for the sending phone - not that it arrived. GET .../:ref follows it to sent / delivered.
+ */
 router.post('/internal/messages/sms', async (req, res, next) => {
   try {
     const b = req.body || {};
     const errors = [];
-    if (typeof b.to !== 'string' || !normalizePhone(b.to)) errors.push('to must be a Philippine mobile number');
+    const to = typeof b.to === 'string' ? normalizePhone(b.to) : null;
+    if (!to) errors.push('to must be a Philippine mobile number');
     if (typeof b.body !== 'string' || !b.body.trim() || b.body.length > 480) errors.push('body is required (at most 480 characters)');
     if (!ACCOUNT_PURPOSES.includes(b.purpose)) errors.push(`purpose must be one of: ${ACCOUNT_PURPOSES.join(', ')}`);
     if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
-    try {
-      const r = await sendSms({ to: b.to, body: b.body });
-      logger.info('account sms', { purpose: b.purpose, status: r.status, simulated: Boolean(r.simulated), chars: b.body.length });
-      return res.json({ status: r.simulated ? 'simulated' : 'sent', note: r.note || null, sid: r.sid });
-    } catch (err) {
-      logger.warn('account sms failed', { purpose: b.purpose, error: err.message });
-      return res.status(502).json({ error: 'sms_failed', message: err.permanent ? 'The SMS provider rejected the message' : 'The SMS could not be sent, try again' });
+    const m = smsMode();
+    const real = m.live && (!m.allowlistSize || allowlist().has(to));
+    const log = (status, ref, note) => pool.query('INSERT INTO account_sms_log (purpose, sent_to, status, provider_ref, note) VALUES ($1,$2,$3,$4,$5)', [b.purpose, maskNumber(to), status, ref || null, note || null]);
+    if (real && (await sentToday()) >= DAILY_LIMIT()) {
+      const note = `Daily SMS limit reached (${DAILY_LIMIT()})`;
+      await log('failed', null, note);
+      return res.status(429).json({ error: 'sms_limit', status: 'failed', message: `${note}. Try again tomorrow.` });
     }
+    try {
+      const r = await sendSms({ to, body: b.body });
+      const status = r.simulated ? 'simulated' : 'queued';
+      const note = r.simulated ? r.note : (r.warning && r.warning.message) || null;
+      await log(status, r.simulated ? null : r.sid, note);
+      logger.info('account sms', { purpose: b.purpose, status, chars: b.body.length });
+      return res.json({ status, note, ref: r.simulated ? null : r.sid });
+    } catch (err) {
+      await log('failed', null, String(err.message).slice(0, 300));
+      logger.warn('account sms failed', { purpose: b.purpose, error: err.message });
+      return res.status(502).json({ error: 'sms_failed', status: 'failed', message: err.permanent ? `The SMS provider rejected the message (${String(err.message).slice(0, 160)})` : 'The SMS could not be sent, try again' });
+    }
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/** Follows an account SMS: asks TextBee for the batch (the phone reports sent / delivered / failed). */
+router.get('/internal/messages/sms/:ref', async (req, res, next) => {
+  try {
+    if (!/^[A-Za-z0-9_-]{4,80}$/.test(req.params.ref)) return res.status(404).json({ error: 'not_found' });
+    const { rows: [row] } = await pool.query('SELECT * FROM account_sms_log WHERE provider_ref = $1', [req.params.ref]);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    let { status, note } = row;
+    if (['queued', 'sent', 'unknown'].includes(status)) {
+      try {
+        const r = await batchStatus(row.provider_ref);
+        if (r.status !== status || (r.error && r.error !== note)) {
+          status = r.status;
+          note = r.error || note;
+          await pool.query('UPDATE account_sms_log SET status = $2, note = $3, updated_at = now() WHERE id = $1', [row.id, status, note]);
+        }
+      } catch (err) {
+        logger.warn('textbee status check failed', { error: err.message });
+      }
+    }
+    return res.json({ status, note, sentTo: row.sent_to, purpose: row.purpose, createdAt: row.created_at });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/** SMS readiness for the admin: mode, allow-list size, the sending phone, permission, today's count. */
+router.get('/internal/messages/sms-health', async (req, res, next) => {
+  try {
+    const m = smsMode();
+    let gateway = null;
+    if (m.provider === 'textbee' && process.env.TEXTBEE_API_KEY) {
+      try { gateway = await gatewayHealth(); } catch (err) { gateway = { error: `TextBee: ${err.response ? err.response.status : err.code || err.message}` }; }
+    }
+    return res.json({ mode: m, gateway, sentToday: await sentToday(), dailyLimit: DAILY_LIMIT() });
   } catch (err) {
     return next(err);
   }

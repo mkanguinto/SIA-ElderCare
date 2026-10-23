@@ -16,14 +16,14 @@ const path = require('path');
 const config = require('../config');
 const logger = require('../lib/logger');
 
-const FIELDS = ['id', 'username', 'name', 'role', 'phone', 'patients', 'scopes', 'passwordHash', 'status', 'createdBy', 'createdAt',
+const FIELDS = ['id', 'username', 'name', 'role', 'staffId', 'phone', 'patients', 'scopes', 'passwordHash', 'status', 'createdBy', 'createdAt',
   'activatedAt', 'passwordChangedAt', 'lastLoginAt', 'disabledAt', 'disabledBy', 'disabledReason'];
 const COLUMN = Object.fromEntries(FIELDS.map((f) => [f, f.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)]));
 
 /** users.json entry -> account */
 function fromSeed(u) {
   return {
-    id: u.id, username: u.username, name: u.name, role: u.role, phone: u.phone || null, patients: u.patients || [], scopes: u.scopes || [],
+    id: u.id, username: u.username, name: u.name, role: u.role, staffId: u.staffId || null, phone: u.phone || null, patients: u.patients || [], scopes: u.scopes || [],
     passwordHash: u.passwordHash || null, status: u.status || (u.disabled ? 'disabled' : u.passwordHash ? 'active' : 'pending_activation'),
     createdBy: u.createdBy || 'bootstrap', createdAt: u.createdAt || null, activatedAt: u.activatedAt || null, passwordChangedAt: u.passwordChangedAt || null,
     lastLoginAt: u.lastLoginAt || null, disabledAt: u.disabledAt || null, disabledBy: u.disabledBy || null, disabledReason: u.disabledReason || null,
@@ -32,9 +32,13 @@ function fromSeed(u) {
 const fromRow = (r) => (r ? Object.fromEntries(FIELDS.map((f) => [f, r[COLUMN[f]] ?? (f === 'patients' || f === 'scopes' ? [] : null)])) : null);
 const tokenFromRow = (r) => (r ? {
   id: r.id, accountId: r.account_id, purpose: r.purpose, secretHash: r.secret_hash, expiresAt: r.expires_at, attempts: r.attempts,
-  usedAt: r.used_at, revokedAt: r.revoked_at, sentTo: r.sent_to, delivery: r.delivery, createdBy: r.created_by, createdAt: r.created_at,
+  usedAt: r.used_at, revokedAt: r.revoked_at, sentTo: r.sent_to, delivery: r.delivery, deliveryNote: r.delivery_note, providerRef: r.provider_ref,
+  deliveryUpdatedAt: r.delivery_updated_at, createdBy: r.created_by, createdAt: r.created_at,
 } : null);
-const auditFromRow = (r) => ({ id: Number(r.id), at: r.at, actorId: r.actor_id, actorRole: r.actor_role, action: r.action, targetId: r.target_id, ip: r.ip, details: r.details });
+const auditFromRow = (r) => ({
+  id: Number(r.id), at: r.at, actorId: r.actor_id, actorRole: r.actor_role, actorStaffId: r.actor_staff_id, action: r.action, targetId: r.target_id,
+  targetStaffId: r.target_staff_id, ip: r.ip, details: r.details,
+});
 
 /* ------------------------------ file store ------------------------------ */
 class FileStore {
@@ -109,8 +113,9 @@ class FileStore {
 
   async audit(e) { this.seq += 1; this.auditLog.push({ id: this.seq, at: new Date(), details: {}, ...e }); }
 
-  async auditList({ limit = 100, targetId, action } = {}) {
-    return this.auditLog.filter((e) => (!targetId || e.targetId === targetId) && (!action || e.action === action)).slice(-limit).reverse();
+  async auditList({ limit = 100, targetId, action, staffId } = {}) {
+    return this.auditLog.filter((e) => (!targetId || e.targetId === targetId) && (!action || e.action === action)
+      && (!staffId || e.actorStaffId === staffId || e.targetStaffId === staffId)).slice(-limit).reverse();
   }
 }
 
@@ -156,8 +161,18 @@ class PgStore {
         [a.id, a.username, a.name, a.role, a.phone, a.patients, a.scopes, a.passwordHash, a.status],
       );
       added += rowCount;
+      if (a.staffId) await this.pool.query('UPDATE accounts SET staff_id = $2 WHERE id = $1 AND staff_id IS NULL', [a.id, a.staffId]);
     }
     if (added) logger.info('bootstrap accounts imported', { added });
+    // Staff accounts created before staff IDs existed: one new staff ID each.
+    const { rows } = await this.pool.query("SELECT id, staff_id FROM accounts WHERE role IN ('clinic_staff','system_admin') ORDER BY id");
+    const taken = rows.map((r) => r.staff_id).filter(Boolean);
+    for (const r of rows.filter((x) => !x.staff_id)) {
+      // eslint-disable-next-line global-require
+      const next = require('./accountRules').nextStaffId(taken);
+      await this.pool.query('UPDATE accounts SET staff_id = $2 WHERE id = $1', [r.id, next]);
+      taken.push(next);
+    }
   }
 
   async getByUsername(username) { return fromRow((await this.pool.query('SELECT * FROM accounts WHERE lower(username) = lower($1)', [username])).rows[0]); }
@@ -169,9 +184,9 @@ class PgStore {
   async insert(a) {
     try {
       const { rows: [r] } = await this.pool.query(
-        `INSERT INTO accounts (id, username, name, role, phone, patients, scopes, password_hash, status, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [a.id, a.username, a.name, a.role, a.phone, a.patients, a.scopes, a.passwordHash || null, a.status, a.createdBy],
+        `INSERT INTO accounts (id, username, name, role, staff_id, phone, patients, scopes, password_hash, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [a.id, a.username, a.name, a.role, a.staffId || null, a.phone, a.patients, a.scopes, a.passwordHash || null, a.status, a.createdBy],
       );
       return fromRow(r);
     } catch (err) {
@@ -207,20 +222,23 @@ class PgStore {
   }
 
   async updateToken(id, patch) {
-    const map = { attempts: 'attempts', usedAt: 'used_at', delivery: 'delivery' };
+    const map = { attempts: 'attempts', usedAt: 'used_at', delivery: 'delivery', deliveryNote: 'delivery_note', providerRef: 'provider_ref', deliveryUpdatedAt: 'delivery_updated_at' };
     const keys = Object.keys(patch).filter((k) => map[k]);
     if (!keys.length) return;
     await this.pool.query(`UPDATE account_tokens SET ${keys.map((k, i) => `${map[k]} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...keys.map((k) => patch[k])]);
   }
 
   async audit(e) {
-    await this.pool.query('INSERT INTO account_audit (actor_id, actor_role, action, target_id, ip, details) VALUES ($1,$2,$3,$4,$5,$6)',
-      [e.actorId, e.actorRole || null, e.action, e.targetId || null, e.ip || null, JSON.stringify(e.details || {})]);
+    await this.pool.query(
+      'INSERT INTO account_audit (actor_id, actor_role, actor_staff_id, action, target_id, target_staff_id, ip, details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+      [e.actorId, e.actorRole || null, e.actorStaffId || null, e.action, e.targetId || null, e.targetStaffId || null, e.ip || null, JSON.stringify(e.details || {})],
+    );
   }
 
-  async auditList({ limit = 100, targetId, action } = {}) {
+  async auditList({ limit = 100, targetId, action, staffId } = {}) {
     const where = [];
     const params = [];
+    if (staffId) { params.push(staffId); where.push(`(actor_staff_id = $${params.length} OR target_staff_id = $${params.length})`); }
     if (targetId) { params.push(targetId); where.push(`target_id = $${params.length}`); }
     if (action) { params.push(action); where.push(`action = $${params.length}`); }
     params.push(Math.min(Number(limit) || 100, 500));

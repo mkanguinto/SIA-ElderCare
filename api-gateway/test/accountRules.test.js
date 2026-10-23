@@ -63,3 +63,15 @@ test('session policy: one session, nurses one per device class; idle limits', ()
   assert.strictEqual(R.idleLimitMinutes('clinic_staff', {}), 15);
   assert.strictEqual(R.idleLimitMinutes('caregiver', {}), 30);
 });
+
+test('staff identity: next staff ID, and linking checks person, role and name', () => {
+  assert.strictEqual(R.nextStaffId(['ST-001', null, 'ST-004']), 'ST-005');
+  assert.strictEqual(R.nextStaffId([]), 'ST-001');
+  const ana = [{ id: 'U-CS-001', username: 'nurse.ana', name: 'Ana  Santos', role: 'clinic_staff' }];
+  assert.strictEqual(R.staffLinkProblem('ST-001', 'system_admin', 'ana santos', ana), null);
+  assert.strictEqual(R.staffLinkProblem('ST-001', 'clinic_staff', 'Ana Santos', ana).status, 409);
+  assert.strictEqual(R.staffLinkProblem('ST-001', 'system_admin', 'Ben Cruz', ana).status, 422);
+  assert.strictEqual(R.staffLinkProblem('ST-009', 'system_admin', 'Ana Santos', []).status, 422);
+  assert.ok(!R.validateNewAccount({ username: 'cg.x', name: 'X Y', role: 'caregiver', phone: '09171234567', staffId: 'ST-001' }).ok);
+  assert.strictEqual(R.validateNewAccount({ username: 'ad.x', name: 'X Y', role: 'system_admin', phone: '09171234567', staffId: 'st-002' }).value.staffId, 'ST-002');
+});

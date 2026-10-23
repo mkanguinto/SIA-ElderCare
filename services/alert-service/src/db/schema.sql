@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS notification_log (
 CREATE INDEX IF NOT EXISTS idx_notification_alert ON notification_log (alert_id);
 CREATE INDEX IF NOT EXISTS idx_notification_sid ON notification_log (provider_sid);
 
+-- Account messages (activation codes, password-reset links) sent for the API gateway. Never the text itself.
+-- status: simulated (NOT sent) | queued | sent (left the phone) | delivered | failed | unknown
+CREATE TABLE IF NOT EXISTS account_sms_log (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  purpose       TEXT        NOT NULL,
+  sent_to       TEXT        NOT NULL,     -- masked number
+  status        TEXT        NOT NULL,
+  provider_ref  TEXT,                     -- TextBee smsBatchId
+  note          TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_sms_ref ON account_sms_log (provider_ref) WHERE provider_ref IS NOT NULL;
+
 -- Idempotent event consumption (outbox delivers at-least-once).
 CREATE TABLE IF NOT EXISTS processed_events (
   event_id      UUID PRIMARY KEY,

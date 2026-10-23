@@ -1,7 +1,7 @@
 // Nurse phone app (Figma N1-N5): risk queue, patient detail, schedule visit, add patient, daily digest.
 // The desktop clinic pages (/clinic) stay available for computers; each view links to the other.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, clearDraft } from '../api';
 import { Link, navigate } from '../router';
 import { age, initials, relTime, REASON_LABEL, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
@@ -9,6 +9,7 @@ import { Profile } from './common';
 import { WeekStrip } from './caregiver';
 import { StatusChip } from './status';
 import { vitalsSummary } from './data';
+import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { DutyToggle, PendingHandovers, MyCases, CareTeamCard, HandoverForm, usePendingHandovers, useMyCases } from './handover';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
@@ -616,8 +617,10 @@ function PatientReviews({ patientId }) {
 /** One check-in awaiting the nurse: Mark reviewed (optional note) or Record action (required). */
 function ReviewCard({ c, onDone, showPatient = false }) {
   const tr = useT();
-  const [mode, setMode] = useState(null); // null | 'review' | 'action'
-  const [text, setText] = useState('');
+  const saved = useRestoredDraft(`review:${c.id}`);
+  const [mode, setMode] = useState(saved ? saved.data.mode : null); // null | 'review' | 'action'
+  const [text, setText] = useState(saved ? saved.data.text : '');
+  useKeepDraft(`review:${c.id}`, { mode, text }, Boolean(mode && text.trim()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const devices = c.measurementDevice ? Object.values(c.measurementDevice).map((d) => DEVICE_WORD[d] || d).join(', ') : null;
@@ -628,6 +631,7 @@ function ReviewCard({ c, onDone, showPatient = false }) {
     setError('');
     try {
       await api(`/api/checkins/${c.id}/${mode}`, { method: 'POST', body: mode === 'action' ? { action: text.trim() } : (text.trim() ? { note: text.trim() } : {}) });
+      clearDraft(`review:${c.id}`);
       setMode(null);
       setText('');
       onDone();
@@ -655,6 +659,7 @@ function ReviewCard({ c, onDone, showPatient = false }) {
       )}
       {mode && (
         <form className="m-stack" style={{ marginTop: '.75rem' }} onSubmit={submit}>
+          <DraftNotice draft={saved} onDiscard={() => { setMode(null); setText(''); }} />
           <label className="m-field"><span>{mode === 'action' ? tr('What did you do?', 'Ano ang ginawa mo?') : tr('Note (optional)', 'Tala (opsyonal)')}</span>
             <textarea rows="2" maxLength={500} value={text} onChange={(e) => setText(e.target.value)} required={mode === 'action'} minLength={mode === 'action' ? 3 : undefined}
               placeholder={mode === 'action' ? tr('e.g. Called the caregiver, advised rest and a recheck at 6 PM', 'hal. Tinawagan ang tagapag-alaga') : ''} autoFocus /></label>

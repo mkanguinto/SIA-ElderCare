@@ -6030,6 +6030,7 @@
                   "pm.test(\"pending activation\", () => pm.expect(j.account.status).to.eql(\"pending_activation\"));",
                   "pm.test(\"code not in the response\", () => pm.expect(pm.response.text()).to.not.match(/[A-Z0-9]{4}-[A-Z0-9]{4}/));",
                   "pm.test(\"masked number only\", () => pm.expect(j.activation.sentTo).to.match(/^\\+63 9/));",
+                  "pm.test(\"not allow-listed: reported as simulated (NOT sent), never delivered\", () => pm.expect(j.activation.delivery).to.eql(\"simulated\"));",
                   "pm.collectionVariables.set(\"newAccountId\", j.account.id);"
                 ]
               }
@@ -6839,6 +6840,285 @@
               ]
             }
           }
+        },
+        {
+          "name": "SMS check: says plainly whether codes really reach anyone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"ready + problems + mode\", () => { pm.expect(j.ready).to.be.a(\"boolean\"); pm.expect(j.problems).to.be.an(\"array\"); pm.expect(j.mode).to.have.property(\"live\"); });",
+                  "pm.test(\"not live => not ready, with a NOT sent warning\", () => { if (!j.mode.live) { pm.expect(j.ready).to.eql(false); pm.expect(j.problems.join(\" \")).to.match(/NOT sent/); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/sms-check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "sms-check"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin creates a nurse (new staff ID)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = Date.now().toString(36);",
+                  "pm.collectionVariables.set(\"staffNurseUser\", \"nurse.pm\" + r);",
+                  "pm.collectionVariables.set(\"staffName\", \"Postman Nurse \" + r);",
+                  "pm.collectionVariables.set(\"staffPhone\", \"0919\" + Date.now().toString().slice(-7));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"gets a staff ID\", () => pm.expect(j.account.staffId).to.match(/^ST-\\d{3,6}$/));",
+                  "pm.collectionVariables.set(\"staffId\", j.account.staffId);",
+                  "pm.collectionVariables.set(\"staffNurseId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{staffNurseUser}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"clinic_staff\",\n  \"phone\": \"{{staffPhone}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Same staff ID with a different name -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.pmx{{$timestamp}}\",\n  \"name\": \"Somebody Else\",\n  \"role\": \"system_admin\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Second nurse account for the same person -> 409 (one account per role)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"nurse.pmx{{$timestamp}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"clinic_staff\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Separate admin account for the same person, linked by staff ID -> 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"same staff ID, separate account\", () => { pm.expect(j.account.staffId).to.eql(pm.collectionVariables.get(\"staffId\")); pm.expect(j.account.id).to.not.eql(pm.collectionVariables.get(\"staffNurseId\")); pm.expect(j.account.role).to.eql(\"system_admin\"); });",
+                  "pm.collectionVariables.set(\"staffAdminId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.pm{{$timestamp}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"system_admin\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Audit log by staff ID shows both accounts of the person",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().entries.map(e => e.targetId);",
+                  "pm.test(\"nurse and admin account under one staff ID\", () => { pm.expect(ids).to.include(pm.collectionVariables.get(\"staffNurseId\")); pm.expect(ids).to.include(pm.collectionVariables.get(\"staffAdminId\")); });",
+                  "pm.test(\"entries carry the staff ID\", () => pm.response.json().entries.forEach(e => pm.expect(e.targetStaffId).to.eql(pm.collectionVariables.get(\"staffId\"))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit?staffId={{staffId}}&action=account_created",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "staffId",
+                  "value": "{{staffId}}"
+                },
+                {
+                  "key": "action",
+                  "value": "account_created"
+                }
+              ]
+            }
+          }
         }
       ]
     }
@@ -6978,6 +7258,30 @@
     },
     {
       "key": "phoneRefresh",
+      "value": ""
+    },
+    {
+      "key": "staffNurseUser",
+      "value": ""
+    },
+    {
+      "key": "staffName",
+      "value": ""
+    },
+    {
+      "key": "staffPhone",
+      "value": ""
+    },
+    {
+      "key": "staffId",
+      "value": ""
+    },
+    {
+      "key": "staffNurseId",
+      "value": ""
+    },
+    {
+      "key": "staffAdminId",
       "value": ""
     }
   ]

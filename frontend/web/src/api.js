@@ -6,10 +6,16 @@
 // Sessions (Batch 3a): one per user (nurses: one phone + one desktop), locked after inactivity until the
 // password is entered again. A 401 says why: session_locked -> lock screen (the session is kept),
 // session_replaced / session_ended -> signed out with a message on the sign-in page.
+// Drafts: unsent entries (check-in, review note, handover) are kept per user in this tab's sessionStorage, so a
+// lock, a time-out or a session ended elsewhere does not lose them. They come back only for the same user, are
+// dropped when another user signs in here or after 12 hours, and signing out on purpose discards them (after a
+// warning). A save refused because the session just locked is sent again once the user unlocks.
 
 export const BASE = import.meta.env.VITE_API_BASE_URL || ''; // '' => same origin (Vite proxy in dev)
 const KEY = 'eldercare.session';
 const NOTICE_KEY = 'eldercare.notice';
+const DRAFTS_KEY = 'eldercare.drafts';
+const DRAFT_TTL_MS = 12 * 3600000;
 const listeners = new Set();
 const lockListeners = new Set();
 
@@ -56,13 +62,57 @@ const NOTICES = {
   session_replaced: 'You signed in on another device, so you were signed out here.',
   session_ended: 'Your session has ended. Please sign in again.',
 };
+export function hasNotice() {
+  try { return Boolean(sessionStorage.getItem(NOTICE_KEY)); } catch { return false; }
+}
 export function takeNotice() {
   try { const n = sessionStorage.getItem(NOTICE_KEY); sessionStorage.removeItem(NOTICE_KEY); return n; } catch { return null; }
 }
 function endSession(reason) {
-  try { if (NOTICES[reason]) sessionStorage.setItem(NOTICE_KEY, NOTICES[reason]); } catch { /* ignore */ }
+  const kept = draftCount();
+  const notice = NOTICES[reason] && `${NOTICES[reason]}${kept ? ' Your unsent entries are kept on this device: sign in again to finish them.' : ''}`;
+  try { if (notice) sessionStorage.setItem(NOTICE_KEY, notice); } catch { /* ignore */ }
   save(null);
 }
+
+/* ------------------------------ drafts ------------------------------ */
+function readDrafts() {
+  try {
+    const all = JSON.parse(sessionStorage.getItem(DRAFTS_KEY)) || { owner: null, items: {} };
+    const now = Date.now();
+    all.items = Object.fromEntries(Object.entries(all.items || {}).filter(([, d]) => now - d.savedAt < DRAFT_TTL_MS));
+    return all;
+  } catch { return { owner: null, items: {} }; }
+}
+function writeDrafts(all) {
+  try {
+    if (Object.keys(all.items).length) sessionStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
+    else sessionStorage.removeItem(DRAFTS_KEY);
+  } catch { /* storage unavailable: the draft lives only in the open form */ }
+}
+const draftOwner = () => { const u = currentUser(); return u && u.id; };
+/** @returns {{data:any, savedAt:number} | null} the signed-in user's draft for this form */
+export function loadDraft(key) {
+  const all = readDrafts();
+  return all.owner && all.owner === draftOwner() ? all.items[key] || null : null;
+}
+export function saveDraft(key, data) {
+  const owner = draftOwner();
+  if (!owner) return;
+  const all = readDrafts();
+  writeDrafts({ owner, items: { ...(all.owner === owner ? all.items : {}), [key]: { data, savedAt: Date.now() } } });
+}
+export function clearDraft(key) {
+  const all = readDrafts();
+  if (all.owner !== draftOwner() || !all.items[key]) return;
+  delete all.items[key];
+  writeDrafts(all);
+}
+export function draftCount() {
+  const all = readDrafts();
+  return all.owner && all.owner === draftOwner() ? Object.keys(all.items).length : 0;
+}
+const clearAllDrafts = () => { try { sessionStorage.removeItem(DRAFTS_KEY); } catch { /* ignore */ } };
 
 /* ------------------------------ inactivity lock ------------------------------ */
 export const isLocked = () => Boolean(session && session.locked);
@@ -81,6 +131,15 @@ export function lockNow() {
   if (!session || session.locked) return;
   fetch(`${BASE}/oauth/lock`, { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` } }).catch(() => {});
   setLocked(true);
+}
+/** Resolves true once the lock screen is passed, false if the session ends instead. */
+function whenUnlocked() {
+  if (!isLocked()) return Promise.resolve(Boolean(session));
+  return new Promise((resolve) => {
+    const done = (v) => { offLock(); offSession(); resolve(v); };
+    const offLock = onLockChange((locked) => { if (!locked) done(true); });
+    const offSession = onSessionChange((u) => { if (!u) done(false); });
+  });
 }
 /** Lock screen: the password continues the same session. Three wrong tries sign the user out. */
 export async function unlock(password) {
@@ -121,6 +180,8 @@ async function tokenRequest(body) {
     accessToken: data.access_token, refreshToken: data.refresh_token, locked: false,
     idleLockMinutes: data.session ? data.session.idleLockMinutes : session && session.idleLockMinutes,
   });
+  const drafts = readDrafts();
+  if (drafts.owner && drafts.owner !== draftOwner()) clearAllDrafts(); // never show one user's draft to another
   return currentUser();
 }
 
@@ -141,12 +202,21 @@ export async function accountRequest(path, body) {
 }
 export function logout() {
   const refreshToken = session && session.refreshToken;
+  clearAllDrafts();
   save(null);
   // Best effort: end the server-side session so the tokens stop working everywhere (RFC 7009).
   if (refreshToken) {
     fetch(`${BASE}/oauth/revoke`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: refreshToken, token_type_hint: 'refresh_token' }) })
       .catch(() => {});
   }
+}
+
+/** Sign-out button: warns first when unsent entries would be discarded. @returns {boolean} signed out */
+export function requestSignOut() {
+  const n = draftCount();
+  if (n && !window.confirm(`You have ${n === 1 ? 'an unsent entry' : `${n} unsent entries`} (not yet sent to the clinic). Sign out and discard ${n === 1 ? 'it' : 'them'}?`)) return false;
+  logout();
+  return true;
 }
 
 /**
@@ -200,8 +270,11 @@ export async function api(path, { method = 'GET', body } = {}, retried = false) 
     const err = new Error(reason === 'session_locked' ? 'Locked after inactivity.' : (data && data.message) || 'Please sign in again.');
     err.status = 401;
     err.reason = reason;
-    if (reason === 'session_locked') setLocked(true);
-    else endSession(reason || 'session_ended');
+    if (reason === 'session_locked') {
+      setLocked(true);
+      // A save (not a background read) that hit the lock is sent again after the password is entered.
+      if (method !== 'GET' && !retried && (await whenUnlocked())) return api(path, { method, body }, true);
+    } else endSession(reason || 'session_ended');
     throw err;
   }
   if (!res.ok) {

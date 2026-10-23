@@ -387,6 +387,21 @@ const phone = `0917${String(Date.now()).slice(-7)}`;
 r = await call('POST', '/api/admin/accounts', admin, { username: uname, name: 'Smoke Test Caregiver', role: 'caregiver', phone, patients: ['P-1003'] });
 ok(r.s === 201 && r.j.account.status === 'pending_activation' && r.j.activation.sentTo && !/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(JSON.stringify(r.j)), `admin creates a caregiver account; activation code sent to ${r.j && r.j.activation && r.j.activation.sentTo} (${r.j && r.j.activation && r.j.activation.delivery}), not shown to the admin`);
 const newId = r.j.account && r.j.account.id;
+ok(r.j.activation && r.j.activation.delivery !== 'delivered' && (r.j.activation.delivery !== 'simulated' || /NOT|ALLOWLIST|DRY_RUN|not/i.test(r.j.activation.note || '')),
+  `a number off the allow-list is reported as ${r.j.activation && r.j.activation.delivery} (${r.j.activation && r.j.activation.note}), never as delivered`);
+r = await call('GET', '/api/admin/sms-check', admin);
+ok(r.s === 200 && typeof r.j.ready === 'boolean' && Array.isArray(r.j.problems) && (r.j.mode.live || !r.j.ready),
+  `SMS check: ${r.j.ready ? 'ready' : `not ready (${(r.j.problems || []).join('; ')})`}, ${r.j.mode && r.j.mode.reason}`);
+{
+  const tag = Date.now().toString(36);
+  const nurseRes = await call('POST', '/api/admin/accounts', admin, { username: `nurse.smoke${tag}`, name: `Smoke Nurse ${tag}`, role: 'clinic_staff', phone: `0918${String(Date.now()).slice(-7)}` });
+  const sid = nurseRes.j.account && nurseRes.j.account.staffId;
+  const adm = await call('POST', '/api/admin/accounts', admin, { username: `admin.smoke${tag}`, name: `Smoke Nurse ${tag}`, role: 'system_admin', phone: `0918${String(Date.now()).slice(-7)}`, staffId: sid });
+  const trail = await call('GET', `/api/admin/audit?staffId=${sid}&action=account_created`, admin);
+  ok(nurseRes.s === 201 && adm.s === 201 && adm.j.account.staffId === sid && adm.j.account.id !== nurseRes.j.account.id
+    && trail.j.entries.length === 2 && trail.j.entries.every((e) => e.targetStaffId === sid),
+    `admin who is also a nurse: two separate accounts (${nurseRes.j.account && nurseRes.j.account.id}, ${adm.j.account && adm.j.account.id}) under staff ${sid}, linked in the audit log`);
+}
 r = await call('POST', '/oauth/token', null, { grant_type: 'password', username: uname, password: 'whatever-1' });
 ok(r.s === 400 && r.j.reason === 'account_pending', 'cannot sign in before activation');
 const sms = await capturedSms(phone, 'activation');

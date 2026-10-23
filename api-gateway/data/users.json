@@ -33,6 +33,7 @@
     "username": "nurse.ana",
     "name": "Ana Cruz, RN",
     "role": "clinic_staff",
+    "staffId": "ST-001",
     "patients": [],
     "scopes": [
       "clinic:read",
@@ -46,6 +47,7 @@
     "username": "nurse.ben",
     "name": "Ben Lim, RN",
     "role": "clinic_staff",
+    "staffId": "ST-002",
     "patients": [],
     "scopes": [
       "clinic:read",
@@ -59,6 +61,7 @@
     "username": "nurse.carla",
     "name": "Carla Mendoza, RN",
     "role": "clinic_staff",
+    "staffId": "ST-003",
     "patients": [],
     "scopes": [
       "clinic:read",
@@ -72,6 +75,7 @@
     "username": "admin.harold",
     "name": "Harold Bermudez",
     "role": "system_admin",
+    "staffId": "ST-004",
     "patients": [],
     "scopes": [
       "admin"

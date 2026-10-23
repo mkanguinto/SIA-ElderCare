@@ -1,6 +1,9 @@
 // Admin: accounts and the account audit log (Batch 3a). The admin creates accounts and sends activation codes
 // and password-reset links, which go only to the user's phone by SMS - the admin never sees a code, a link or a
 // password. Every action here is written to the audit log with who did it and when.
+// SMS status is shown as it is: a simulated message is "NOT sent", and only a delivery report from the network
+// counts as "Delivered". Nurse and admin accounts belong to a staff identity (ST-001): one person who is both
+// admin and nurse has two separate accounts with the same staff ID.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { ROLE_LABEL, initials, relTime } from '../format';
@@ -11,30 +14,72 @@ const STATUS_CHIP = { active: ['ok', 'check', 'Active'], pending_activation: ['m
 const ACTION_LABEL = {
   account_created: 'Account created', activation_code_sent: 'Activation code sent', account_activated: 'Account activated', activation_failed: 'Activation failed',
   password_reset_sent: 'Password-reset link sent', password_reset_completed: 'Password changed (reset link)', password_reset_failed: 'Password reset failed',
+  sms_delivery_update: 'SMS delivery update',
   account_disabled: 'Account disabled', account_enabled: 'Account enabled', login: 'Signed in', login_failed: 'Sign-in failed', logout: 'Signed out',
   session_locked: 'Locked (inactivity)', session_unlocked: 'Unlocked', session_revoked: 'Session ended by admin', sessions_revoked_all: 'Signed out everywhere by admin',
   patients_linked: 'Elders linked',
 };
 const when = (ts) => new Date(ts).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+// Only 'delivered' is shown as received. simulated / failed say plainly that nothing reached the person.
+const DELIVERY = {
+  simulated: ['critical', 'x', 'NOT sent (simulated)'],
+  failed: ['critical', 'x', 'NOT sent (failed)'],
+  queued: ['moderate', 'clock', 'Waiting for the SMS phone'],
+  sent: ['info', 'message', 'Sent, not confirmed'],
+  delivered: ['ok', 'check', 'Delivered'],
+  unknown: ['moderate', 'alert', 'Delivery unknown'],
+};
+const FOLLOW = ['queued', 'sent', 'unknown'];
+const WHAT = { activation: 'activation code', password_reset: 'password-reset link' };
+
+/** One sentence about a code or link: where it went and what is known about its delivery. */
+function smsText(s, name) {
+  const what = WHAT[s.purpose] || 'message';
+  const until = s.expiresAt ? ` It works until ${when(s.expiresAt)}.` : '';
+  switch (s.delivery) {
+    case 'simulated': return `The ${what} was NOT sent: SMS is simulated (${s.note || 'dry-run'}). ${name} will not receive it.`;
+    case 'failed': return `The ${what} was NOT sent: ${s.note || 'the SMS failed'}. Fix the problem, then send a new one.`;
+    case 'queued': return `The ${what} for ${s.sentTo} is waiting for the clinic's SMS phone to send it. Not delivered yet.${until}`;
+    case 'sent': return `The ${what} left the clinic's SMS phone for ${s.sentTo}${s.deliveryUpdatedAt ? ` at ${when(s.deliveryUpdatedAt)}` : ''}. No delivery report yet, so ask ${name} whether it arrived.${until}`;
+    case 'delivered': return `The ${what} was delivered to ${s.sentTo}${s.deliveryUpdatedAt ? ` (reported ${when(s.deliveryUpdatedAt)})` : ''}.${until}`;
+    default: return `Delivery of the ${what} to ${s.sentTo} is unknown. Ask ${name} whether it arrived.${until}`;
+  }
+}
+const smsTone = (s) => (s.delivery === 'delivered' ? 'ok' : ['simulated', 'failed'].includes(s.delivery) ? 'critical' : 'info');
+
 export function Accounts({ Head }) {
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [tracking, setTracking] = useState(null); // { accountId, name, first }
   const [open, setOpen] = useState(null);
   const [filter, setFilter] = useState('all');
   const load = useCallback(() => api('/api/admin/accounts').then(setData).catch((e) => setData({ error: e.message })), []);
   useEffect(() => { load(); }, [load]);
   const run = async (fn, text) => {
     setMsg(null);
-    try { const r = await fn(); setMsg({ tone: 'ok', text: typeof text === 'function' ? text(r) : text }); await load(); } catch (e) { setMsg({ tone: 'critical', text: e.message }); }
+    try {
+      const r = await fn();
+      if (text) setMsg({ tone: 'ok', text: typeof text === 'function' ? text(r) : text });
+      await load();
+      return r;
+    } catch (e) { setMsg({ tone: 'critical', text: e.message }); return null; }
   };
-  const sms = (s) => `${s.delivery === 'sent' ? 'Sent' : s.delivery === 'simulated' ? 'Simulated (SMS dry-run / number not allow-listed)' : 'NOT sent'} to ${s.sentTo}, valid until ${when(s.expiresAt)}.`;
+  /** After sending a code or link: show what happened and keep following the SMS until it is final. */
+  const sent = (account, s) => setTracking({ accountId: account.id, name: account.name, first: s });
   const rows = data && data.accounts ? data.accounts.filter((a) => filter === 'all' || a.status === filter) : [];
+  const others = (a) => (a.staffId && data.staff ? (data.staff.find((p) => p.staffId === a.staffId) || { accounts: [] }).accounts.filter((x) => x.id !== a.id) : []);
   return (
     <>
       <Head title="Accounts" sub="Create accounts and send activation codes and password-reset links by SMS. You never see a code, link or password; every action is in the audit log." />
+      <SmsCheck />
       {msg && <p className={`m-banner tone-${msg.tone}`} role={msg.tone === 'critical' ? 'alert' : 'status'} style={{ marginBottom: '1rem' }}>{msg.text}</p>}
-      <NewAccount onCreate={(body) => run(() => api('/api/admin/accounts', { method: 'POST', body }), (r) => `${r.account.name} (${r.account.username}) created. Activation code: ${sms(r.activation)}`)} />
+      {tracking && <DeliveryTracker key={`${tracking.accountId}-${tracking.first.sentAt}`} t={tracking} onFinal={load} onClose={() => setTracking(null)} />}
+      <NewAccount staff={(data && data.staff) || []} onCreate={async (body) => {
+        const r = await run(() => api('/api/admin/accounts', { method: 'POST', body }), (x) => `${x.account.name} (${x.account.username}${x.account.staffId ? `, staff ${x.account.staffId}` : ''}) created.`);
+        if (r) sent(r.account, r.activation);
+        return Boolean(r);
+      }} />
       <section className="ad-panel">
         <div className="m-between">
           <h2>All accounts{data && data.total ? ` (${data.total})` : ''}</h2>
@@ -51,19 +96,24 @@ export function Accounts({ Head }) {
               {rows.map((a) => {
                 const [tone, icon, label] = ROLE_CHIP[a.role] || ['', 'user', ROLE_LABEL[a.role]];
                 const [st, si, sl] = STATUS_CHIP[a.status];
+                const linked = others(a);
+                const dv = a.activation && DELIVERY[a.activation.delivery];
                 return (
                   <React.Fragment key={a.id}>
                     <tr>
-                      <td><div className="ad-user"><span className={`m-avatar ${toneFor(a.name)}`} aria-hidden="true">{initials(a.name)}</span><div><strong>{a.name}</strong><span className="m-sub">{a.username} · {a.id}{a.phone ? ` · ${a.phone}` : ''}</span></div></div></td>
+                      <td><div className="ad-user"><span className={`m-avatar ${toneFor(a.name)}`} aria-hidden="true">{initials(a.name)}</span><div><strong>{a.name}</strong>
+                        <span className="m-sub">{a.username} · {a.id}{a.staffId ? ` · staff ${a.staffId}` : ''}{a.phone ? ` · ${a.phone}` : ''}</span>
+                        {linked.length > 0 && <span className="m-sub">Same person: {linked.map((x) => `${x.username} (${x.role === 'system_admin' ? 'admin' : 'nurse'})`).join(', ')}</span>}</div></div></td>
                       <td><Chip tone={tone} icon={icon}>{label}</Chip>{a.patients.length > 0 && <span className="m-sub">{a.patients.join(' · ')}</span>}</td>
                       <td><Chip tone={st} icon={si}>{sl}</Chip>
-                        {a.activation && <span className="m-sub">Code {a.activation.state === 'ok' ? `valid until ${when(a.activation.expiresAt)}` : a.activation.state}{a.activation.delivery === 'failed' ? ' · SMS failed' : ''}</span>}
+                        {a.activation && <span className="m-sub">Code {a.activation.state === 'ok' ? `valid until ${when(a.activation.expiresAt)}` : a.activation.state}</span>}
+                        {dv && <span className="m-sub"><Chip tone={dv[0]} icon={dv[1]}>{dv[2]}</Chip></span>}
                         {a.disabledReason && <span className="m-sub">{a.disabledReason}</span>}</td>
                       <td>{a.lastLoginAt ? relTime(a.lastLoginAt) : '—'}</td>
                       <td>{a.sessions}</td>
                       <td><button type="button" className="m-link" aria-expanded={open === a.id} onClick={() => setOpen(open === a.id ? null : a.id)}>{open === a.id ? 'Close' : 'Manage'}</button></td>
                     </tr>
-                    {open === a.id && <tr><td colSpan={6}><Manage a={a} run={run} sms={sms} /></td></tr>}
+                    {open === a.id && <tr><td colSpan={6}><Manage a={a} run={run} sent={sent} /></td></tr>}
                   </React.Fragment>
                 );
               })}
@@ -75,17 +125,69 @@ export function Accounts({ Head }) {
   );
 }
 
-function Manage({ a, run, sms }) {
+/** Is real SMS ready? Says plainly when codes would not reach anyone. */
+function SmsCheck() {
+  const [c, setC] = useState(null);
+  const check = useCallback(() => { setC(null); api('/api/admin/sms-check').then(setC).catch((e) => setC({ ready: false, problems: [e.message] })); }, []);
+  useEffect(() => { check(); }, [check]);
+  const d = c && c.gateway && c.gateway.device;
+  return (
+    <section className={`m-banner tone-${!c ? 'info' : c.ready ? 'ok' : 'critical'}`} style={{ display: 'block', marginBottom: '1rem' }} aria-live="polite">
+      <div className="m-between">
+        <strong>{!c ? 'Checking SMS…' : c.ready ? 'SMS is live: codes and links are really sent' : 'SMS is NOT ready: codes and links may not reach anyone'}</strong>
+        <button type="button" className="m-link" onClick={check}>Check again</button>
+      </div>
+      {c && c.problems && c.problems.length > 0 && <ul style={{ margin: '.4rem 0 0 1.1rem' }}>{c.problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+      {c && c.mode && (
+        <p className="m-caption" style={{ marginTop: '.4rem' }}>
+          {c.mode.reason}{c.mode.live && c.mode.allowlistSize ? ' (other numbers are simulated, not sent)' : ''}
+          {d ? ` · SMS phone ${d.model || ''} ${d.enabled ? 'enabled' : 'disabled'}, last online ${d.lastSeenAt ? relTime(d.lastSeenAt) : 'unknown'}` : ''}
+          {typeof c.sentToday === 'number' ? ` · ${c.sentToday} of ${c.dailyLimit} texts used today` : ''}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Follows a code or link after it was sent, until it is delivered, failed, or 3 minutes pass. */
+function DeliveryTracker({ t, onFinal, onClose }) {
+  const [s, setS] = useState(t.first);
+  const [tries, setTries] = useState(0);
+  const following = FOLLOW.includes(s.delivery) && tries < 36;
+  useEffect(() => {
+    if (!following) return undefined;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api(`/api/admin/accounts/${t.accountId}/messages`);
+        const next = r[s.purpose === 'password_reset' ? 'passwordReset' : 'activation'];
+        if (next) { setS(next); if (!FOLLOW.includes(next.delivery)) onFinal(); }
+      } catch { /* try again on the next tick */ }
+      setTries((n) => n + 1);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [following, tries, s.purpose, t.accountId, onFinal]);
+  const [tone, icon, label] = DELIVERY[s.delivery] || DELIVERY.unknown;
+  return (
+    <div className={`m-banner tone-${smsTone(s)}`} role={smsTone(s) === 'critical' ? 'alert' : 'status'} style={{ marginBottom: '1rem', display: 'block' }}>
+      <div className="m-between"><Chip tone={tone} icon={icon}>{label}</Chip><button type="button" className="m-link" onClick={onClose}>Dismiss</button></div>
+      <p style={{ margin: '.4rem 0 0' }}>{smsText(s, t.name)}</p>
+      {following && <p className="m-caption">Checking with the SMS provider every 5 seconds…</p>}
+    </div>
+  );
+}
+
+function Manage({ a, run, sent }) {
   const [sessions, setSessions] = useState(null);
   const [reason, setReason] = useState('');
   const loadSessions = useCallback(() => api(`/api/admin/accounts/${a.id}/sessions`).then((r) => setSessions(r.sessions)).catch(() => setSessions([])), [a.id]);
   useEffect(() => { loadSessions(); }, [loadSessions]);
   const post = (path, body) => api(`/api/admin/accounts/${a.id}/${path}`, { method: 'POST', body });
+  const send = async (path, key) => { const r = await run(() => post(path)); if (r) sent(a, r[key]); };
   return (
     <div className="ad-manage">
       <div className="ad-inline-form" style={{ marginTop: 0 }}>
-        {a.status === 'pending_activation' && <button type="button" className="m-btn" onClick={() => run(() => post('activation-code'), (r) => `New activation code for ${a.name}: ${sms(r.activation)} The old code no longer works.`)}>Send a new activation code</button>}
-        {a.status === 'active' && <button type="button" className="m-btn" onClick={() => window.confirm(`Send ${a.name} a password-reset link by SMS?`) && run(() => post('password-reset'), (r) => `Password-reset link for ${a.name}: ${sms(r.passwordReset)}`)}>Send password-reset link</button>}
+        {a.status === 'pending_activation' && <button type="button" className="m-btn" onClick={() => send('activation-code', 'activation')}>Send a new activation code</button>}
+        {a.status === 'active' && <button type="button" className="m-btn" onClick={() => window.confirm(`Send ${a.name} a password-reset link by SMS?`) && send('password-reset', 'passwordReset')}>Send password-reset link</button>}
         {a.status === 'disabled'
           ? <button type="button" className="m-btn" onClick={() => run(() => post('enable'), `${a.name} enabled`)}>Enable account</button>
           : (
@@ -114,21 +216,38 @@ function Manage({ a, run, sms }) {
 }
 
 const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'System admin'], ['family_member', 'Family member (link via verification)']];
-function NewAccount({ onCreate }) {
-  const [f, setF] = useState({ role: 'caregiver', name: '', username: '', phone: '', patients: '' });
+const STAFF = ['clinic_staff', 'system_admin'];
+function NewAccount({ staff, onCreate }) {
+  const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '', patients: '' };
+  const [f, setF] = useState(blank);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const isStaff = STAFF.includes(f.role);
+  // People who could get an account with this role (they do not have one yet).
+  const people = isStaff ? staff.filter((p) => !p.accounts.some((x) => x.role === f.role)) : [];
+  const person = f.staffId && staff.find((p) => p.staffId === f.staffId);
   return (
     <section className="ad-panel">
       <h2>New account</h2>
-      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Family members are linked to an elder only after the clinic verifies them.</p>
-      <form className="ad-inline-form" onSubmit={(e) => {
+      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Family members are linked to an elder only after the clinic verifies them.
+        A nurse who is also an admin gets a second, separate account linked to the same staff ID: separate password and sessions, one person in the audit log.</p>
+      <form className="ad-inline-form" onSubmit={async (e) => {
         e.preventDefault();
-        onCreate({ role: f.role, name: f.name.trim(), username: f.username.trim(), phone: f.phone.trim(), ...(f.role === 'caregiver' && f.patients.trim() ? { patients: f.patients.split(/[\s,]+/).filter(Boolean) } : {}) });
-        setF({ ...f, name: '', username: '', phone: '', patients: '' });
+        const ok = await onCreate({
+          role: f.role, name: (person ? person.name : f.name).trim(), username: f.username.trim(), phone: f.phone.trim(),
+          ...(isStaff && f.staffId ? { staffId: f.staffId } : {}),
+          ...(f.role === 'caregiver' && f.patients.trim() ? { patients: f.patients.split(/[\s,]+/).filter(Boolean) } : {}),
+        });
+        if (ok) setF({ ...blank, role: f.role });
       }}>
-        <select value={f.role} onChange={set('role')} aria-label="Role">{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <input value={f.name} onChange={set('name')} placeholder="Full name" aria-label="Full name" minLength={2} required />
-        <input value={f.username} onChange={set('username')} placeholder="Username, e.g. caregiver.liza" aria-label="Username" pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required />
+        <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, staffId: '' })} aria-label="Role">{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        {isStaff && (
+          <select value={f.staffId} onChange={set('staffId')} aria-label="Staff member">
+            <option value="">New staff member (new staff ID)</option>
+            {people.map((p) => <option key={p.staffId} value={p.staffId}>Same person as {p.name} ({p.staffId}, {p.accounts.map((x) => x.username).join(', ')})</option>)}
+          </select>
+        )}
+        <input value={person ? person.name : f.name} onChange={set('name')} readOnly={Boolean(person)} placeholder="Full name" aria-label="Full name" minLength={2} required />
+        <input value={f.username} onChange={set('username')} placeholder={f.role === 'system_admin' ? 'Username, e.g. admin.ana' : 'Username, e.g. caregiver.liza'} aria-label="Username" pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required />
         <input value={f.phone} onChange={set('phone')} placeholder="Mobile, e.g. 0917 123 4567" aria-label="Mobile number" inputMode="tel" required />
         {f.role === 'caregiver' && <input value={f.patients} onChange={set('patients')} placeholder="Elders (IDs), e.g. P-1003" aria-label="Elder IDs" />}
         <button type="submit" className="m-btn is-dark">Create and send code</button>
@@ -140,20 +259,29 @@ function NewAccount({ onCreate }) {
 export function AuditLog({ Head }) {
   const [data, setData] = useState(null);
   const [action, setAction] = useState('');
+  const [staffId, setStaffId] = useState('');
+  const [staff, setStaff] = useState([]);
+  useEffect(() => { api('/api/admin/accounts').then((r) => setStaff(r.staff || [])).catch(() => {}); }, []);
   useEffect(() => {
     setData(null);
-    api(`/api/admin/audit?limit=200${action ? `&action=${action}` : ''}`).then(setData).catch((e) => setData({ error: e.message }));
-  }, [action]);
+    api(`/api/admin/audit?limit=200${action ? `&action=${action}` : ''}${staffId ? `&staffId=${staffId}` : ''}`).then(setData).catch((e) => setData({ error: e.message }));
+  }, [action, staffId]);
   return (
     <>
-      <Head title="Audit log" sub="Every account action - creation, activation, sign-ins, password resets, disabling, session changes - with who did it, when and from where. Codes, links and passwords are never recorded." />
+      <Head title="Audit log" sub="Every account action - creation, activation, sign-ins, password resets, disabling, session changes, SMS delivery - with who did it, when and from where. Codes, links and passwords are never recorded." />
       <section className="ad-panel">
         <div className="m-between">
           <h2>Account actions</h2>
-          <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action" className="ad-select">
-            <option value="">All actions</option>
-            {Object.entries(ACTION_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-          </select>
+          <div className="m-row" style={{ gap: '.5rem', flexWrap: 'wrap' }}>
+            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} aria-label="Filter by staff member" className="ad-select">
+              <option value="">All people</option>
+              {staff.map((p) => <option key={p.staffId} value={p.staffId}>{p.name} ({p.staffId}, {p.accounts.length} account{p.accounts.length === 1 ? '' : 's'})</option>)}
+            </select>
+            <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action" className="ad-select">
+              <option value="">All actions</option>
+              {Object.entries(ACTION_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
         </div>
         {!data && <p>Loading…</p>}
         {data && data.error && <p className="m-error">{data.error}</p>}
@@ -165,8 +293,8 @@ export function AuditLog({ Head }) {
                 <tr key={e.id}>
                   <td title={new Date(e.at).toISOString()}>{when(e.at)}</td>
                   <td>{ACTION_LABEL[e.action] || e.action}</td>
-                  <td>{e.actorId}<span className="m-sub">{e.actorRole ? e.actorRole.replace('_', ' ') : ''}{e.ip ? ` · ${e.ip}` : ''}</span></td>
-                  <td>{e.targetId || '—'}</td>
+                  <td>{e.actorId}<span className="m-sub">{[e.actorStaffId && `staff ${e.actorStaffId}`, e.actorRole && e.actorRole.replace('_', ' '), e.ip].filter(Boolean).join(' · ')}</span></td>
+                  <td>{e.targetId || '—'}{e.targetStaffId && <span className="m-sub">staff {e.targetStaffId}</span>}</td>
                   <td className="m-caption">{Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')}</td>
                 </tr>
               ))}

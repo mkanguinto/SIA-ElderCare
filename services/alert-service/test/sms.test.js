@@ -64,3 +64,13 @@ test('webhook signature: HMAC-SHA256 hex over the raw body', () => {
   assert.strictEqual(verifyWebhookSignature(raw, sig.replace(/.$/, '0'), secret), false);
   assert.strictEqual(verifyWebhookSignature(raw, undefined, secret), false);
 });
+
+test('TextBee batch outcome: only a delivery report counts as delivered; accepted is not sent', () => {
+  const { batchOutcome } = require('../src/textbeeClient');
+  assert.strictEqual(batchOutcome({ status: 'pending', pendingCount: 1 }), 'queued');
+  assert.strictEqual(batchOutcome({ status: 'processing', dispatchedCount: 1 }), 'queued');
+  assert.strictEqual(batchOutcome({ status: 'completed', sentCount: 1 }), 'sent');
+  assert.strictEqual(batchOutcome({ status: 'completed', deliveredCount: 1 }), 'delivered');
+  assert.strictEqual(batchOutcome({ status: 'failed', failureCount: 1 }), 'failed');
+  assert.strictEqual(batchOutcome({ status: 'unknown', unknownCount: 1 }), 'unknown');
+});

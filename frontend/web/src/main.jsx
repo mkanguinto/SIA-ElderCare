@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { currentUser, logout, onSessionChange } from './api';
+import { currentUser, hasNotice, requestSignOut, onSessionChange } from './api';
 import { matchRoute, navigate, usePath } from './router';
 import { ToastProvider } from './toast';
 import Shell from './components/Shell';
@@ -68,7 +68,8 @@ function App() {
   // all page state is dropped because the layout and the page are keyed by the user ID below.
   useEffect(() => onSessionChange((next) => {
     setUser(next);
-    navigate(next ? homeFor(next.role) : '/', { replace: true });
+    // Signed out for a reason (another device, session ended): go to Sign in, which explains it.
+    navigate(next ? homeFor(next.role) : hasNotice() ? '/signin' : '/', { replace: true });
   }), []);
 
   const { route, params } = resolve(path);
@@ -76,7 +77,7 @@ function App() {
   const Public = PUBLIC[path.replace(/\/+$/, '') || '/'];
 
   useEffect(() => {
-    if (!user && !Public) navigate(path === '/login' ? '/signin' : '/', { replace: true });
+    if (!user && !Public) navigate(path === '/login' || hasNotice() ? '/signin' : '/', { replace: true });
     else if (user && !allowed) navigate(homeFor(user.role), { replace: true });
   }, [user, path, allowed, Public]);
 
@@ -95,7 +96,7 @@ function App() {
   return (
     <SessionLock user={user}>
       <ToastProvider key={user.id}>
-        <Shell key={user.id} user={user} onSignOut={logout}>
+        <Shell key={user.id} user={user} onSignOut={requestSignOut}>
           <Page key={path} user={user} params={params} />
         </Shell>
       </ToastProvider>

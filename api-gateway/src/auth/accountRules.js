@@ -19,6 +19,10 @@ const DEFAULT_SCOPES = {
   clinic_staff: ['clinic:read', 'clinic:write', 'alerts:dispatch'],
   system_admin: ['admin'],
 };
+// Staff accounts (nurse, admin) belong to a staff identity: one person who is both admin and nurse has two
+// separate accounts with the same staff ID, so the audit trail links them without merging the roles.
+const STAFF_ROLES = ['clinic_staff', 'system_admin'];
+const STAFF_ID_RE = /^ST-\d{3,6}$/;
 const TOKEN_TTL_MIN = { activation: 24 * 60, password_reset: 60 };
 const MAX_ATTEMPTS = 5;
 // No 0/O, 1/I/L: the code is read off a phone screen and typed by older users.
@@ -108,8 +112,14 @@ function validateNewAccount(b) {
   if (patients.length && !['caregiver', 'family_member'].includes(b.role)) errors.push('Only caregivers and family members are linked to specific elders');
   // Family accounts are linked to an elder only through the clinic's identity verification (Batch 3b).
   if (b.role === 'family_member' && patients.length) errors.push('Family members are linked to an elder through family verification, not directly');
+  let staffId = null;
+  if (b.staffId !== undefined && b.staffId !== null && b.staffId !== '') {
+    if (!STAFF_ROLES.includes(b.role)) errors.push('Only nurse and admin accounts have a staff ID');
+    else if (typeof b.staffId !== 'string' || !STAFF_ID_RE.test(b.staffId.trim().toUpperCase())) errors.push('staffId must look like ST-001');
+    else staffId = b.staffId.trim().toUpperCase();
+  }
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: { username, name, role: b.role, phone, patients, scopes: DEFAULT_SCOPES[b.role] } };
+  return { ok: true, value: { username, name, role: b.role, phone, patients, scopes: DEFAULT_SCOPES[b.role], staffId } };
 }
 
 /** Next id for a role from the ids already taken: U-CG-001, U-CG-002, ... */
@@ -117,6 +127,25 @@ function nextAccountId(role, takenIds) {
   const prefix = ID_PREFIX[role];
   const max = takenIds.filter((id) => id.startsWith(prefix)).map((id) => Number(id.slice(prefix.length)) || 0).reduce((a, n) => Math.max(a, n), 0);
   return `${prefix}${String(max + 1).padStart(3, '0')}`;
+}
+
+/** Next free staff ID: ST-001, ST-002, ... */
+function nextStaffId(takenIds) {
+  const max = takenIds.filter((id) => id && STAFF_ID_RE.test(id)).map((id) => Number(id.slice(3))).reduce((a, n) => Math.max(a, n), 0);
+  return `ST-${String(max + 1).padStart(3, '0')}`;
+}
+
+/**
+ * Linking a new staff account to an existing staff identity: the person must exist, must not have an account
+ * with this role yet, and the name must match (catches linking the wrong person).
+ * @returns {null | {status:number, message:string}}
+ */
+function staffLinkProblem(staffId, role, name, linked) {
+  if (!linked.length) return { status: 422, message: `There is no staff member ${staffId}` };
+  if (linked.some((a) => a.role === role)) return { status: 409, message: `${staffId} already has a ${role === 'system_admin' ? 'admin' : 'nurse'} account (${linked.find((a) => a.role === role).username})` };
+  const norm = (x) => String(x).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (norm(linked[0].name) !== norm(name)) return { status: 422, message: `${staffId} is ${linked[0].name}. Use the same name, or leave the staff ID empty for a different person.` };
+  return null;
 }
 
 /* ------------------------------ sessions ------------------------------ */
@@ -150,6 +179,6 @@ function idleLimitMinutes(role, env = process.env) {
 module.exports = {
   ROLES, DEFAULT_SCOPES, TOKEN_TTL_MIN, MAX_ATTEMPTS, TOKEN_MESSAGE,
   newActivationCode, normalizeCode, newResetToken, hashSecret, tokenState,
-  normalizePhone, maskPhone, passwordProblems, validateNewAccount, nextAccountId,
+  normalizePhone, maskPhone, passwordProblems, validateNewAccount, nextAccountId, STAFF_ROLES, nextStaffId, staffLinkProblem,
   DEVICE_CLASSES, deviceClass, sessionsToReplace, idleLimitMinutes,
 };

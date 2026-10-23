@@ -1,6 +1,6 @@
 // Screens shared by the caregiver and family apps: alerts list, alert detail (F2), profile.
 import React, { useEffect, useState } from 'react';
-import { api, logout } from '../api';
+import { api, requestSignOut } from '../api';
 import { Link, navigate } from '../router';
 import { ROLE_LABEL, relTime } from '../format';
 import Icon from './icons';
@@ -157,7 +157,7 @@ export function Profile({ user, back, desktopTo, extra }) {
       {extra}
       <div className="m-stack" style={{ marginTop: '1.5rem' }}>
         {desktopTo && <button type="button" className="m-btn is-block" onClick={() => navigate(desktopTo)}><Icon name="monitor" />{tr('Open the desktop view', 'Buksan ang desktop view')}</button>}
-        <button type="button" className="m-btn is-block" onClick={logout}><Icon name="logout" />{tr('Log out', 'Mag-log out')}</button>
+        <button type="button" className="m-btn is-block" onClick={requestSignOut}><Icon name="logout" />{tr('Log out', 'Mag-log out')}</button>
       </div>
     </>
   );

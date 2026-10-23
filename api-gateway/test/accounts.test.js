@@ -23,7 +23,21 @@ process.env.TOKEN_STORE_FILE = 'memory';
 
 const upstream = express();
 upstream.use(express.json());
-upstream.post('/internal/messages/sms', (req, res) => res.json({ status: 'simulated' }));
+// Mock SMS service: ...0777 is a real (allow-listed) number that TextBee accepts, ...0666 fails, the rest are simulated.
+const batchSteps = ['sent', 'delivered'];
+let smsLive = false;
+upstream.post('/internal/messages/sms', (req, res) => {
+  if (req.body.to.endsWith('0666')) return res.status(502).json({ error: 'sms_failed', status: 'failed', message: 'The SMS provider rejected the message (TextBee 400)' });
+  if (req.body.to.endsWith('0777')) return res.json({ status: 'queued', note: null, ref: 'batch-0777' });
+  return res.json({ status: 'simulated', note: 'Recipient is not on SMS_RECIPIENT_ALLOWLIST', ref: null });
+});
+upstream.get('/internal/messages/sms/:ref', (req, res) => res.json({ status: batchSteps.shift() || 'delivered', note: null }));
+upstream.get('/internal/messages/sms-health', (req, res) => res.json({
+  mode: smsLive ? { provider: 'textbee', live: true, reason: 'Live: only 2 allow-listed number(s) receive real texts', allowlistSize: 2 }
+    : { provider: 'textbee', live: false, reason: 'SMS_DRY_RUN=true (messages are logged, not sent)', allowlistSize: 2 },
+  gateway: { devices: 1, device: { model: 'M2007J20CG', enabled: true, lastSeenAt: new Date().toISOString() }, needsSmsPermission: false },
+  sentToday: 3, dailyLimit: 40,
+}));
 upstream.all('*', (req, res) => res.json({ path: req.originalUrl }));
 const upstreamServer = upstream.listen(0);
 const upstreamUrl = `http://127.0.0.1:${upstreamServer.address().port}`;
@@ -212,4 +226,80 @@ test('every account action is in the audit log with who and when', async () => {
   assert.ok(created.at);
   assert.ok(!JSON.stringify(r.body).match(/code is|reset-password#|scrypt\$/), 'no secrets in the audit log');
   assert.strictEqual((await call('GET', '/api/admin/audit', { token: (await token('nurse.ana')).access_token })).status, 403);
+});
+
+test('simulated SMS is reported as NOT sent, never as delivered', async () => {
+  const admin = (await token('admin.harold')).access_token;
+  const r = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'caregiver.sim', name: 'Sim Ulated', role: 'caregiver', phone: '09175550123' } });
+  assert.strictEqual(r.status, 201);
+  assert.strictEqual(r.body.activation.delivery, 'simulated');
+  assert.match(r.body.activation.note, /ALLOWLIST/);
+  const m = await call('GET', `/api/admin/accounts/${r.body.account.id}/messages`, { token: admin });
+  assert.strictEqual(m.body.activation.delivery, 'simulated', 'stays simulated: nothing to follow');
+  const failed = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'caregiver.fail', name: 'Fai Led', role: 'caregiver', phone: '09175550666' } });
+  assert.strictEqual(failed.body.activation.delivery, 'failed');
+  assert.match(failed.body.activation.note, /rejected/);
+});
+
+test('real SMS: queued, then followed to sent and delivered from the provider; each change audited', async () => {
+  const admin = (await token('admin.harold')).access_token;
+  const r = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'caregiver.real', name: 'Real Person', role: 'caregiver', phone: '09175550777' } });
+  assert.strictEqual(r.body.activation.delivery, 'queued', 'accepted by the provider is not delivered');
+  const id = r.body.account.id;
+  assert.strictEqual((await call('GET', `/api/admin/accounts/${id}/messages`, { token: admin })).body.activation.delivery, 'sent');
+  assert.strictEqual((await call('GET', `/api/admin/accounts/${id}/messages`, { token: admin })).body.activation.delivery, 'delivered');
+  const log = await call('GET', `/api/admin/audit?targetId=${id}&action=sms_delivery_update`, { token: admin });
+  assert.deepStrictEqual(log.body.entries.map((e) => e.details.delivery), ['delivered', 'sent']);
+  assert.strictEqual(log.body.entries[0].actorId, 'system');
+});
+
+test('one person, separate admin and nurse accounts linked by a staff ID', async () => {
+  const admin = (await token('admin.harold')).access_token;
+  const list = (await call('GET', '/api/admin/accounts', { token: admin })).body;
+  const ana = list.accounts.find((a) => a.username === 'nurse.ana');
+  assert.strictEqual(ana.staffId, 'ST-001');
+  assert.ok(list.staff.find((p) => p.staffId === 'ST-001'));
+
+  const wrongName = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'admin.ana', name: 'Someone Else', role: 'system_admin', phone: '09175550124', staffId: 'ST-001' } });
+  assert.strictEqual(wrongName.status, 422);
+  const sameRole = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'nurse.ana2', name: ana.name, role: 'clinic_staff', phone: '09175550124', staffId: 'ST-001' } });
+  assert.strictEqual(sameRole.status, 409, 'a person has one account per role');
+  assert.strictEqual((await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'caregiver.st', name: 'X Y', role: 'caregiver', phone: '09175550124', staffId: 'ST-001' } })).status, 422);
+
+  const linked = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'admin.ana', name: ana.name, role: 'system_admin', phone: '09175550125', staffId: 'st-001' } });
+  assert.strictEqual(linked.status, 201, JSON.stringify(linked.body));
+  assert.strictEqual(linked.body.account.staffId, 'ST-001');
+  assert.notStrictEqual(linked.body.account.id, ana.id, 'a separate account');
+  const fresh = await call('POST', '/api/admin/accounts', { token: admin, body: { username: 'nurse.dina', name: 'Dina Cruz', role: 'clinic_staff', phone: '09175550126' } });
+  assert.match(fresh.body.account.staffId, /^ST-\d{3}$/);
+  assert.notStrictEqual(fresh.body.account.staffId, 'ST-001');
+
+  // Ana's admin account is activated and signs in; it cannot run account actions on Ana's nurse account.
+  const code = codeIn(await sms('+639175550125', 'activation'));
+  assert.strictEqual((await call('POST', '/auth/activate', { body: { username: 'admin.ana', code, password: 'Sampaguita2026' } })).status, 200);
+  const anaAdmin = (await signIn('admin.ana', 'Sampaguita2026')).body.access_token;
+  const own = await call('POST', `/api/admin/accounts/${ana.id}/password-reset`, { token: anaAdmin });
+  assert.strictEqual(own.status, 409);
+  assert.strictEqual(own.body.error, 'own_account');
+  assert.strictEqual((await call('POST', `/api/admin/accounts/${ana.id}/disable`, { token: anaAdmin, body: { reason: 'testing' } })).status, 409);
+  // ...and is still only an admin: no clinical data.
+  assert.strictEqual((await call('GET', '/api/clinic/queue', { token: anaAdmin })).status, 403);
+
+  // The audit trail shows both accounts under one staff ID.
+  const trail = (await call('GET', '/api/admin/audit?staffId=ST-001', { token: admin })).body.entries;
+  assert.ok(trail.some((e) => e.targetId === linked.body.account.id && e.action === 'account_created' && e.targetStaffId === 'ST-001'));
+  assert.ok(trail.some((e) => e.actorId === linked.body.account.id && e.actorStaffId === 'ST-001'), 'actions by the admin account carry the staff ID');
+});
+
+test('SMS check says plainly when codes would not reach anyone', async () => {
+  const admin = (await token('admin.harold')).access_token;
+  smsLive = false;
+  const off = await call('GET', '/api/admin/sms-check', { token: admin });
+  assert.strictEqual(off.body.ready, false);
+  assert.match(off.body.problems[0], /NOT sent/);
+  smsLive = true;
+  const on = await call('GET', '/api/admin/sms-check', { token: admin });
+  assert.strictEqual(on.body.ready, true, JSON.stringify(on.body.problems));
+  const nurse = (await token('nurse.carla')).access_token;
+  assert.strictEqual((await call('GET', '/api/admin/sms-check', { token: nurse })).status, 403);
 });

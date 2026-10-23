@@ -2,10 +2,11 @@
 // A case moves to another nurse only when that nurse accepts the handover; until then it stays with the
 // outgoing nurse. Duty status is set here by the nurse and has nothing to do with signing in or out.
 import React, { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, clearDraft } from '../api';
 import { Link, navigate } from '../router';
 import { relTime } from '../format';
 import Icon from './icons';
+import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast, isToday, clock, manilaDay, toneFor, PRIORITY_TONE } from './kit';
 
 const BASE = '/m/nurse';
@@ -226,19 +227,24 @@ export function HandoverForm({ user, patientId }) {
   const tr = useT();
   const [care, setCare] = useState(null);
   const [item, setItem] = useState(undefined);
-  const [to, setTo] = useState(null);
-  const [concern, setConcern] = useState('');
-  const [actionTaken, setActionTaken] = useState('');
-  const [pendingAction, setPendingAction] = useState('');
-  const [dueIn, setDueIn] = useState(4);
+  const draft = useRestoredDraft(`handover:${patientId}`);
+  const d = draft ? draft.data : {};
+  const [to, setTo] = useState(d.to || null);
+  const [concern, setConcern] = useState(d.concern || '');
+  const [actionTaken, setActionTaken] = useState(d.actionTaken || '');
+  const [pendingAction, setPendingAction] = useState(d.pendingAction || '');
+  const [dueIn, setDueIn] = useState(d.dueIn || 4);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  // The concern is pre-filled from the queue; only what the nurse wrote is worth keeping as a draft.
+  useKeepDraft(`handover:${patientId}`, { to, concern, actionTaken, pendingAction, dueIn }, !done && Boolean(actionTaken.trim() || pendingAction.trim()));
   useEffect(() => {
     api(`/api/clinic/patients/${encodeURIComponent(patientId)}/care`).then(setCare).catch((e) => setCare({ error: e.message }));
     api(`/api/clinic/queue?patientId=${encodeURIComponent(patientId)}`).then((r) => {
       const it = r.items[0] || null;
       setItem(it);
-      if (it) setConcern(it.reasons.slice(0, 2).map((x) => x.detail).join('; ').slice(0, 300));
+      if (it && !d.concern) setConcern(it.reasons.slice(0, 2).map((x) => x.detail).join('; ').slice(0, 300));
     }).catch(() => setItem(null));
   }, [patientId]);
   const back = `${BASE}/patients/${patientId}`;
@@ -254,6 +260,8 @@ export function HandoverForm({ user, patientId }) {
     setError(null);
     try {
       await api('/api/clinic/handover', { method: 'POST', body: { patientId, toNurseId: to, concern, actionTaken, pendingAction, dueTime: dueTime.toISOString() } });
+      setDone(true);
+      clearDraft(`handover:${patientId}`);
       navigate(`${BASE}?tab=handover`);
     } catch (err) { setError((err.details || [err.message]).join('. ')); setBusy(false); }
   }
@@ -265,6 +273,7 @@ export function HandoverForm({ user, patientId }) {
           <span className={`m-avatar ${toneFor(care.patient.name)}`} aria-hidden="true" style={{ width: '2.5rem', height: '2.5rem', fontSize: '.875rem' }}>{avatar(care.patient.name)}</span>
           <div><strong>{care.patient.name}</strong><p className="m-caption">{care.careTeam.name}{item ? ` · ${item.priority}` : ''}</p></div>
         </div>
+        <DraftNotice draft={draft} onDiscard={() => { setTo(null); setActionTaken(''); setPendingAction(''); setDueIn(4); }} />
         <Banner tone="info" icon="swap">{tr('You keep the case until the other nurse accepts it.', 'Sa iyo pa rin ang kaso hanggang tanggapin ito ng ibang nars.')}</Banner>
         <fieldset className="m-fieldset"><legend>{tr('Hand over to', 'Ipasa kay')}</legend>
           <div className="m-stack" style={{ gap: '.5rem' }}>

@@ -64,7 +64,7 @@ const getAccount = (id) => store.getById(id);
 /** Safe view of an account for API responses - never the password hash. */
 function publicAccount(a) {
   return {
-    id: a.id, username: a.username, name: a.name, role: a.role, patients: a.patients || [], scopes: a.scopes || [],
+    id: a.id, username: a.username, name: a.name, role: a.role, staffId: a.staffId || null, patients: a.patients || [], scopes: a.scopes || [],
     status: a.status, disabled: a.status === 'disabled', phone: a.phone ? `+63 9•• ••• ${a.phone.slice(-4)}` : null,
     createdAt: a.createdAt, createdBy: a.createdBy, activatedAt: a.activatedAt, lastLoginAt: a.lastLoginAt,
     passwordChangedAt: a.passwordChangedAt, disabledAt: a.disabledAt, disabledReason: a.disabledReason,
@@ -90,11 +90,17 @@ async function updateUserPatients(userId, { add = [], remove = [] }) {
   return { id: updated.id, username: updated.username, name: updated.name, role: updated.role, patients: updated.patients };
 }
 
-/** Appends to the account audit log: who did what to which account, from where. */
-function audit(req, action, targetId, details = {}) {
+const staffIdOf = async (id) => (id ? ((await store.getById(id)) || {}).staffId || null : null);
+
+/**
+ * Appends to the account audit log: who did what to which account, from where. The staff IDs of the actor and
+ * the target are recorded too, so one person's admin and nurse accounts show up together.
+ */
+async function audit(req, action, targetId, details = {}) {
   const actor = req && req.user ? { actorId: req.user.id, actorRole: req.user.role } : { actorId: details.actorId || 'anonymous', actorRole: details.actorRole || null };
   const { actorId, actorRole, ...rest } = details;
-  return store.audit({ ...actor, action, targetId: targetId || null, ip: req ? req.ip : null, details: rest });
+  const [actorStaffId, targetStaffId] = await Promise.all([staffIdOf(req && req.user ? req.user.id : null), staffIdOf(targetId)]);
+  return store.audit({ ...actor, actorStaffId, action, targetId: targetId || null, targetStaffId, ip: req ? req.ip : null, details: rest });
 }
 
 module.exports = { hashPassword, verifyPassword, verifyLogin, findByCredentials, findById, getAccount, publicAccount, listUsers, updateUserPatients, audit, store };

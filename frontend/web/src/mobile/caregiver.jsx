@@ -1,6 +1,6 @@
 // Caregiver phone app (Figma C1-C6): home, 3-step check-in, sent screen, offline outbox, medicines, alerts, profile.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, loadDraft } from '../api';
 import { Link, navigate } from '../router';
 import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
@@ -12,6 +12,7 @@ import { buildPlan, useChecklists, weekDays } from './plan';
 import { useReminders, remindersSupported, remindersOn, enableReminders, disableReminders } from './reminders';
 import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import { StatusChip, StatusTimeline, statusLine } from './status';
+import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
   isToday, clock, hhmm, manilaHour, toneFor, shortName, CLINIC_PHONE, EMERGENCY_PHONE, TONE,
@@ -87,6 +88,8 @@ function Home({ user }) {
   const weather = useOutsideWeather(elders && elders[0]);
   const plan = useMemo(() => (elders ? buildPlan(elders, checklists) : []), [elders, checklists]);
 
+  const [unsent] = useState(() => loadDraft('checkin'));
+
   if (!online || outbox.length) return <Offline user={user} outbox={outbox} online={online} alerts={newAlerts} />;
   if (!elders) return <><Greeting user={user} alertsTo={`${BASE}/alerts`} /><Loader /></>;
 
@@ -101,6 +104,12 @@ function Home({ user }) {
   return (
     <>
       <Greeting user={user} alerts={newAlerts} alertsTo={`${BASE}/alerts`} />
+      {unsent && (
+        <Banner tone="warning" icon="clipboard" role="status">
+          {tr('You have a check-in that was not sent yet.', 'May check-in na hindi pa naipadala.')}{' '}
+          <Link to={`${BASE}/check-in?patient=${encodeURIComponent(unsent.data.patientId)}`} className="m-link" style={{ padding: 0, minHeight: 0 }}>{tr('Continue it', 'Ituloy')}</Link>
+        </Banner>
+      )}
       <section className="m-hero">
         <div className="m-row" style={{ alignItems: 'flex-start' }}>
           <div className="m-grow">
@@ -499,22 +508,33 @@ function CheckIn({ user }) {
   const tr = useT();
   const { lang } = usePrefs();
   const [elders] = useElders(user);
-  const [patientId, setPatientId] = useState(() => new URLSearchParams(window.location.search).get('patient') || user.patients[0]);
+  const fromUrl = new URLSearchParams(window.location.search).get('patient');
+  const saved = useRestoredDraft('checkin');
+  // An unsent check-in (kept through a lock or a session that ended) comes back unless another elder was chosen.
+  const draft = saved && (!fromUrl || fromUrl === saved.data.patientId) ? saved : null;
+  const d = draft ? draft.data : {};
+  const [patientId, setPatientId] = useState(() => fromUrl || d.patientId || user.patients[0]);
   const [picking, setPicking] = useState(false);
-  const [step, setStep] = useState(1);
-  const [vitals, setVitals] = useState(EMPTY_VITALS);
-  const [missing, setMissingState] = useState({});
+  const [step, setStep] = useState(d.step || 1);
+  const [vitals, setVitals] = useState(d.vitals || EMPTY_VITALS);
+  const [missing, setMissingState] = useState(d.missing || {});
   const setMissing = (k) => (reason) => setMissingState((m) => { const next = { ...m }; if (reason) next[k] = reason; else delete next[k]; return next; });
   const missingFor = (k) => ({ value: missing[k], onChange: setMissing(k) });
-  const [given, setGiven] = useState({});
-  const [reasons, setReasons] = useState({});
-  const [symptoms, setSymptoms] = useState([]);
-  const [mobility, setMobility] = useState(null);
-  const [mood, setMood] = useState(null);
-  const [notes, setNotes] = useState('');
+  const [given, setGiven] = useState(d.given || {});
+  const [reasons, setReasons] = useState(d.reasons || {});
+  const [symptoms, setSymptoms] = useState(d.symptoms || []);
+  const [mobility, setMobility] = useState(d.mobility || null);
+  const [mood, setMood] = useState(d.mood || null);
+  const [notes, setNotes] = useState(d.notes || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(null);
+  const entered = Object.values(vitals).some((x) => x !== '') || Object.keys(missing).length > 0 || Object.keys(given).length > 0
+    || symptoms.length > 0 || Boolean(mobility || mood || notes.trim());
+  useKeepDraft('checkin', { patientId, step, vitals, missing, given, reasons, symptoms, mobility, mood, notes }, entered && !sent);
+  function discardDraft() {
+    setStep(1); setVitals(EMPTY_VITALS); setMissingState({}); setGiven({}); setReasons({}); setSymptoms([]); setMobility(null); setMood(null); setNotes('');
+  }
 
   const patient = elders && elders.find((e) => e.id === patientId);
   const [tried, setTried] = useState(false);
@@ -620,6 +640,7 @@ function CheckIn({ user }) {
         ))}
       </nav>
 
+      <DraftNotice draft={draft} onDiscard={discardDraft} />
       {step === 1 && (
         <div className="m-stack">
           <div className="m-card m-row" style={{ padding: '.875rem 1rem' }}>
