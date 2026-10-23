@@ -14,6 +14,7 @@ const { request } = require('./lib/resilientHttp');
 const { parseSmsCheckin, HELP_TEXT: SMS_HELP_TEXT } = require('./smsCheckinParser');
 const { parsePagination, pageInfo } = require('./lib/pagination');
 const alertRules = require('./alertRules');
+const { heatLevel } = require('./weatherRisk');
 
 const router = express.Router();
 router.use(requireInternalToken);
@@ -201,6 +202,47 @@ router.delete('/api/alerts/rules/:code', async (req, res, next) => {
     logger.info('alert rule deleted', { code: req.params.code, by: req.user.id });
     return res.status(204).end();
   } catch (err) {
+    return next(err);
+  }
+});
+
+/* --------------------- GET /api/alerts/weather/current ----------------------- */
+// Outdoor conditions where the caregiver is right now (lat/lon from the phone), or at a patient's ZIP code
+// when location is not shared. Shown on the check-in screen next to the elder's body temperature.
+router.get('/api/alerts/weather/current', async (req, res, next) => {
+  try {
+    if (!process.env.OPENWEATHER_API_KEY) return res.status(503).json({ error: 'not_configured', message: 'Weather is not set up (OPENWEATHER_API_KEY)' });
+    const lat = Number(req.query.lat);
+    const lon = Number(req.query.lon);
+    const zip = String(req.query.zip || '').trim();
+    let w;
+    let source;
+    if (req.query.lat !== undefined || req.query.lon !== undefined) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return res.status(422).json({ error: 'validation_failed', details: ['lat must be -90..90 and lon -180..180'] });
+      }
+      w = await mashup.getWeatherAtPoint(lat, lon);
+      source = 'device_location';
+    } else if (/^[A-Za-z0-9 -]{3,10}$/.test(zip)) {
+      w = await mashup.getWeatherForZip(zip, String(req.query.country || 'PH').toUpperCase().slice(0, 2));
+      source = 'patient_address';
+    } else {
+      return res.status(422).json({ error: 'validation_failed', details: ['Give lat and lon, or zip'] });
+    }
+    const level = w.heatIndexC !== null ? heatLevel(w.heatIndexC) : null;
+    return res.json({
+      source,
+      locationName: w.locationName,
+      temperatureC: w.temperatureC,
+      feelsLikeC: w.feelsLikeC,
+      humidity: w.humidity,
+      heatIndexC: w.heatIndexC,
+      heatLevel: level,
+      conditions: (w.conditions || []).map((c) => c.description),
+      observedAt: w.observedAt,
+    });
+  } catch (err) {
+    if (err.response || err.code) return res.status(502).json({ error: 'weather_unavailable', message: 'Weather service did not answer. Try again in a minute.' });
     return next(err);
   }
 });

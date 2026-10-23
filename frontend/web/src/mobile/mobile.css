@@ -201,8 +201,13 @@
 .m-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--bg-primary); }
 .m-bar.on-hero { background: rgba(255,255,255,.7); }
 .m-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: .375rem; margin: .5rem 0 1rem; }
-.m-steps span { height: .375rem; border-radius: 999px; background: var(--border-default); }
-.m-steps span.is-done { background: var(--bg-primary); }
+.m-steps span, .m-steps button { height: .375rem; border-radius: 999px; background: var(--border-default); border: 0; padding: 0; }
+.m-steps span.is-done, .m-steps button.is-done { background: var(--bg-primary); }
+/* Stepper segments are tappable: a taller invisible hit area keeps them easy to press (48px rule). */
+.m-steps button { position: relative; cursor: pointer; }
+.m-steps button::before { content: ''; position: absolute; inset: -1.1rem 0; }
+.m-steps button:disabled { cursor: default; }
+.m-steps button[aria-current='step'] { box-shadow: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--border-strong); }
 .m-steps-label { display: flex; justify-content: space-between; font-size: .875rem; font-weight: 700; color: var(--text-brand); }
 .m-steps-label span:last-child { color: var(--text-secondary); font-weight: 400; }
 
@@ -428,3 +433,15 @@
 .m-pill:disabled { opacity: .45; cursor: default; }
 .ad-phone-note { display: none; margin-bottom: 1rem; }
 @media (max-width: 48rem) { .ad-phone-note { display: flex; } }
+
+/* Instant validation (C2) and outdoor weather card */
+.m-field.is-invalid input { border-color: var(--accent-critical); background: var(--bg-critical); }
+.m-field.is-invalid input:focus { box-shadow: 0 0 0 3px var(--bg-critical); border-color: var(--accent-critical); }
+.m-field-error { font-size: .8125rem; font-weight: 700; color: var(--text-critical); }
+.m-weather { border-radius: 1.25rem; padding: .875rem 1rem; background: var(--bg-info); color: var(--text-info); }
+.m-weather.is-loading { display: flex; gap: .5rem; align-items: center; font-size: .875rem; }
+.m-weather.tone-ok { background: var(--bg-ok); color: var(--text-ok); }
+.m-weather.tone-moderate { background: var(--bg-moderate); color: var(--text-moderate); }
+.m-weather.tone-high { background: var(--bg-high); color: var(--text-high); }
+.m-weather.tone-critical { background: var(--bg-critical); color: var(--text-critical); }
+.m-weather .m-caption, .m-weather .m-muted { color: inherit; opacity: .85; }

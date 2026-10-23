@@ -149,3 +149,42 @@ export function vitalsWarning(v) {
 }
 
 export { manilaDay, hhmm };
+
+/* ------------------------------ instant range checks (C2) ------------------------------ */
+// Same limits as the check-in service (services/checkin-service/src/validation.js RANGES): values outside
+// them are typos or impossible readings, so the caregiver sees the problem under the field right away.
+const VITAL_LIMITS = {
+  systolic: [50, 300, 'mmHg', 'Top number', 'Itaas na numero'],
+  diastolic: [30, 200, 'mmHg', 'Bottom number', 'Ibabang numero'],
+  heartRate: [20, 250, 'bpm', 'Heart rate', 'Tibok ng puso'],
+  temperatureC: [30, 45, '°C', 'Body temperature', 'Temperatura'],
+  spo2: [50, 100, '%', 'Oxygen', 'Oxygen'],
+  bloodGlucose: [20, 800, 'mg/dL', 'Blood sugar', 'Blood sugar'],
+};
+
+/**
+ * @param {{pair?: boolean}} [opts] pair: also require both blood-pressure numbers (checked when moving on,
+ *        not while the caregiver is still typing the first one)
+ * @returns {Record<string, {en:string, fil:string}>} one message per field that is wrong
+ */
+export function vitalErrors(v, { pair = false } = {}) {
+  const errors = {};
+  for (const [k, [min, max, unit]] of Object.entries(VITAL_LIMITS)) {
+    const raw = v[k];
+    if (raw === '' || raw == null) continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) errors[k] = { en: 'Numbers only.', fil: 'Numero lang.' };
+    else if (n < 0) errors[k] = { en: 'Cannot be negative.', fil: 'Hindi puwedeng negatibo.' };
+    else if (n < min || n > max) errors[k] = { en: `Must be ${min}–${max} ${unit}. Check the reading again.`, fil: `Dapat ${min}–${max} ${unit}. Tingnan muli ang sukat.` };
+  }
+  const sys = v.systolic === '' ? null : Number(v.systolic);
+  const dia = v.diastolic === '' ? null : Number(v.diastolic);
+  if (!errors.systolic && !errors.diastolic) {
+    if (pair && (sys == null) !== (dia == null)) {
+      errors[sys == null ? 'systolic' : 'diastolic'] = { en: 'Enter both blood pressure numbers.', fil: 'Ilagay ang dalawang numero ng presyon.' };
+    } else if (sys != null && dia >= sys) {
+      errors.diastolic = { en: 'The bottom number must be lower than the top number.', fil: 'Dapat mas mababa ang ibabang numero.' };
+    }
+  }
+  return errors;
+}

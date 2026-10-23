@@ -4,7 +4,7 @@ import { api } from '../api';
 import { Link, navigate } from '../router';
 import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import Icon from './icons';
-import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, alertHeadline } from './data';
+import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, vitalErrors, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications } from './common';
 import { DutiesScreen, DutiesSummary } from './duties';
 import {
@@ -232,6 +232,78 @@ const REASONS = [
   ['Forgot', 'Nakalimutan'],
   ['Could not swallow / vomited', 'Hindi malunok / nagsuka'],
 ];
+const STEP_NAMES = [['Vitals', 'Vital signs'], ['Medicines', 'Gamot'], ['Anything else?', 'May iba pa?']];
+
+/** Number input that shows its problem underneath straight away (red border + message). */
+function VitalField({ k, label, value, onChange, error, hint, placeholder, decimal }) {
+  const { lang } = usePrefs();
+  const id = `vital-${k}`;
+  return (
+    <label className={`m-field ${error ? 'is-invalid' : ''}`} htmlFor={id}>
+      <span>{label}</span>
+      <input id={id} type="number" inputMode={decimal ? 'decimal' : 'numeric'} step={decimal ? '0.1' : '1'} min="0" value={value} onChange={onChange}
+        placeholder={placeholder} aria-invalid={error ? 'true' : undefined} aria-describedby={error ? `${id}-err` : undefined} />
+      {error ? <span className="m-field-error" id={`${id}-err`} role="alert">{lang === 'fil' ? error.fil : error.en}</span> : hint && <span className="m-hint">{hint}</span>}
+    </label>
+  );
+}
+
+const HEAT_ADVICE = {
+  normal: null,
+  caution: ['Warm outside. Offer water often.', 'Mainit sa labas. Painumin nang madalas.'],
+  extreme_caution: ['Very hot outside. Keep them indoors, cool and drinking water.', 'Napakainit. Manatili sa loob, presko at umiinom ng tubig.'],
+  danger: ['Dangerous heat. Keep them cool and watch for dizziness or confusion.', 'Mapanganib na init. Panatilihing presko at bantayan ang hilo o pagkalito.'],
+  extreme_danger: ['Extreme heat. Call the clinic if they feel unwell.', 'Matinding init. Tumawag sa klinika kung masama ang pakiramdam.'],
+};
+const HEAT_TONE = { normal: 'ok', caution: 'moderate', extreme_caution: 'high', danger: 'critical', extreme_danger: 'critical' };
+
+/**
+ * Outdoor weather where the caregiver is right now (phone location, OpenWeatherMap through the gateway),
+ * falling back to the patient's address. Body temperature still needs a thermometer: a phone cannot
+ * measure it, but outside heat explains a high reading and drives the heat-risk advice.
+ */
+function OutsideWeather({ patient }) {
+  const tr = useT();
+  const { lang } = usePrefs();
+  const [w, setW] = useState(null);
+  const [state, setState] = useState('locating'); // locating | loading | ready | error
+  useEffect(() => {
+    if (!patient) return undefined;
+    let live = true;
+    const load = (q, src) => api(`/api/alerts/weather/current?${q}`)
+      .then((r) => { if (live) { setW({ ...r, src }); setState('ready'); } })
+      .catch(() => { if (live) setState('error'); });
+    const byAddress = () => (patient.zipCode ? load(`zip=${encodeURIComponent(patient.zipCode)}&country=${patient.countryCode || 'PH'}`, 'address') : setState('error'));
+    if (!navigator.geolocation) byAddress();
+    else {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { if (live) { setState('loading'); load(`lat=${pos.coords.latitude.toFixed(4)}&lon=${pos.coords.longitude.toFixed(4)}`, 'device'); } },
+        () => { if (live) { setState('loading'); byAddress(); } },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 10 * 60 * 1000 },
+      );
+    }
+    return () => { live = false; };
+  }, [patient && patient.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (state === 'error') return null;
+  if (state !== 'ready') return <div className="m-weather is-loading" role="status"><Icon name="globe" size={18} />{tr('Checking the weather where you are…', 'Tinitingnan ang panahon sa lugar mo…')}</div>;
+  const advice = HEAT_ADVICE[w.heatLevel];
+  const tone = HEAT_TONE[w.heatLevel] || 'ok';
+  return (
+    <section className={`m-weather tone-${tone}`} aria-label={tr('Weather outside', 'Panahon sa labas')}>
+      <div className="m-between">
+        <span className="m-caption" style={{ fontWeight: 700 }}>{tr('OUTSIDE NOW', 'SA LABAS NGAYON')} · {w.locationName || (w.src === 'device' ? tr('your location', 'lugar mo') : patient.addressLine)}</span>
+        <span className="m-caption">{w.src === 'device' ? tr('from your phone', 'mula sa phone') : tr("from the patient's address", 'mula sa address ng pasyente')}</span>
+      </div>
+      <div className="m-row" style={{ marginTop: '.35rem', alignItems: 'baseline' }}>
+        <strong style={{ fontSize: '1.75rem' }}>{Math.round(w.temperatureC)}°C</strong>
+        <span className="m-muted">{tr(`feels like ${Math.round(w.heatIndexC ?? w.feelsLikeC)}°C`, `parang ${Math.round(w.heatIndexC ?? w.feelsLikeC)}°C`)} · {w.humidity}% {tr('humidity', 'halumigmig')}{w.conditions[0] ? ` · ${w.conditions[0]}` : ''}</span>
+      </div>
+      {advice && <p style={{ marginTop: '.35rem', fontWeight: 700 }}>{lang === 'fil' ? advice[1] : advice[0]}</p>}
+    </section>
+  );
+}
+
 const EMPTY_VITALS = { systolic: '', diastolic: '', heartRate: '', temperatureC: '', spo2: '', bloodGlucose: '' };
 const MOBILITY = [['normal', 'Walks alone', 'Nakakalakad mag-isa'], ['assisted', 'Needs help', 'Kailangan ng tulong'], ['wheelchair', 'Wheelchair', 'Wheelchair'], ['bedridden', 'In bed', 'Nakahiga']];
 const MOOD = [['good', 'Good', 'Mabuti'], ['neutral', 'Okay', 'Okay lang'], ['low', 'Low / sad', 'Malungkot'], ['agitated', 'Agitated', 'Balisa']];
@@ -255,7 +327,10 @@ function CheckIn({ user }) {
   const [sent, setSent] = useState(null);
 
   const patient = elders && elders.find((e) => e.id === patientId);
-  const warning = vitalsWarning(vitals);
+  const [tried, setTried] = useState(false);
+  const errors = vitalErrors(vitals, { pair: tried });
+  const hasErrors = Object.keys(errors).length > 0;
+  const warning = hasErrors ? null : vitalsWarning(vitals);
   const slot = slotOf(`${String(manilaHour()).padStart(2, '0')}:00`);
   const meds = useMemo(() => {
     if (!patient) return [];
@@ -267,6 +342,7 @@ function CheckIn({ user }) {
   const firstTime = meds.flatMap((m) => m.times).filter((t) => slotOf(t) === slot).sort()[0];
 
   const cancel = () => navigate(BASE);
+  const goTo = (n) => { setStep(n); window.scrollTo({ top: 0 }); };
   const set = (k) => (e) => setVitals((v) => ({ ...v, [k]: e.target.value }));
 
   function buildBody() {
@@ -309,17 +385,23 @@ function CheckIn({ user }) {
   if (sent) return <Sent sent={sent} patient={patient} />;
   if (!elders) return <><TopBar title={tr('Daily check-in', 'Check-in ngayon')} back={BASE} /><Loader /></>;
 
-  const label = [tr('Vitals', 'Vital signs'), tr('Medicines', 'Gamot'), tr('Anything else?', 'May iba pa?')][step - 1];
+  const label = tr(...STEP_NAMES[step - 1]);
   return (
     <>
-      <TopBar
-        title={tr('Daily check-in', 'Check-in ngayon')}
-        back={false}
-        action={<button type="button" className="m-icon-btn" onClick={cancel} aria-label={tr('Close', 'Isara')}><Icon name="x" /></button>}
-      />
-      {step > 1 && <button type="button" className="m-icon-btn" style={{ position: 'absolute', top: '1rem', left: '1.25rem' }} onClick={() => setStep(step - 1)} aria-label={tr('Previous step', 'Nakaraang hakbang')}><Icon name="back" /></button>}
+      <header className="m-topbar">
+        {/* Back goes one step back; on step 1 it leaves the check-in (nothing is sent). */}
+        <button type="button" className="m-icon-btn" onClick={() => (step > 1 ? goTo(step - 1) : cancel())} aria-label={step > 1 ? tr(`Back to step ${step - 1}`, `Bumalik sa hakbang ${step - 1}`) : tr('Back to home', 'Bumalik sa home')}><Icon name="back" /></button>
+        <h1>{tr('Daily check-in', 'Check-in ngayon')}</h1>
+        <button type="button" className="m-icon-btn" onClick={cancel} aria-label={tr('Close', 'Isara')}><Icon name="x" /></button>
+      </header>
       <div className="m-steps-label"><span>{tr(`Step ${step} of 3`, `Hakbang ${step} sa 3`)}</span><span>{label}</span></div>
-      <div className="m-steps" aria-hidden="true">{[1, 2, 3].map((i) => <span key={i} className={i <= step ? 'is-done' : ''} />)}</div>
+      {/* Tappable stepper: jump back to any earlier step (answers are kept). */}
+      <nav className="m-steps" aria-label={tr('Check-in steps', 'Mga hakbang')}>
+        {STEP_NAMES.map(([en, fil], i) => (
+          <button key={en} type="button" className={i + 1 <= step ? 'is-done' : ''} disabled={i + 1 > step} onClick={() => goTo(i + 1)}
+            aria-current={i + 1 === step ? 'step' : undefined} aria-label={tr(`Step ${i + 1}: ${en}`, `Hakbang ${i + 1}: ${fil}`)} />
+        ))}
+      </nav>
 
       {step === 1 && (
         <div className="m-stack">
@@ -334,17 +416,19 @@ function CheckIn({ user }) {
               {elders.map((e) => <button key={e.id} type="button" role="radio" aria-checked={e.id === patientId} className="m-pill" aria-pressed={e.id === patientId} onClick={() => { setPatientId(e.id); setGiven({}); setReasons({}); setPicking(false); }}>{e.fullName}</button>)}
             </div>
           )}
+          <OutsideWeather patient={patient} />
           <p style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '.875rem' }}>{tr('Blood pressure', 'Presyon ng dugo')}</p>
           <div className="m-grid-2">
-            <label className="m-field"><span>{tr('Top number', 'Itaas na numero')}</span><input inputMode="numeric" type="number" value={vitals.systolic} onChange={set('systolic')} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} /></label>
-            <label className="m-field"><span>{tr('Bottom number', 'Ibabang numero')}</span><input inputMode="numeric" type="number" value={vitals.diastolic} onChange={set('diastolic')} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} /></label>
-            <label className="m-field"><span>{tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')}</span><input inputMode="numeric" type="number" value={vitals.heartRate} onChange={set('heartRate')} /></label>
-            <label className="m-field"><span>{tr('Temperature (°C)', 'Temperatura (°C)')}</span><input inputMode="decimal" type="number" step="0.1" value={vitals.temperatureC} onChange={set('temperatureC')} /></label>
+            <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
+            <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
+            <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} />
+            <VitalField k="temperatureC" decimal label={tr('Body temperature (°C)', 'Temperatura ng katawan (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} hint={tr('Use a thermometer', 'Gumamit ng thermometer')} />
           </div>
-          <label className="m-field"><span>{tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')}</span><input inputMode="numeric" type="number" value={vitals.spo2} onChange={set('spo2')} /><span className="m-hint">{tr('Normal is 95% or higher', 'Normal ang 95% pataas')}</span></label>
-          <label className="m-field"><span>{tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')}</span><input inputMode="numeric" type="number" value={vitals.bloodGlucose} onChange={set('bloodGlucose')} /></label>
+          <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Normal is 95% or higher', 'Normal ang 95% pataas')} />
+          <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} />
+          {hasErrors && <Banner tone="critical" role="alert">{tr('Please fix the fields marked in red to continue.', 'Ayusin muna ang mga pulang field para magpatuloy.')}</Banner>}
           {warning && <Banner tone={warning.tone} role="alert">{lang === 'fil' ? warning.fil : warning.en}</Banner>}
-          <div className="m-footer-actions"><Cta onClick={() => setStep(2)}>{tr('Next: medicines', 'Susunod: gamot')}</Cta></div>
+          <div className="m-footer-actions"><Cta onClick={() => { setTried(true); if (!Object.keys(vitalErrors(vitals, { pair: true })).length) goTo(2); }} disabled={hasErrors}>{tr('Next: medicines', 'Susunod: gamot')}</Cta></div>
         </div>
       )}
 
@@ -372,7 +456,10 @@ function CheckIn({ user }) {
               )}
             </div>
           ))}
-          <div className="m-footer-actions"><Cta onClick={() => setStep(3)}>{tr('Next: anything else?', 'Susunod: may iba pa?')}</Cta></div>
+          <div className="m-footer-actions">
+            <button type="button" className="m-btn is-block" onClick={() => goTo(1)}><Icon name="back" size={18} />{tr('Back to step 1: vitals', 'Bumalik sa hakbang 1: vital signs')}</button>
+            <Cta onClick={() => goTo(3)}>{tr('Next: anything else?', 'Susunod: may iba pa?')}</Cta>
+          </div>
         </div>
       )}
 
@@ -398,7 +485,12 @@ function CheckIn({ user }) {
           </fieldset>
           <label className="m-field"><span>{tr('Notes for the nurse (optional)', 'Tala para sa nars (opsyonal)')}</span><textarea rows="3" maxLength={1500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
           {error && <p className="m-error" role="alert">{error}</p>}
-          <div className="m-footer-actions"><Cta onClick={submit} disabled={busy}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send check-in', 'Ipadala ang check-in')}</Cta></div>
+          <div className="m-footer-actions">
+            <div className="m-grid-2">
+              <button type="button" className="m-btn" onClick={() => goTo(1)}><Icon name="back" size={18} />{tr('Step 1', 'Hakbang 1')}</button>
+              <button type="button" className="m-btn" onClick={() => goTo(2)}><Icon name="back" size={18} />{tr('Step 2', 'Hakbang 2')}</button>
+            </div>
+            <Cta onClick={submit} disabled={busy || hasErrors}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send check-in', 'Ipadala ang check-in')}</Cta></div>
         </div>
       )}
     </>

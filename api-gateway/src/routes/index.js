@@ -119,6 +119,9 @@ router.post(
   forwardTo('alert'),
 );
 
+// Outdoor weather where the caregiver is (lat/lon) or at a ZIP code, for the check-in screen.
+router.get('/alerts/weather/current', authorize(...ANY_ROLE), forwardTo('alert'));
+
 router.post(
   '/alerts/weather-check',
   authorize(ROLES.CLINIC, ROLES.ADMIN),
