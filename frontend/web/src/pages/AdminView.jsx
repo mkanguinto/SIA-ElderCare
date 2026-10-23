@@ -48,7 +48,7 @@ function serviceDetails(s) {
   return '';
 }
 
-function SecurityPanel() {
+export function SecurityPanel() {
   const [s, setS] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => { api('/api/admin/security').then((r) => setS(r.jwt)).catch((e) => setError(e.message)); }, []);

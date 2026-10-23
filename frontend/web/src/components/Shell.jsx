@@ -14,8 +14,8 @@ const CLINIC_NAV = [
 const NAV = {
   caregiver: [{ to: '/caregiver', label: 'Daily check-in' }, { to: '/caregiver/duties', label: 'Care duties' }],
   family_member: [{ to: '/family', label: 'My family member' }],
-  clinic_staff: CLINIC_NAV,
-  system_admin: [{ to: '/admin', label: 'System status' }, ...CLINIC_NAV],
+  clinic_staff: [...CLINIC_NAV, { to: '/m/nurse', label: 'Phone view' }],
+  system_admin: [{ to: '/admin', label: 'Admin console' }, ...CLINIC_NAV],
 };
 
 export function Logo({ size = 28 }) {

@@ -87,7 +87,7 @@ flowchart TB
 | Node-RED EAI layer | `integration/node-red/` | none (flows): SMS content-based router, weather orchestration, DLQ dashboard (Batch 3) |
 | Legacy EMR Adapter | `services/legacy-emr-adapter/` | none (stateless translator) |
 | Mock Legacy EMR | `services/mock-legacy-emr/` | demo data for SoapUI / dev (zero dependencies) |
-| Web dashboards | `frontend/web/` | React (Vite) – caregiver, family, clinic, admin views |
+| Web app | `frontend/web/` | React (Vite) – phone-first caregiver, family and nurse apps, desktop clinic pages, admin console |
 | Caregiver mobile | `frontend/mobile/` | React Native (Expo), offline-first check-ins |
 | Test assets | `testing/` | Postman, JMeter, SoapUI |
 
@@ -139,6 +139,10 @@ Web dashboards:
 ```bash
 cd frontend/web && npm install && npm run dev      # http://localhost:3000 (proxies /api and /oauth to :8080)
 ```
+Open it, tap **Get started** and pick a role (one-tap demo sign-in, on in development or with `VITE_DEMO_LOGIN=true`).
+Caregivers and families land on the phone app (`/m/caregiver`, `/m/family`); nurses get `/m/nurse` on a phone and the
+desktop clinic pages (`/clinic`) on a computer; admins get the web console (`/admin`). Set `VITE_CLINIC_PHONE` to the
+health center hotline to enable the "Call the clinic" buttons. Use Chrome DevTools' device toolbar to see the phone layout.
 Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/mobile/app.json` to your computer's LAN IP, then `cd frontend/mobile && npm install && npx expo start`.
 
 ### Demo accounts (password `ElderCare@2026` – change before any real use)
