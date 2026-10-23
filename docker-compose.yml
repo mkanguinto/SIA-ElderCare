@@ -212,6 +212,10 @@ services:
       EVENT_TRANSPORT: rabbitmq
       AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
+      ALERT_SERVICE_URL: http://alert-service:4002
+      CLINIC_HOTLINE: "${CLINIC_HOTLINE:-}"                 # the clinic's phone: shown to families, gets an SMS notice per contact
+      CLINIC_HOTLINE_NAME: "${CLINIC_HOTLINE_NAME:-RHU Manila health center}"
+      CLINIC_HOURS: "${CLINIC_HOURS:-Mon-Fri 8 AM - 5 PM}"
       ENV_RISK_TTL_HOURS: "${ENV_RISK_TTL_HOURS:-24}"
       RECENT_VISIT_DAYS: "${RECENT_VISIT_DAYS:-30}"
       VISIT_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"

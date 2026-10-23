@@ -13,7 +13,7 @@ const ROLE_CHIP = { caregiver: ['ok', 'check', 'Caregiver'], family_member: ['in
 const STATUS_CHIP = { active: ['ok', 'check', 'Active'], pending_activation: ['moderate', 'clock', 'Waiting for activation'], disabled: ['critical', 'x', 'Disabled'] };
 const ACTION_LABEL = {
   account_created: 'Account created', activation_code_sent: 'Activation code sent', account_activated: 'Account activated', activation_failed: 'Activation failed',
-  password_reset_sent: 'Password-reset link sent', password_reset_completed: 'Password changed (reset link)', password_reset_failed: 'Password reset failed',
+  password_reset_sent: 'Password-reset code sent', password_reset_completed: 'Password changed (reset code)', password_reset_failed: 'Password reset failed',
   sms_delivery_update: 'SMS delivery update',
   account_disabled: 'Account disabled', account_enabled: 'Account enabled', login: 'Signed in', login_failed: 'Sign-in failed', logout: 'Signed out',
   session_locked: 'Locked (inactivity)', session_unlocked: 'Unlocked', session_revoked: 'Session ended by admin', sessions_revoked_all: 'Signed out everywhere by admin',
@@ -27,11 +27,11 @@ const DELIVERY = {
   failed: ['critical', 'x', 'NOT sent (failed)'],
   queued: ['moderate', 'clock', 'Waiting for the SMS phone'],
   sent: ['info', 'message', 'Sent, not confirmed'],
-  delivered: ['ok', 'check', 'Delivered'],
+  delivered: ['ok', 'check', 'Reported delivered'],
   unknown: ['moderate', 'alert', 'Delivery unknown'],
 };
 const FOLLOW = ['queued', 'sent', 'unknown'];
-const WHAT = { activation: 'activation code', password_reset: 'password-reset link' };
+const WHAT = { activation: 'activation code', password_reset: 'password-reset code' };
 
 /** One sentence about a code or link: where it went and what is known about its delivery. */
 function smsText(s, name) {
@@ -42,7 +42,8 @@ function smsText(s, name) {
     case 'failed': return `The ${what} was NOT sent: ${s.note || 'the SMS failed'}. Fix the problem, then send a new one.`;
     case 'queued': return `The ${what} for ${s.sentTo} is waiting for the clinic's SMS phone to send it. Not delivered yet.${until}`;
     case 'sent': return `The ${what} left the clinic's SMS phone for ${s.sentTo}${s.deliveryUpdatedAt ? ` at ${when(s.deliveryUpdatedAt)}` : ''}. No delivery report yet, so ask ${name} whether it arrived.${until}`;
-    case 'delivered': return `The ${what} was delivered to ${s.sentTo}${s.deliveryUpdatedAt ? ` (reported ${when(s.deliveryUpdatedAt)})` : ''}.${until}`;
+    // The network's report can say delivered even when a filter dropped the text: only the person using the code proves it arrived.
+    case 'delivered': return `The SMS phone reports the ${what} delivered to ${s.sentTo}${s.deliveryUpdatedAt ? ` (${when(s.deliveryUpdatedAt)})` : ''}. It is confirmed only when ${name} uses it.${until}`;
     default: return `Delivery of the ${what} to ${s.sentTo} is unknown. Ask ${name} whether it arrived.${until}`;
   }
 }
@@ -71,7 +72,7 @@ export function Accounts({ Head }) {
   const others = (a) => (a.staffId && data.staff ? (data.staff.find((p) => p.staffId === a.staffId) || { accounts: [] }).accounts.filter((x) => x.id !== a.id) : []);
   return (
     <>
-      <Head title="Accounts" sub="Create accounts and send activation codes and password-reset links by SMS. You never see a code, link or password; every action is in the audit log." />
+      <Head title="Accounts" sub="Create accounts and send activation and password-reset codes by SMS. You never see a code or password; every action is in the audit log." />
       <SmsCheck />
       {msg && <p className={`m-banner tone-${msg.tone}`} role={msg.tone === 'critical' ? 'alert' : 'status'} style={{ marginBottom: '1rem' }}>{msg.text}</p>}
       {tracking && <DeliveryTracker key={`${tracking.accountId}-${tracking.first.sentAt}`} t={tracking} onFinal={load} onClose={() => setTracking(null)} />}
@@ -187,7 +188,7 @@ function Manage({ a, run, sent }) {
     <div className="ad-manage">
       <div className="ad-inline-form" style={{ marginTop: 0 }}>
         {a.status === 'pending_activation' && <button type="button" className="m-btn" onClick={() => send('activation-code', 'activation')}>Send a new activation code</button>}
-        {a.status === 'active' && <button type="button" className="m-btn" onClick={() => window.confirm(`Send ${a.name} a password-reset link by SMS?`) && send('password-reset', 'passwordReset')}>Send password-reset link</button>}
+        {a.status === 'active' && <button type="button" className="m-btn" onClick={() => window.confirm(`Send ${a.name} a password-reset code by SMS?`) && send('password-reset', 'passwordReset')}>Send password-reset code</button>}
         {a.status === 'disabled'
           ? <button type="button" className="m-btn" onClick={() => run(() => post('enable'), `${a.name} enabled`)}>Enable account</button>
           : (

@@ -7,7 +7,7 @@
  *   GET    /api/admin/accounts                          accounts with status, sessions and the open activation code (no secrets)
  *   POST   /api/admin/accounts                          {username, name, role, phone, patients?} -> pending account + activation code by SMS
  *   POST   /api/admin/accounts/:id/activation-code      send a new activation code (the old one stops working)
- *   POST   /api/admin/accounts/:id/password-reset       send a password-reset link by SMS (the admin never sees it)
+ *   POST   /api/admin/accounts/:id/password-reset       send a password-reset code by SMS (the admin never sees it)
  *   POST   /api/admin/accounts/:id/disable              {reason}  signs the user out everywhere
  *   POST   /api/admin/accounts/:id/enable
  *   GET    /api/admin/accounts/:id/sessions             active sessions (device, last activity, locked)
@@ -25,8 +25,10 @@
  *
  * Public (rate limited like /oauth), mounted at /auth:
  *   POST /auth/activate                {username, code, password}   activation code from SMS -> own password
- *   POST /auth/password-reset/check    {token}                      is this reset link still valid, and for whom
- *   POST /auth/password-reset          {token, password}            set a new password, sign out everywhere
+ *   POST /auth/password-reset          {username, code, password}   reset code from SMS -> new password, sign out everywhere
+ *
+ * Account SMS carry no web links: Philippine networks block or silently drop person-to-person texts with links
+ * (and may still report them delivered), so the user types the code into the app instead of tapping a link.
  *
  * Testing only (ACCOUNT_SMS_CAPTURE=true, never production), mounted at /internal/test:
  *   GET /internal/test/account-sms?to=&purpose=     X-Internal-Token   last captured account SMS
@@ -50,16 +52,17 @@ const quiet = (p) => p.catch((err) => logger.error('account audit write failed',
  * account's phone, and returns what the admin may see (masked number, delivery, expiry) - never the secret.
  */
 async function issueSecret(req, account, purpose) {
-  const secret = purpose === 'activation' ? R.newActivationCode() : R.newResetToken();
+  const secret = R.newActivationCode();
   const expiresAt = new Date(Date.now() + R.TOKEN_TTL_MIN[purpose] * 60000);
   await store.revokeOpenTokens(account.id, purpose);
   const token = await store.addToken({
     accountId: account.id, purpose, secretHash: R.hashSecret(secret, config.accountTokenPepper, purpose), expiresAt,
     sentTo: R.maskPhone(account.phone), createdBy: req.user.id,
   });
+  // No links (see the header): the person opens the app and types the code.
   const body = purpose === 'activation'
-    ? `ElderCare: your activation code is ${secret} (valid 24 hours). Open ${config.publicWebUrl}/activate and sign in as ${account.username}. Do not share this code.`
-    : `ElderCare: set a new password here (valid 1 hour): ${config.publicWebUrl}/reset-password#${secret} . If you did not ask for this, ignore this SMS.`;
+    ? `ElderCare: your activation code is ${secret} (valid 24 hours). Open the ElderCare app, tap Activate my account and use the username ${account.username} . Do not share this code.`
+    : `ElderCare: your password reset code is ${secret} (valid 1 hour). Open the ElderCare app, tap Sign in, then Forgot password. If you did not ask for this, ignore this SMS.`;
   const sms = await sendAccountSms({ to: account.phone, body, purpose, requestId: req.id });
   await store.updateToken(token.id, { delivery: sms.delivery, deliveryNote: sms.note, providerRef: sms.ref, deliveryUpdatedAt: new Date() });
   await audit(req, purpose === 'activation' ? 'activation_code_sent' : 'password_reset_sent', account.id, { sentTo: token.sentTo, delivery: sms.delivery, note: sms.note, expiresAt });
@@ -326,40 +329,38 @@ pub.post('/activate', async (req, res, next) => {
   }
 });
 
-async function resetToken(token) {
-  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return { state: 'missing' };
-  const t = await store.findToken(R.hashSecret(token, config.accountTokenPepper, 'password_reset'), 'password_reset');
-  const state = R.tokenState(t);
-  const account = t ? await store.getById(t.accountId) : null;
-  if (state === 'ok' && (!account || account.status !== 'active')) return { state: 'missing' };
-  return { state, t, account };
-}
-
-pub.post('/password-reset/check', async (req, res, next) => {
-  try {
-    const r = await resetToken((req.body || {}).token);
-    if (r.state !== 'ok') return fail(res, 400, r.state === 'expired' ? 'link_expired' : 'invalid_link', r.state === 'expired' ? 'This link has expired. Ask the clinic for a new one.' : 'This link is not valid any more. Ask the clinic for a new one.');
-    return res.json({ valid: true, username: r.account.username, expiresAt: r.t.expiresAt });
-  } catch (err) {
-    return next(err);
-  }
-});
-
 pub.post('/password-reset', async (req, res, next) => {
   try {
-    const { token, password } = req.body || {};
-    const r = await resetToken(token);
-    if (r.state !== 'ok') {
-      quiet(audit(req, 'password_reset_failed', r.account ? r.account.id : null, { reason: r.state }));
-      return fail(res, 400, r.state === 'expired' ? 'link_expired' : 'invalid_link', r.state === 'expired' ? 'This link has expired. Ask the clinic for a new one.' : 'This link is not valid any more. Ask the clinic for a new one.');
+    const { username, code, password } = req.body || {};
+    if (typeof username !== 'string' || typeof code !== 'string' || typeof password !== 'string') {
+      return fail(res, 400, 'invalid_request', 'username, code and password are required');
     }
-    const problems = R.passwordProblems(password, r.account);
+    const a = await store.getByUsername(username.trim());
+    // Same answer for an unknown username and a wrong code.
+    if (!a || a.status !== 'active') {
+      quiet(audit(req, 'password_reset_failed', a ? a.id : null, { reason: a ? `account_${a.status}` : 'unknown_username' }));
+      return fail(res, 400, 'invalid_code', R.TOKEN_MESSAGE.missing);
+    }
+    let t = await store.findToken(R.hashSecret(code, config.accountTokenPepper, 'password_reset'), 'password_reset');
+    if (t && t.accountId !== a.id) t = null;
+    if (!t) {
+      const open = await store.latestToken(a.id, 'password_reset');
+      if (open && R.tokenState(open) === 'ok') await store.updateToken(open.id, { attempts: open.attempts + 1 });
+      quiet(audit(req, 'password_reset_failed', a.id, { reason: 'wrong_code' }));
+      return fail(res, 400, 'invalid_code', open && open.attempts + 1 >= R.MAX_ATTEMPTS ? R.TOKEN_MESSAGE.locked : R.TOKEN_MESSAGE.missing);
+    }
+    const state = R.tokenState(t);
+    if (state !== 'ok') {
+      quiet(audit(req, 'password_reset_failed', a.id, { reason: state }));
+      return fail(res, 400, state === 'expired' ? 'code_expired' : 'invalid_code', state === 'used' ? 'This code was already used. Ask the clinic for a new one.' : R.TOKEN_MESSAGE[state]);
+    }
+    const problems = R.passwordProblems(password, a);
     if (problems.length) return fail(res, 422, 'weak_password', problems[0], problems);
-    await store.updateToken(r.t.id, { usedAt: new Date() });
-    await store.update(r.account.id, { passwordHash: hashPassword(password), passwordChangedAt: new Date() });
-    const ended = revokeUserSessions(r.account.id, 'password_changed');
-    await audit({ ip: req.ip, user: { id: r.account.id, role: r.account.role } }, 'password_reset_completed', r.account.id, { sessionsEnded: ended.sessions });
-    return res.json({ reset: true, username: r.account.username });
+    await store.updateToken(t.id, { usedAt: new Date() });
+    await store.update(a.id, { passwordHash: hashPassword(password), passwordChangedAt: new Date() });
+    const ended = revokeUserSessions(a.id, 'password_changed');
+    await audit({ ip: req.ip, user: { id: a.id, role: a.role } }, 'password_reset_completed', a.id, { sessionsEnded: ended.sessions });
+    return res.json({ reset: true, username: a.username });
   } catch (err) {
     return next(err);
   }

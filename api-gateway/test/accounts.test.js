@@ -69,7 +69,6 @@ const sms = async (to, purpose) => {
   return res.status === 200 ? res.json() : null;
 };
 const codeIn = (m) => m.body.match(/code is ([A-Z0-9]{4}-[A-Z0-9]{4})/)[1];
-const linkIn = (m) => m.body.match(/reset-password#([A-Za-z0-9_-]+)/)[1];
 
 test('account creation -> activation -> login (caregiver); the admin never sees the code', async () => {
   const admin = (await token('admin.harold')).access_token;
@@ -85,7 +84,9 @@ test('account creation -> activation -> login (caregiver); the admin never sees 
   assert.strictEqual(pending.status, 400);
   assert.strictEqual(pending.body.reason, 'account_pending');
 
-  const code = codeIn(await sms('+639175550199', 'activation'));
+  const actSms = await sms('+639175550199', 'activation');
+  assert.ok(!/https?:|www\./i.test(actSms.body), 'no link in the activation SMS');
+  const code = codeIn(actSms);
   assert.strictEqual((await call('POST', '/auth/activate', { body: { username: 'caregiver.liza', code: 'ABCD-EFGH', password: 'Kalamansi2026' } })).status, 400, 'wrong code');
   const weak = await call('POST', '/auth/activate', { body: { username: 'caregiver.liza', code, password: 'short1' } });
   assert.strictEqual(weak.status, 422);
@@ -128,17 +129,20 @@ test('five wrong codes lock the activation code', async () => {
   assert.match(r.body.message, /Too many wrong tries/);
 });
 
-test('password reset goes by SMS link; the admin never sees it; old sessions end', async () => {
+test('password reset goes by SMS code (no link); the admin never sees it; old sessions end', async () => {
   const admin = (await token('admin.harold')).access_token;
   const before = (await signIn('caregiver.liza', 'Kalamansi2026')).body;
   const { id } = await store.getByUsername('caregiver.liza');
   const r = await call('POST', `/api/admin/accounts/${id}/password-reset`, { token: admin });
   assert.strictEqual(r.status, 200);
-  assert.ok(!JSON.stringify(r.body).includes('reset-password#'));
-  const link = linkIn(await sms('+639175550199', 'password_reset'));
-  assert.strictEqual((await call('POST', '/auth/password-reset/check', { body: { token: link } })).body.username, 'caregiver.liza');
-  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { token: link, password: 'Bayabas2027' } })).status, 200);
-  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { token: link, password: 'Bayabas2028' } })).status, 400, 'link is single use');
+  assert.ok(!JSON.stringify(r.body).match(/[A-Z0-9]{4}-[A-Z0-9]{4}/), 'no code in the admin response');
+  const m = await sms('+639175550199', 'password_reset');
+  assert.ok(!/https?:|www\./i.test(m.body), 'no link in the SMS (PH networks drop texts with links)');
+  const code = m.body.match(/reset code is ([A-Z0-9]{4}-[A-Z0-9]{4})/)[1];
+  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { username: 'caregiver.liza', code: 'ABCD-EFGH', password: 'Bayabas2027' } })).status, 400, 'wrong code');
+  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { username: 'caregiver.maria', code, password: 'Bayabas2027' } })).status, 400, 'code belongs to another account');
+  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { username: 'caregiver.liza', code, password: 'Bayabas2027' } })).status, 200);
+  assert.strictEqual((await call('POST', '/auth/password-reset', { body: { username: 'caregiver.liza', code, password: 'Bayabas2028' } })).status, 400, 'code is single use');
   assert.strictEqual((await signIn('caregiver.liza', 'Kalamansi2026')).status, 400, 'old password gone');
   assert.strictEqual((await signIn('caregiver.liza', 'Bayabas2027')).status, 200);
   assert.strictEqual((await call('GET', '/api/patients/P-1003', { token: before.access_token })).status, 401, 'old session ended');
@@ -224,7 +228,7 @@ test('every account action is in the audit log with who and when', async () => {
   const created = r.body.entries.find((e) => e.action === 'account_created');
   assert.strictEqual(created.actorId, 'U-AD-001');
   assert.ok(created.at);
-  assert.ok(!JSON.stringify(r.body).match(/code is|reset-password#|scrypt\$/), 'no secrets in the audit log');
+  assert.ok(!JSON.stringify(r.body).match(/code is|reset code|scrypt\$/), 'no secrets in the audit log');
   assert.strictEqual((await call('GET', '/api/admin/audit', { token: (await token('nurse.ana')).access_token })).status, 403);
 });
 

@@ -60,7 +60,7 @@ async function checkAccountSms(ref, requestId) {
 async function smsHealth(requestId) {
   const r = await request('alert', {
     method: 'GET', url: `${config.services.alert}/internal/messages/sms-health`, headers: internal(requestId), validateStatus: () => true,
-  }, { retries: 0, timeoutMs: config.upstreamTimeoutMs });
+  }, { retries: 0, timeoutMs: Math.max(config.upstreamTimeoutMs, 10000) }); // includes a live look-up at TextBee
   if (r.status !== 200) throw new Error(`SMS service answered ${r.status}`);
   return r.data;
 }

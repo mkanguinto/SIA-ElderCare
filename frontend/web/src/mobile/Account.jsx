@@ -1,7 +1,7 @@
-// Account activation (code from SMS) and password reset (link from SMS), Batch 3a. Public pages: the user is
-// not signed in yet. Codes and links come only by SMS to the phone number the clinic registered; the admin
-// who created the account never sees them.
-import React, { useEffect, useState } from 'react';
+// Account activation and password reset with a code from SMS, Batch 3a. Public pages: the user is not signed
+// in yet. Codes come only by SMS to the phone number the clinic registered; the admin never sees them. The SMS
+// has no link (Philippine networks drop texts with links): the user opens the app and types the code.
+import React, { useState } from 'react';
 import { accountRequest } from '../api';
 import { navigate } from '../router';
 import Icon from './icons';
@@ -90,19 +90,13 @@ export function Activate() {
 
 export function ResetPassword() {
   const tr = useT();
-  const [token] = useState(() => window.location.hash.slice(1));
-  const [check, setCheck] = useState(null);
+  const [username, setUsername] = useState('');
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    // The secret is in the #fragment, so it never reaches server logs; drop it from the address bar too.
-    window.history.replaceState(null, '', '/reset-password');
-    if (!token) { setCheck({ error: tr('This link is incomplete. Open the link from the SMS again.', 'Kulang ang link.') }); return; }
-    accountRequest('password-reset/check', { token }).then(setCheck).catch((e) => setCheck({ error: e.message }));
-  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e) {
     e.preventDefault();
@@ -110,7 +104,7 @@ export function ResetPassword() {
     setBusy(true);
     setError('');
     try {
-      await accountRequest('password-reset', { token, password });
+      await accountRequest('password-reset', { username: username.trim(), code, password });
       setDone(true);
     } catch (err) {
       setError(err.message);
@@ -129,16 +123,18 @@ export function ResetPassword() {
   }
   return (
     <MobileFrame plain>
-      <Header title={tr('Set a new password', 'Bagong password')} sub={check && check.username ? tr(`For ${check.username}. The link works once, for 1 hour.`, `Para kay ${check.username}. Isang beses lang, sa loob ng 1 oras.`) : ''} />
-      {!check && <p className="m-muted">{tr('Checking the link…', 'Sinusuri ang link…')}</p>}
-      {check && check.error && <Banner tone="critical">{check.error}</Banner>}
-      {check && check.valid && (
-        <form className="m-stack" onSubmit={submit}>
-          <PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
-          {error && <p className="m-error" role="alert">{error}</p>}
-          <Cta type="submit" disabled={busy || !password || password !== confirm}>{busy ? tr('Saving…', 'Sine-save…') : tr('Save new password', 'I-save')}</Cta>
-        </form>
-      )}
+      <Header title={tr('Set a new password', 'Bagong password')} sub={tr('The health center sent an SMS with a reset code. The code works once, for 1 hour.', 'Nagpadala ang health center ng SMS na may reset code. Isang beses lang, sa loob ng 1 oras.')} />
+      <form className="m-stack" onSubmit={submit}>
+        <label className="m-field"><span>{tr('Username', 'Username')}</span>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" required /></label>
+        <label className="m-field"><span>{tr('Reset code', 'Reset code')}</span>
+          <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ABCD-EFGH" autoComplete="one-time-code" autoCapitalize="characters" maxLength={12} required
+            style={{ letterSpacing: '.15em', fontWeight: 700 }} /></label>
+        <PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
+        {error && <p className="m-error" role="alert">{error}</p>}
+        <Cta type="submit" disabled={busy || !password || password !== confirm}>{busy ? tr('Saving…', 'Sine-save…') : tr('Save new password', 'I-save')}</Cta>
+        <Banner tone="info" icon="message">{tr('No SMS, or the code expired? Ask the health center to send a new one. Nobody from the clinic will ask you for it.', 'Walang SMS o expired na? Humingi ng bago sa health center.')}</Banner>
+      </form>
     </MobileFrame>
   );
 }

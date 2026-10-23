@@ -5,7 +5,7 @@
  *
  *   created by admin ──> pending_activation ──(code from SMS + own password)──> active ──> disabled ──> active
  *
- * Activation codes expire after 24 hours, password-reset links after 1 hour; both are single use, a new one
+ * Activation codes expire after 24 hours, password-reset codes after 1 hour; both are single use, a new one
  * replaces the old one, and five wrong tries lock a code. Only a keyed hash is stored, so nobody - including
  * the admin who sent it - can read a code back.
  */
@@ -35,12 +35,9 @@ function newActivationCode() {
   return `${chars.slice(0, 4)}-${chars.slice(4)}`;
 }
 const normalizeCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-/** 256-bit secret for a reset link. */
-const newResetToken = () => crypto.randomBytes(32).toString('base64url');
-
-/** Keyed hash of a code / link secret. Codes are normalised first so "abcd efgh" matches "ABCD-EFGH". */
+/** Keyed hash of a one-time code. Codes are normalised first so "abcd efgh" matches "ABCD-EFGH". */
 function hashSecret(secret, pepper, purpose) {
-  const value = purpose === 'activation' ? normalizeCode(secret) : String(secret || '');
+  const value = normalizeCode(secret);
   return crypto.createHmac('sha256', pepper).update(`${purpose}:${value}`).digest('hex');
 }
 
@@ -178,7 +175,7 @@ function idleLimitMinutes(role, env = process.env) {
 
 module.exports = {
   ROLES, DEFAULT_SCOPES, TOKEN_TTL_MIN, MAX_ATTEMPTS, TOKEN_MESSAGE,
-  newActivationCode, normalizeCode, newResetToken, hashSecret, tokenState,
+  newActivationCode, normalizeCode, hashSecret, tokenState,
   normalizePhone, maskPhone, passwordProblems, validateNewAccount, nextAccountId, STAFF_ROLES, nextStaffId, staffLinkProblem,
   DEVICE_CLASSES, deviceClass, sessionsToReplace, idleLimitMinutes,
 };

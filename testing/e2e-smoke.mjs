@@ -414,7 +414,7 @@ if (sms) {
   ok(r.s === 200 && r.j.role === 'caregiver', 'and signs in');
   ok((await call('POST', '/auth/activate', null, { username: uname, code, password: 'Kalamansi2026' })).s === 400, 'the activation code works once');
   r = await call('POST', `/api/admin/accounts/${newId}/password-reset`, admin, {});
-  ok(r.s === 200 && !JSON.stringify(r.j).includes('#'), 'admin sends a password-reset link by SMS without seeing it');
+  ok(r.s === 200 && !JSON.stringify(r.j).includes('#'), 'admin sends a password-reset code by SMS without seeing it');
   ok((await call('POST', `/api/admin/accounts/${newId}/disable`, admin, { reason: 'Smoke test account' })).s === 200, 'admin disables the test account');
 } else {
   console.log('SKIP activation checks (ACCOUNT_SMS_CAPTURE is off or INTERNAL_SERVICE_TOKEN unknown)');

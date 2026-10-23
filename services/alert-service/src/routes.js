@@ -469,7 +469,7 @@ const SMS_ROUTE_HANDLERS = {
  * through the same dry-run / allow-list rules as alerts. The text is never logged or stored here because it
  * carries a one-time secret; only its length and the outcome are logged.
  */
-const ACCOUNT_PURPOSES = ['activation', 'password_reset', 'family_activation'];
+const ACCOUNT_PURPOSES = ['activation', 'password_reset', 'family_activation', 'clinic_contact'];
 const maskNumber = (n) => `${n.slice(0, 3)} ${n.slice(3, 4)}•• ••• ${n.slice(-4)}`;
 
 /**

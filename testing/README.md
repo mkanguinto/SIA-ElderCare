@@ -27,6 +27,7 @@ SHOTS=out node testing/browser/run.mjs handover   # one test, with screenshots
 Needs the stack and the web app running (`WEB_URL`, default `http://127.0.0.1:3000`; `GATEWAY_URL`, default `http://localhost:8080`) and Chrome
 (`CHROME_PATH` if it is not in the default place). No npm dependencies: `cdp.mjs` drives Chrome over the DevTools protocol.
 - `handover.test.mjs` – Ana hands P-1001 to Ben in the phone UI; Ben sees it under Pending handover, taps Accept case, and it moves from Ana's My cases to Ben's. The case is handed back afterwards.
+- `contact.test.mjs` – family opens Contact the clinic (no pop-up), sends a message, gets a CR- reference and an honest SMS-notice line; the nurse sees it in Messages, marks it seen and replies; the family sees who saw it and the reply.
 - `session.test.mjs` – a caregiver's unsent check-in: the timeout warning counts down (Stay signed in), the app locks, the password unlocks it with the entry still there; signing in on another device ends the session, the entry is kept and comes back after signing in again; another user signing in on the tab never sees it.
 
 ## Postman – functional, security and integration

@@ -109,14 +109,18 @@ async function batchStatus(batchId, http = axios) {
 
 /** For the admin's SMS check: is the sending phone enabled and recently online, and may it send SMS? */
 async function gatewayHealth(http = axios) {
-  const devices = await listDevices(http);
+  // Both lookups at once, 3 s each, so a slow TextBee cannot stall the admin's check.
+  const quick = { headers: headers(), timeout: 3000 };
+  const [devRes, permRes] = await Promise.allSettled([
+    http.get(`${BASE_URL()}/gateway/devices`, quick),
+    http.get(`${BASE_URL()}/gateway/sms-permission-status`, quick),
+  ]);
+  if (devRes.status === 'rejected') throw devRes.reason;
+  const devices = (devRes.value.data && devRes.value.data.data) || [];
   const wanted = process.env.TEXTBEE_DEVICE_ID;
   const d = wanted ? devices.find((x) => x._id === wanted) : devices.find((x) => x.enabled);
-  let needsSmsPermission = null;
-  try {
-    const p = await http.get(`${BASE_URL()}/gateway/sms-permission-status`, { headers: headers(), timeout: timeout() });
-    needsSmsPermission = p.data && p.data.data ? p.data.data.needsSmsPermission : null;
-  } catch { /* optional */ }
+  const p = permRes.status === 'fulfilled' ? permRes.value.data : null;
+  const needsSmsPermission = p && p.data ? p.data.needsSmsPermission : null;
   return {
     devices: devices.length,
     device: d ? { model: d.model || d.brand || null, enabled: Boolean(d.enabled), lastSeenAt: d.lastHeartbeat || d.updatedAt || null, chosen: wanted ? 'TEXTBEE_DEVICE_ID' : 'first enabled phone' } : null,

@@ -119,7 +119,8 @@ function envFor(key, url) {
       ...pass('OPENWEATHER_API_KEY', 'OPENWEATHER_ONECALL_ENABLED', 'SMS_PROVIDER', 'TEXTBEE_API_KEY', 'TEXTBEE_DEVICE_ID', 'TEXTBEE_BASE_URL',
         'TEXTBEE_SIM_SUBSCRIPTION_ID', 'TEXTBEE_VALIDATE_WEBHOOK', 'SMS_RECIPIENT_ALLOWLIST', 'SMS_RETRY_ON_TIMEOUT', 'HEAT_INDEX_THRESHOLD_C'),
     };
-    case 'clinic': return { ...common, PORT: '4003', SERVICE_NAME: 'clinic-risk-service', ...db('clinic'), ...mq, SEED_DEMO_DATA: 'true', LEGACY_ADAPTER_URL: url.adapter, VISIT_TZ_OFFSET: '+08:00' };
+    case 'clinic': return { ...common, PORT: '4003', SERVICE_NAME: 'clinic-risk-service', ...db('clinic'), ...mq, SEED_DEMO_DATA: 'true', LEGACY_ADAPTER_URL: url.adapter, VISIT_TZ_OFFSET: '+08:00',
+      ALERT_SERVICE_URL: url.alert, ...pass('CLINIC_HOTLINE', 'CLINIC_HOTLINE_NAME', 'CLINIC_HOURS') };
     case 'care': return { ...common, PORT: '4006', SERVICE_NAME: 'care-plan-service', ...db('care'), SEED_DEMO_DATA: 'true', CARE_TZ_OFFSET: '+08:00' };
     case 'adapter': return { ...common, PORT: '4004', SERVICE_NAME: 'legacy-emr-adapter', LEGACY_EMR_URL: `${url.mockEmr}/emr`, ...pass('LEGACY_EMR_USERNAME', 'LEGACY_EMR_PASSWORD') };
     case 'mockEmr': return { PORT: '4005', NODE_ENV: 'production', PUBLIC_URL: `${url.mockEmr}/emr` };

@@ -10,6 +10,7 @@ import { WeekStrip } from './caregiver';
 import { StatusChip } from './status';
 import { vitalsSummary } from './data';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
+import { ClinicMessages, MessagesBanner } from './contact';
 import { DutyToggle, PendingHandovers, MyCases, CareTeamCard, HandoverForm, usePendingHandovers, useMyCases } from './handover';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
@@ -41,6 +42,7 @@ export default function NurseApp({ user, path }) {
   else if (sub === '/visits') screen = <Visits />;
   else if (sub === '/digest') screen = <Digest />;
   else if (sub === '/reviews') screen = <Reviews />;
+  else if (sub === '/messages') screen = <ClinicMessages user={user} />;
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} desktopTo="/clinic" />;
   else screen = <Queue user={user} />;
   return (
@@ -98,6 +100,7 @@ function Queue({ user }) {
   return (
     <>
       <Greeting user={user} alerts={urgent} alertsTo={`${BASE}/digest`} />
+      <MessagesBanner />
       <div className="m-counts" role="group" aria-label={tr('Filter by priority', 'Salain ayon sa priority')}>
         {['P1', 'P2', 'P3'].map((p) => (
           <button key={p} type="button" className={`m-count tone-${PRIORITY_TONE[p]}`} aria-pressed={filter === p} onClick={() => setFilter(filter === p ? null : p)}>

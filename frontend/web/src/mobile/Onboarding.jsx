@@ -142,7 +142,12 @@ export function SignIn() {
           <button type="button" className="m-link" onClick={() => navigate('/activate')}>{tr('Activate my account', 'I-activate ang account')}</button>
           <button type="button" className="m-link" onClick={() => setForgot(!forgot)} aria-expanded={forgot}>{tr('Forgot password?', 'Nakalimutan ang password?')}</button>
         </div>
-        {forgot && <Banner tone="info" icon="message">{tr('Ask your health center. They will send a reset link by SMS to the number on your account. They never see or ask for your password.', 'Humingi sa health center. Magpapadala sila ng reset link sa SMS. Hindi nila makikita o hihingin ang iyong password.')}</Banner>}
+        {forgot && (
+          <Banner tone="info" icon="message">
+            {tr('Ask your health center to send a reset code. It comes by SMS to the number on your account. They never see or ask for your password.', 'Humingi ng reset code sa health center. Darating ito sa SMS. Hindi nila makikita o hihingin ang iyong password.')}{' '}
+            <button type="button" className="m-link" style={{ padding: 0, minHeight: 0 }} onClick={() => navigate('/reset-password')}>{tr('I have a reset code', 'May reset code ako')}</button>
+          </Banner>
+        )}
         <p className="m-caption">{tr('Caregivers, family and clinic staff use the same app. You will only see the screens for your role.', 'Iisang app para sa tagapag-alaga, pamilya at klinika. Makikita mo lang ang mga screen para sa iyo.')}</p>
         <p className="m-muted" style={{ textAlign: 'center' }}>{tr('New here?', 'Bago ka rito?')} <button type="button" className="m-link" onClick={() => navigate('/no-account')}>{tr('How to get an account', 'Paano magkaroon ng account')}</button></p>
         {DEMO_MODE && <button type="button" className="m-link" onClick={() => navigate('/start')}>{tr('Demo: pick a role instead', 'Demo: pumili ng papel')}</button>}

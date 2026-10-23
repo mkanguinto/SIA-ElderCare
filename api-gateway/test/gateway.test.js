@@ -245,3 +245,21 @@ test('care plan routes: patient scope at the gateway, clinic-only plan changes, 
   assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: nurse, body: {} })).status, 403);
   assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: cg, body: {} })).status, 200);
 });
+
+test('contact the clinic: family and caregiver of the elder send, nurses answer, the admin is not involved', async () => {
+  const cg = (await login('caregiver.maria')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const nurse = (await login('nurse.ana')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  assert.strictEqual((await call('GET', '/api/clinic/contact-info', { token: fam })).status, 200);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: fam, body: {} })).body.path, '/api/patients/P-1001/clinic-contact');
+  assert.strictEqual((await call('POST', '/api/patients/P-1002/clinic-contact', { token: fam, body: {} })).status, 403, 'not their elder');
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: cg, body: {} })).status, 200);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: nurse, body: {} })).status, 403, 'nurses do not send these');
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/clinic-contact', { token: nurse })).status, 200);
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/clinic-contact', { token: admin })).status, 403, 'admin: no patient data');
+  assert.strictEqual((await call('GET', '/api/clinic/contact-requests', { token: nurse })).status, 200);
+  assert.strictEqual((await call('GET', '/api/clinic/contact-requests', { token: fam })).status, 403);
+  assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: nurse, body: {} })).status, 200);
+  assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: admin, body: {} })).status, 403);
+});

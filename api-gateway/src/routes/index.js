@@ -26,6 +26,9 @@
  * | GET    | /api/patients/:id/medications       | caregiver, family (own), clinic, admin | Daily Check-In Logger |
  * | POST/PATCH | /api/patients/:id/medications[/:medId] | clinic                     | Daily Check-In Logger  |
  * | GET    | /api/patients/:id/visits            | caregiver, family (own), clinic, admin | Clinic Risk Queue   |
+ * | GET/POST | /api/patients/:id/clinic-contact  | family, caregiver (own; POST), clinic (GET) | Clinic Risk Queue |
+ * | GET    | /api/clinic/contact-requests, POST /:id/seen|reply|close | clinic         | Clinic Risk Queue      |
+ * | GET    | /api/clinic/contact-info            | any signed-in user                  | Clinic Risk Queue      |
  * | GET    | /api/clinic/queue/history           | clinic, admin                       | Clinic Risk Queue      |
  * | POST   | /api/clinic/queue/:itemId/visits    | clinic                              | Clinic Risk Queue      |
  * | GET    | /api/clinic/visits                  | clinic, admin                       | Clinic Risk Queue      |
@@ -115,6 +118,13 @@ router.get(
     return `/api/clinic/visits?patientId=${encodeURIComponent(req.params.id)}&view=${view}`;
   }),
 );
+
+// Contacting the clinic, with proof: family / caregiver send a message or start a call; nurses see, reply, close.
+router.get('/clinic/contact-info', authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
+router.post('/patients/:id/clinic-contact', authorize(ROLES.CAREGIVER, ROLES.FAMILY), requirePatientAccess('id'), forwardTo('clinic'));
+router.get('/patients/:id/clinic-contact', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('clinic'));
+router.get('/clinic/contact-requests', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.post('/clinic/contact-requests/:id/:op(seen|reply|close)', authorize(ROLES.CLINIC), forwardTo('clinic'));
 
 /* ---------------------------- Care Plan (caregiver duties) ---------------------------- */
 const ANY_ROLE = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN];

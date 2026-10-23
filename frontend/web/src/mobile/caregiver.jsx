@@ -13,9 +13,10 @@ import { useReminders, remindersSupported, remindersOn, enableReminders, disable
 import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import { StatusChip, StatusTimeline, statusLine } from './status';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
+import { ContactClinic } from './contact';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
-  isToday, clock, hhmm, manilaHour, toneFor, shortName, CLINIC_PHONE, EMERGENCY_PHONE, TONE,
+  isToday, clock, hhmm, manilaHour, toneFor, shortName, EMERGENCY_PHONE, TONE,
 } from './kit';
 
 const BASE = '/m/caregiver';
@@ -66,6 +67,7 @@ export default function CaregiverApp({ user, path }) {
   else if (sub === '/alerts') screen = <CaregiverAlerts user={user} />;
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} extra={<ReminderSetting />} />;
   else if (sub.startsWith('/checkins/')) screen = <CheckinDetail id={sub.split('/')[2]} />;
+  else if (sub === '/contact') screen = <CaregiverContact user={user} />;
   else screen = <Home user={user} />;
   const wizard = sub.startsWith('/check-in');
   return (
@@ -129,7 +131,7 @@ function Home({ user }) {
       <nav className="m-quick" aria-label={tr('Quick actions', 'Mabilisang aksyon')}>
         <Link to={`${BASE}/check-in`} className="is-primary"><span className="m-quick-icon"><Icon name="clipboard" /></span>{tr('Check-in', 'Check-in')}</Link>
         <Link to={`${BASE}/medicines`}><span className="m-quick-icon"><Icon name="pill" /></span>{tr('Medicines', 'Gamot')}</Link>
-        <a href={CLINIC_PHONE ? `tel:${CLINIC_PHONE}` : undefined} aria-disabled={!CLINIC_PHONE} title={CLINIC_PHONE ? undefined : 'Set VITE_CLINIC_PHONE'}><span className="m-quick-icon"><Icon name="phone" /></span>{tr('Call clinic', 'Klinika')}</a>
+        <Link to={`${BASE}/contact`}><span className="m-quick-icon"><Icon name="phone" /></span>{tr('Contact clinic', 'Klinika')}</Link>
         <a href={`tel:${EMERGENCY_PHONE}`} className="is-danger"><span className="m-quick-icon"><Icon name="alert" /></span>{tr('Emergency', 'Emergency')}</a>
       </nav>
 
@@ -824,7 +826,7 @@ function Sent({ sent, patient }) {
         <StatusTimeline checkinId={c.id} />
       </section>
       <div className="m-footer-actions">
-        {CLINIC_PHONE && <a className="m-btn is-block" href={`tel:${CLINIC_PHONE}`}>{tr('Call the clinic', 'Tawagan ang klinika')}</a>}
+        <button type="button" className="m-btn is-block" onClick={() => navigate(`${BASE}/contact`)}>{tr('Contact the clinic', 'Makipag-ugnayan sa klinika')}</button>
         <Cta onClick={() => navigate(BASE)}>{tr('Back to home', 'Bumalik sa home')}</Cta>
       </div>
     </>
@@ -878,4 +880,11 @@ function CaregiverAlerts({ user }) {
     Promise.all(user.patients.map((id) => api(`/api/patients/${id}`).then((p) => [id, p.fullName]).catch(() => [id, id]))).then((l) => setNames(Object.fromEntries(l)));
   }, [user.patients]);
   return <AlertsList base={`${BASE}/alerts`} patientNames={names} back={BASE} />;
+}
+
+/** Contact the clinic about one of the caregiver's elders. */
+function CaregiverContact({ user }) {
+  const [elders] = useElders(user);
+  if (!elders) return <Loader />;
+  return <ContactClinic user={user} patients={elders.map((e) => ({ id: e.id, name: e.fullName }))} back={BASE} />;
 }

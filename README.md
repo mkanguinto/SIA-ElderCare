@@ -168,6 +168,13 @@ Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gat
 * **The admin is technical, not clinical**: no patient records, check-ins, histories, medicines, visits, care plans or clinic cases, and no clinical actions (alerts, triage, reviews, weather check). The admin's digest export is counts only (`GET /api/clinic/queue/summary`).
 * **Admin who is also a nurse: two separate accounts, one staff identity.** Nurse and admin accounts carry a staff ID (`ST-001`). Creating an admin account for an existing nurse ("Same person as …") links it to the nurse's staff ID: separate password, sessions and role, one account per role, the name must match. The audit log records the staff ID of whoever acted and of the account acted on, and can be filtered by person. An admin cannot send codes or links to, disable or enable their own other account: another admin must do it.
 * Duty coverage and case handover are separate from sessions: signing out never moves a case.
+* **Account SMS carry no links.** Philippine networks (Globe, Smart) block or silently drop person-to-person texts with links, and can still report them delivered. Activation and password-reset texts therefore contain only an 8-character code; the person opens the app (*Activate my account*, or *Sign in → Forgot password? → I have a reset code*) and types it with their username. The admin page says "Reported delivered" and that only the person using the code confirms it arrived.
+
+### Contacting the clinic (with proof)
+* Family members and caregivers tap **Contact the clinic** (`/m/family/contact`, `/m/caregiver/contact`): the clinic name, phone number (`CLINIC_HOTLINE`) and hours, a reason, an optional message and *Please call me back*, then **Call now** or **Send message**.
+* Every contact gets a reference (`CR-000012`) and an append-only timeline: sent / call started (the app cannot tell whether a call connected) → SMS notice to the clinic phone (its real delivery state; *simulated* and *failed* are shown as NOT sent) → **seen by** a named nurse → the nurse's **reply** or closing note, each with the time. The family sees the same timeline.
+* Nurses answer in **Messages** (`/m/nurse/messages`; banner on the queue). API: `POST/GET /api/patients/:id/clinic-contact`, `GET /api/clinic/contact-requests`, `POST /api/clinic/contact-requests/:id/seen|reply|close`, `GET /api/clinic/contact-info`. The admin has no access (patient data). At most 6 contacts per person per hour.
+* Set `CLINIC_HOTLINE` (and optionally `CLINIC_HOTLINE_NAME`, `CLINIC_HOURS`) in `.env`; for real SMS notices the number must be on `SMS_RECIPIENT_ALLOWLIST`.
 
 ---
 

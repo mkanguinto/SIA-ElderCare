@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { Link, navigate } from '../router';
 import Icon from './icons';
+import { ContactClinic } from './contact';
 import { todaysDoses, SLOTS, slotOf, alertHeadline } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications, CallClinic } from './common';
 import { DoseRow, WeekStrip } from './caregiver';
@@ -11,7 +12,7 @@ import { StatusChip, statusLine } from './status';
 import { conditionLabel, visitWhen, VISIT_TYPE_LABEL } from '../format';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Chip, Loader, useT, usePrefs,
-  isToday, clock, manilaDay, manilaHour, shortName, TONE, CLINIC_PHONE,
+  isToday, clock, manilaDay, manilaHour, shortName, TONE,
 } from './kit';
 
 const BASE = '/m/family';
@@ -53,6 +54,7 @@ export default function FamilyApp({ user, path }) {
   else if (sub === '/alerts') screen = <AlertsList base={`${BASE}/alerts`} back={BASE} />;
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} />;
   else if (sub === '/duties') screen = <FamilyDuties patientId={patientId} />;
+  else if (sub === '/contact') screen = <ContactClinic user={user} patients={[{ id: patientId, name: '' }]} back={BASE} />;
   else screen = <Today user={user} patientId={patientId} />;
   return (
     <MobileFrame emergency>

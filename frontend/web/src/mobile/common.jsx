@@ -5,7 +5,7 @@ import { Link, navigate } from '../router';
 import { ROLE_LABEL, relTime } from '../format';
 import Icon from './icons';
 import { alertHeadline, explainAlert } from './data';
-import { TopBar, Chip, Cta, Loader, usePrefs, useT, clock, isToday, TONE, CLINIC_PHONE, shortName } from './kit';
+import { TopBar, Chip, Cta, Loader, usePrefs, useT, clock, isToday, TONE, shortName } from './kit';
 
 const SMS_WORD = {
   delivered: ['delivered', 'naihatid'], sent: ['sent', 'naipadala'], simulated: ['test mode, not really sent', 'test mode, hindi talaga naipadala'],
@@ -130,13 +130,11 @@ export function AlertDetail({ id, back, callCaregiverLabel }) {
   );
 }
 
+/** Opens "Contact the clinic" (call or message, both recorded) in the current phone app (/m/family or /m/caregiver). */
 export function CallClinic({ label }) {
   const tr = useT();
-  const call = () => {
-    if (CLINIC_PHONE) window.location.href = `tel:${CLINIC_PHONE}`;
-    else window.alert(tr('The clinic hotline is not set yet (VITE_CLINIC_PHONE).', 'Wala pang numero ng klinika (VITE_CLINIC_PHONE).'));
-  };
-  return <Cta onClick={call}>{label || tr('Call the clinic', 'Tawagan ang klinika')}</Cta>;
+  const base = window.location.pathname.split('/').slice(0, 3).join('/');
+  return <Cta onClick={() => navigate(`${base}/contact`)}>{label || tr('Contact the clinic', 'Makipag-ugnayan sa klinika')}</Cta>;
 }
 
 export function Profile({ user, back, desktopTo, extra }) {
