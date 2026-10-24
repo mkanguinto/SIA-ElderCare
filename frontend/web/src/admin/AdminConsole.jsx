@@ -1,6 +1,6 @@
-// Admin web console (Figma A1 "Integration monitor" and A2 "Service health & users"): dark sidebar layout.
+// Admin web console (Figma page "All", Admin · frames): white sidebar on the dark green page.
 import React, { useCallback, useEffect, useState } from 'react';
-import { api, requestSignOut } from '../api';
+import { api } from '../api';
 import { Link } from '../router';
 import { relTime } from '../format';
 import Icon from '../mobile/icons';
@@ -10,26 +10,32 @@ import { CareTeams } from './CareTeams';
 import { Accounts, AuditLog } from './Accounts';
 import AlertRules from '../pages/AlertRules';
 import { ToastProvider } from '../toast';
+import DesktopShell from '../components/DesktopShell';
 import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
 
 const DLQ_DASHBOARD = import.meta.env.VITE_DLQ_DASHBOARD_URL || 'http://localhost:1880/dlq';
 const SERVICES = {
-  checkin: { name: 'Check-in service', sub: 'checkin_db · port 4001', icon: 'pulse' },
-  alert: { name: 'Alert service', sub: 'alert_db · TextBee · OpenWeatherMap', icon: 'zap' },
-  clinic: { name: 'Clinic risk service', sub: 'clinic_db · port 4003', icon: 'server' },
-  legacyAdapter: { name: 'Legacy EMR adapter', sub: 'stateless · SOAP 1.1', icon: 'file' },
-  care: { name: 'Care plan service', sub: 'care_db · port 4006', icon: 'clipboard' },
-  nodeRed: { name: 'Node-RED', sub: 'SMS router · weather · DLQ monitor', icon: 'flow' },
+  checkin: { name: 'Check-in service', sub: 'checkin_db · port 4001' },
+  alert: { name: 'Alert service', sub: 'alert_db · TextBee · OpenWeatherMap' },
+  clinic: { name: 'Clinic risk service', sub: 'clinic_db · port 4003' },
+  legacyAdapter: { name: 'Legacy EMR adapter', sub: 'stateless · SOAP 1.1' },
+  care: { name: 'Care plan service', sub: 'care_db · port 4006' },
+  nodeRed: { name: 'Node-RED', sub: 'SMS router · weather · DLQ monitor' },
 };
-const NAV = [
-  { to: '/admin', label: 'Integration monitor', icon: 'flow' },
-  { to: '/admin/health', label: 'Service health', icon: 'server' },
-  { to: '/admin/users', label: 'Accounts', icon: 'users' },
-  { to: '/admin/audit', label: 'Audit log', icon: 'shield' },
-  { to: '/admin/care-teams', label: 'Care teams', icon: 'heartPulse' },
-  { to: '/admin/dlq', label: 'Dead-letter queue', icon: 'inbox' },
-  { to: '/admin/digest', label: 'Digest export', icon: 'file' },
+const SECTIONS = [
+  { title: 'Operations', items: [
+    { to: '/admin', label: 'Integration monitor', icon: 'pulse' },
+    { to: '/admin/health', label: 'Service health', icon: 'server' },
+    { to: '/admin/dlq', label: 'Dead-letter queue', icon: 'inbox' },
+  ] },
+  { title: 'Administration', items: [
+    { to: '/admin/users', label: 'Accounts', icon: 'user' },
+    { to: '/admin/care-teams', label: 'Care teams', icon: 'users' },
+    { to: '/admin/audit', label: 'Audit log', icon: 'shield' },
+  ] },
+  { title: 'Reports', items: [{ to: '/admin/digest', label: 'Digest export', icon: 'file' }] },
+  { title: 'Settings', items: [{ to: '/admin/alert-rules', label: 'Alert rules', icon: 'sliders' }] },
 ];
 
 /** /api/admin/health + /api/admin/messaging, refreshed every 5 s. */
@@ -61,29 +67,15 @@ export default function AdminConsole({ user, path }) {
   else page = <Monitor live={live} />;
   return (
     <ToastProvider>
-    <div className="ad-app">
-      <aside className="ad-side">
-        <div className="ad-brand">
-          <span className="m-brand-mark"><Icon name="heart" /></span>
-          <div><strong>ElderCare</strong><small>{user.name} · admin</small></div>
-        </div>
-        <nav aria-label="Admin" style={{ display: 'contents' }}>
-          {NAV.map((n) => <Link key={n.to} to={n.to} activeClassName="is-active"><Icon name={n.icon} />{n.label}</Link>)}
-          <span className="ad-sep">Settings</span>
-          <Link to="/admin/alert-rules" activeClassName="is-active"><Icon name="sliders" />Alert rules</Link>
-        </nav>
-        <button type="button" className="ad-bottom" onClick={requestSignOut}><Icon name="logout" />Log out</button>
-      </aside>
-      <main className="ad-main" id="main">
+      <DesktopShell variant="admin" label="Admin" role="Admin" sections={SECTIONS} user={user} userSub="System Administrator">
         <p className="m-banner tone-info ad-phone-note" role="note"><Icon name="monitor" />The admin console is made for a computer. On a phone you can check status, but use a computer to manage the system.</p>
         {page}
-      </main>
-    </div>
+      </DesktopShell>
     </ToastProvider>
   );
 }
 
-function Head({ title, sub, live }) {
+function Head({ title, sub, live, children }) {
   const h = live && live.health;
   const services = h && h.services ? h.services : [];
   const up = services.filter((s) => s.status === 'up').length + (h && h.gateway === 'up' ? 1 : 0);
@@ -91,17 +83,28 @@ function Head({ title, sub, live }) {
   return (
     <header className="ad-head">
       <div><h1>{title}</h1><p>{sub}</p></div>
-      {h && !h.error && <Chip tone={up === all ? 'ok' : 'critical'}><span style={{ width: '.55rem', height: '.55rem', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />Live · {up === all ? `all ${all} services up` : `${all - up} of ${all} down`}</Chip>}
+      {h && !h.error && <span className={`ad-live ${up === all ? '' : 'is-down'}`}><span aria-hidden="true" />Live · {up === all ? `All ${all} services up` : `${all - up} of ${all} down`}</span>}
+      {children}
     </header>
   );
 }
 
 const queuesOf = (m) => ((m && m.services) || []).flatMap((s) => (s.queues || []).map((q) => ({ ...q, service: s.name })));
 
-/* ------------------------------ A1 integration monitor ------------------------------ */
+function Kpi({ icon, label, value, note, children }) {
+  return (
+    <div className="ad-card ad-kpi">
+      <div className="ad-kpi-label"><span className="ad-kpi-icon"><Icon name={icon} size={20} /></span>{label}</div>
+      <strong>{value}</strong>
+      <div className="ad-kpi-foot"><span>{note}</span>{children}</div>
+    </div>
+  );
+}
+
+/* ------------------------------ integration monitor ------------------------------ */
 function Monitor({ live }) {
   const { health, messaging } = live;
-  if (!health) return <><Head title="Integration monitor" sub="Live path of every event through the gateway, RabbitMQ and the services." /><p>Loading…</p></>;
+  if (!health) return <><Head title="Integration monitor" sub="Live path of every event through the gateway, RabbitMQ and the services." /><p className="ad-on-dark">Loading…</p></>;
   if (health.error) return <p className="m-error">{health.error}</p>;
   const svc = Object.fromEntries(health.services.map((s) => [s.name, s]));
   const queues = queuesOf(messaging);
@@ -111,48 +114,54 @@ function Monitor({ live }) {
   const avgLatency = Math.round(health.services.reduce((a, s) => a + (s.latencyMs || 0), 0) / health.services.length);
   const connected = ((messaging && messaging.services) || []).every((s) => s.connected);
   const nodeClass = (name) => (!svc[name] ? 'is-off' : svc[name].status === 'up' ? '' : 'is-down');
-  const ms = (name) => (svc[name] ? `${svc[name].latencyMs} ms` : '–');
+  const ms = (name) => (svc[name] ? <span className="ad-ms">{svc[name].latencyMs} ms</span> : null);
+  const arrow = <span className="ad-arrow" aria-hidden="true"><Icon name="arrowRight" size={20} /></span>;
   return (
     <>
       <Head title="Integration monitor" sub="Live path of every event through the gateway, RabbitMQ and the services. Updates every 5 s." live={live} />
       <div className="ad-kpis">
-        <div className="ad-card ad-kpi"><small>Gateway → services (avg)</small><strong>{avgLatency} ms</strong><div className="m-between"><span>target ≤ 2.0 s</span><Chip tone={avgLatency <= 2000 ? 'ok' : 'critical'} icon="check">{avgLatency <= 2000 ? 'On target' : 'Slow'}</Chip></div></div>
-        <div className="ad-card ad-kpi"><small>Events published</small><strong>{published}</strong><div className="m-between"><span>via eldercare.events</span><Chip tone="info" icon="bell">Fan-out ×3</Chip></div></div>
-        <div className="ad-card ad-kpi"><small>Queue depth</small><strong>{depth}</strong><div className="m-between"><span>alert · clinic queues</span><Chip tone={depth < 50 ? 'ok' : 'moderate'} icon="check">{depth < 50 ? 'Healthy' : 'Backlog'}</Chip></div></div>
-        <div className="ad-card ad-kpi"><small>Dead-lettered</small><strong>{dead}</strong><div className="m-between"><span>*.dlq</span>{dead ? <Link to="/admin/dlq"><Chip tone="moderate" icon="alert">Review</Chip></Link> : <Chip tone="ok" icon="check">Clear</Chip>}</div></div>
+        <Kpi icon="clock" label="Gateway → services (avg)" value={`${avgLatency} ms`} note="target ≤ 2.0 s"><Chip tone={avgLatency <= 2000 ? 'ok' : 'critical'} icon={avgLatency <= 2000 ? 'check' : 'alert'}>{avgLatency <= 2000 ? 'On target' : 'Slow'}</Chip></Kpi>
+        <Kpi icon="arrowRight" label="Events published" value={published} note="via eldercare.events"><Chip icon="checkCircle">Fan-out ×3</Chip></Kpi>
+        <Kpi icon="pulse" label="Queue depth" value={depth} note="alert · clinic queues"><Chip tone={depth < 50 ? 'ok' : 'moderate'} icon={depth < 50 ? 'check' : 'alert'}>{depth < 50 ? 'Healthy' : 'Backlog'}</Chip></Kpi>
+        <Kpi icon="inbox" label="Dead-lettered" value={dead} note="*.dlq">{dead ? <Link to="/admin/dlq"><Chip tone="moderate" icon="alert">Review</Chip></Link> : <Chip tone="ok" icon="check">Clear</Chip>}</Kpi>
       </div>
 
       <section className="ad-panel">
         <div className="m-between"><h2>Event path — check-in to alert, queue and flows</h2><Chip tone={connected ? 'ok' : 'critical'} icon={connected ? 'check' : 'alert'}>{connected ? 'Broker connected' : 'Broker unreachable'}</Chip></div>
         <div className="ad-flow">
-          <div className="ad-node"><strong><Icon name="users" size={18} />3 phone apps</strong>Caregiver PWA · Family · Nurse</div>
-          <div className="ad-node"><strong><Icon name="shield" size={18} />API Gateway</strong>OAuth 2.0 JWT · RBAC · rate limit<span className="ad-ms">{ms('checkin')}</span></div>
-          <div className={`ad-node ${nodeClass('checkin')}`}><strong><Icon name="pulse" size={18} />Check-in</strong>Check-in + outbox in one DB transaction</div>
-          <div className={`ad-node ${connected ? '' : 'is-down'}`}><strong><Icon name="zap" size={18} />RabbitMQ</strong>eldercare.events (topic exchange) · ack after commit
-            <div className="m-pills" style={{ marginTop: '.5rem' }}><Chip icon="checkCircle">DLX on</Chip>{dead > 0 && <Chip tone="moderate" icon="alert">{dead} in DLQ</Chip>}</div></div>
+          <div className="ad-node"><strong>3 phone apps</strong>Caregiver PWA · Family · Nurse</div>
+          {arrow}
+          <div className="ad-node"><strong>API Gateway</strong>OAuth 2.0 JWT · RBAC · rate limit{ms('checkin')}</div>
+          {arrow}
+          <div className={`ad-node ${nodeClass('checkin')}`}><strong>Check-in</strong>Check-in + outbox in one DB transaction</div>
+          {arrow}
+          <div className={`ad-node ${connected ? '' : 'is-down'}`}><strong>RabbitMQ</strong>eldercare.events (topic exchange) · ack after commit
+            <span className="ad-ms">DLX on</span>{dead > 0 && <span className="ad-ms is-warn">{dead} in DLQ</span>}</div>
+          {arrow}
           <div className="ad-fan">
-            <div className={`ad-node ${nodeClass('alert')}`}><strong><Icon name="alert" size={18} />Alert service</strong>{ms('alert')} · in-app alert + TextBee SMS · weather mashup</div>
-            <div className={`ad-node ${nodeClass('clinic')}`}><strong><Icon name="server" size={18} />Clinic risk service</strong>{ms('clinic')} · risk score → priority · EMR via SOAP adapter</div>
-            <div className={`ad-node ${nodeClass('nodeRed')}`}><strong><Icon name="flow" size={18} />Node-RED</strong>{svc.nodeRed ? `${ms('nodeRed')} · SMS router · weather · DLQ monitor` : 'not deployed (set NODE_RED_URL)'}</div>
+            <div className={`ad-node ${nodeClass('alert')}`}><strong>Alert service</strong>in-app alert + TextBee SMS · weather mashup{ms('alert')}</div>
+            <div className={`ad-node ${nodeClass('clinic')}`}><strong>Clinic risk service</strong>risk score → priority · EMR via SOAP adapter{ms('clinic')}</div>
+            <div className={`ad-node ${nodeClass('nodeRed')}`}><strong>Node-RED</strong>{svc.nodeRed ? <>SMS router · weather · DLQ monitor{ms('nodeRed')}</> : 'not deployed (set NODE_RED_URL)'}</div>
           </div>
         </div>
       </section>
 
       <section className="ad-panel">
-        <div className="m-between"><h2>Queues</h2><span className="m-caption">Live depths from RabbitMQ · checked {live.at ? live.at.toLocaleTimeString() : ''}</span></div>
+        <div className="m-between"><h2>Queues</h2><span className="m-caption ad-checked"><Icon name="refresh" size={16} />Live depths checked at {live.at ? live.at.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }) : ''}</span></div>
         <table className="ad-table">
           <thead><tr><th>Queue</th><th>Consumer</th><th>Messages</th><th>Consumers</th><th>Status</th></tr></thead>
           <tbody>
             {queues.map((q) => {
               const dlq = q.queue.endsWith('.dlq');
-              const tone = dlq ? (q.messages ? 'moderate' : 'ok') : q.consumers ? 'ok' : 'critical';
               return (
                 <tr key={q.queue}>
-                  <td><strong>{q.queue}</strong></td>
+                  <td>{q.queue}</td>
                   <td>{q.service}</td>
                   <td>{q.messages}</td>
                   <td>{q.consumers}</td>
-                  <td><Chip tone={tone} icon={tone === 'ok' ? 'check' : 'alert'}>{dlq ? (q.messages ? 'Needs review' : 'Empty') : q.consumers ? 'Consuming' : 'No consumer'}</Chip></td>
+                  <td>{dlq
+                    ? (q.messages ? <Chip tone="moderate" icon="alert">Needs review</Chip> : <Chip icon="checkCircle">Empty</Chip>)
+                    : (q.consumers ? <Chip tone="ok" icon="check">Consuming</Chip> : <Chip tone="critical" icon="alert">No consumer</Chip>)}</td>
                 </tr>
               );
             })}
@@ -163,17 +172,17 @@ function Monitor({ live }) {
   );
 }
 
-/* ------------------------------ A2 service health ------------------------------ */
+/* ------------------------------ service health ------------------------------ */
 function Health({ live }) {
   const { health, messaging } = live;
-  if (!health) return <><Head title="Service health" sub="Each service, its own database, and the circuit breaker the gateway keeps for it." /><p>Loading…</p></>;
+  if (!health) return <><Head title="Service health" sub="Each service, its own database, and the circuit breaker the gateway keeps for it." /><p className="ad-on-dark">Loading…</p></>;
   if (health.error) return <p className="m-error">{health.error}</p>;
   const breakers = Object.fromEntries((health.circuitBreakers || []).map((b) => [b.name, b]));
   const connected = messaging && messaging.services && messaging.services.every((s) => s.connected);
   const cards = [
-    { key: 'gateway', name: 'API Gateway', sub: 'tokens · routing · rate limits', icon: 'shield', status: health.gateway, latency: null },
-    ...health.services.map((s) => ({ key: s.name, ...(SERVICES[s.name] || { name: s.name, sub: '', icon: 'server' }), status: s.status, latency: s.latencyMs, breaker: breakers[s.name] })),
-    { key: 'rabbit', name: 'RabbitMQ', sub: `${queuesOf(messaging).length} queues incl. DLQs`, icon: 'zap', status: connected ? 'up' : 'down', latency: null, broker: true },
+    { key: 'gateway', name: 'API Gateway', sub: 'tokens · routing · rate limits', status: health.gateway, latency: null },
+    ...health.services.map((s) => ({ key: s.name, ...(SERVICES[s.name] || { name: s.name, sub: '' }), status: s.status, latency: s.latencyMs, breaker: breakers[s.name] })),
+    { key: 'rabbit', name: 'RabbitMQ', sub: `${queuesOf(messaging).length} queues incl. DLQs`, status: connected ? 'up' : 'down', latency: null, broker: true },
   ];
   return (
     <>
@@ -181,26 +190,24 @@ function Health({ live }) {
       <div className="ad-health">
         {cards.map((c) => (
           <div key={c.key} className="ad-svc">
-            <div className="m-row">
-              <span className="ad-svc-icon"><Icon name={c.icon} size={20} /></span>
+            <div className="ad-svc-top">
               <div className="m-grow"><strong>{c.name}</strong><span className="m-sub">{c.sub}</span></div>
               <Chip tone={c.status === 'up' ? 'ok' : c.status === 'degraded' ? 'moderate' : 'critical'} icon={c.status === 'up' ? 'check' : 'alert'}>{c.status === 'up' ? 'Up' : c.status === 'degraded' ? 'Degraded' : 'Down'}</Chip>
             </div>
             <div className="ad-svc-foot">
               <span>Latency {c.latency != null ? `${c.latency} ms` : '—'}</span>
-              {c.broker ? <Chip tone="info" icon="bell">{connected ? 'Connected' : 'Disconnected'}</Chip>
-                : c.breaker ? <Chip tone={c.breaker.state === 'CLOSED' ? 'info' : 'critical'} icon="bell">Breaker: {c.breaker.state.toLowerCase()}</Chip>
-                  : <Chip icon="checkCircle">{c.key === 'gateway' ? 'Entry point' : 'No breaker'}</Chip>}
+              {c.broker ? <Chip tone={connected ? 'info' : 'critical'} icon="bell">{connected ? 'Connected' : 'Disconnected'}</Chip>
+                : c.breaker ? <Chip tone={c.breaker.state === 'CLOSED' ? 'ok' : 'critical'} icon={c.breaker.state === 'CLOSED' ? 'check' : 'alert'}>Breaker {c.breaker.state.toLowerCase().replace('_', '-')}</Chip>
+                  : c.key === 'gateway' ? <Chip tone="info" icon="bell">Entry point</Chip> : <Chip icon="checkCircle">No breaker</Chip>}
             </div>
           </div>
         ))}
       </div>
-      <section className="ad-panel"><h2 style={{ marginBottom: '1rem' }}>Token security</h2><SecurityPanel /></section>
+      <section className="ad-panel"><h2>Token security</h2><SecurityPanel /></section>
     </>
   );
 }
 
-/* ------------------------------ A2 users & roles ------------------------------ */
 /* ------------------------------ dead-letter queue ------------------------------ */
 function Dlq({ live, reload }) {
   const [msg, setMsg] = useState('');
@@ -218,16 +225,16 @@ function Dlq({ live, reload }) {
       <Head title="Dead-letter queue" sub="Messages that failed after all retries (5 s, 30 s, 2 min). Fix the cause, then replay." live={live} />
       {msg && <p className="m-banner tone-info" role="status">{msg}</p>}
       <section className="ad-panel">
-        <div className="m-between"><h2>Parked messages</h2><a className="m-link" href={DLQ_DASHBOARD} target="_blank" rel="noreferrer">Open the Node-RED DLQ dashboard ↗</a></div>
+        <div className="m-between"><h2>Parked messages</h2><a className="m-btn ad-btn-auto" href={DLQ_DASHBOARD} target="_blank" rel="noreferrer">Open the Node-RED DLQ dashboard ↗</a></div>
         {!messaging && <p>Loading…</p>}
-        <table className="ad-table">
+        <table className="ad-table is-boxed">
           <thead><tr><th>Queue</th><th>Service</th><th>Messages</th><th>Action</th></tr></thead>
           <tbody>
             {dlqs.map((q) => (
               <tr key={q.queue}>
-                <td><strong>{q.queue}</strong></td><td>{q.service}</td>
-                <td>{q.messages ? <Chip tone="moderate" icon="alert">{q.messages} parked</Chip> : <Chip tone="ok" icon="check">Empty</Chip>}</td>
-                <td><button type="button" className="m-btn" style={{ minHeight: '2.5rem' }} disabled={!q.messages} onClick={() => replay(q)}>Replay</button></td>
+                <td>{q.queue}</td><td>{q.service}</td>
+                <td>{q.messages ? <Chip tone="moderate" icon="alert">{q.messages} parked</Chip> : <Chip icon="checkCircle">Empty</Chip>}</td>
+                <td><button type="button" className="m-btn ad-btn-auto" disabled={!q.messages} onClick={() => replay(q)}>Replay</button></td>
               </tr>
             ))}
           </tbody>

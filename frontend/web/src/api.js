@@ -48,7 +48,7 @@ export function currentUser() {
   if (!session) return null;
   const c = decode(session.accessToken);
   if (!c.sub) return null;
-  return { id: c.sub, name: c.name || c.sub, role: c.role, patients: c.patients || [] };
+  return { id: c.sub, name: c.name || c.sub, username: c.username, role: c.role, patients: c.patients || [] };
 }
 
 /** Called whenever the signed-in user changes: sign-in, sign-out, account switch, or expired session. */

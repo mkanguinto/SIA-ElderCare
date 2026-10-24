@@ -78,6 +78,7 @@ function issueAccessToken(user, sid) {
     typ: 'access',
     sid,
     name: user.name,
+    username: user.username,
     role: user.role,
     patients: user.patients || [],
     scope: (user.scopes || []).join(' '),

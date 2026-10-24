@@ -90,8 +90,12 @@ export async function launch({ width = 390, height = 844 } = {}) {
         Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
       if (!ok) throw new Error(`no field ${selector}[${n}]`);
     },
-    async screenshot(file) {
-      const shot = await send('Page.captureScreenshot', { format: 'png' });
+    /** full: the whole page, not just the viewport. */
+    async screenshot(file, { full = false } = {}) {
+      const size = full ? await evaluate('({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight })') : null;
+      const shot = await send('Page.captureScreenshot', full
+        ? { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width: size.w, height: size.h, scale: 1 } }
+        : { format: 'png' });
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
     },

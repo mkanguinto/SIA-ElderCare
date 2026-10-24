@@ -30,14 +30,25 @@ export default async function run({ shots } = {}) {
     const href = await page.evaluate("[...document.querySelectorAll('.ad-main a.m-list-row')].map((a) => a.getAttribute('href')).find((h) => h && h.includes('/patients/'))");
     check(href && href.startsWith('/clinic/patients/'), `queue rows open the desktop patient page (${href})`);
     await page.goto('/clinic/patients/P-1001');
-    check(await page.waitFor('Clinic records') && await page.waitFor('Prescribed medicines') && await page.waitFor('Care team'), 'patient page: phone patient screen beside the clinic records (medicines, care team)');
+    check(await page.waitFor('Overview & Clinical Data') && await page.waitFor('Blood pressure, last 30 days') && await page.waitFor('Recent check-ins'), 'patient case: overview tab (why this priority, blood pressure, recent check-ins)');
+    await page.click('Care Plan & Medications', '.ad-tabs');
+    check(await page.waitFor('Prescribed medicines') && await page.waitFor('Duties today'), 'patient case: care plan & medications tab');
     if (shots) await page.screenshot(`${shots}/desktop-patient.png`);
-    const color = await page.evaluate("getComputedStyle(document.querySelector('.panel')).borderRadius");
-    check(parseFloat(color) >= 16, `desktop-only panels take the phone look (radius ${color})`);
+    const radius = await page.evaluate("getComputedStyle(document.querySelector('.panel')).borderRadius");
+    check(parseFloat(radius) >= 16, `desktop-only panels take the phone look (radius ${radius})`);
+    await page.click('Care Team & System Settings', '.ad-tabs');
+    check(await page.waitFor('SMS alert contacts') && await page.waitFor('Legacy clinic records'), 'patient case: care team & system settings tab');
+    check(await page.evaluate("document.querySelector('.ad-profile').innerText.includes('nurse.ana')"), 'sidebar profile card shows the username');
 
     await page.login('admin.harold');
     await page.goto('/admin/alert-rules');
     check(await page.waitFor('Alert rules') && await page.evaluate("!!document.querySelector('.ad-app .ad-side')"), 'admin: alert rules inside the admin console');
+    await page.goto('/admin/care-teams');
+    check(await page.waitFor('Team Roster & Elders') && await page.waitFor('Add Nurse'), 'admin: care teams roster tab');
+    await page.click('Link & Assignments', '.ad-tabs');
+    check(await page.waitFor('Link another elder'), 'admin: care teams link & assignments tab');
+    await page.click('Create New Team');
+    check(await page.waitFor({ expr: "!!document.querySelector('.ad-drawer [role=dialog], .ad-drawer')" }) && await page.waitFor('New care team'), 'admin: Create New Team opens the drawer');
     await page.goto('/clinic');
     await sleep(800);
     check(await page.evaluate("location.pathname.startsWith('/admin')"), 'admin cannot open the nurse console (patient data)');

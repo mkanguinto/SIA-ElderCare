@@ -180,7 +180,7 @@ export function MyCases({ data, reasonLine }) {
 
 /* ------------------------------ patient: care team + chain ------------------------------ */
 /** Care-team card on the patient screen: who holds the case, the team, and the handover chain. */
-export function CareTeamCard({ user, patientId, care }) {
+export function CareTeamCard({ user, patientId, care, children }) {
   const tr = useT();
   if (!care) return null;
   if (care.error) return <section className="m-card"><p className="m-muted">{care.error}</p></section>;
@@ -202,6 +202,7 @@ export function CareTeamCard({ user, patientId, care }) {
       </ul>
       {pending && <Banner tone="moderate" icon="swap">{tr(`Handover to ${pending.toNurse.name} is waiting for acceptance. ${pending.fromNurse.name} holds the case until then.`, `Hinihintay ang pagtanggap ni ${pending.toNurse.name}.`)}</Banner>}
       {mine && !pending && <Cta onClick={() => navigate(`${base()}/patients/${patientId}/handover`)}>{tr('Hand over this case', 'Ipasa ang kaso')}</Cta>}
+      {children}
       {care.handovers.length > 0 && (
         <details className="m-chain" style={{ marginTop: '.75rem' }}>
           <summary>{tr(`Handover history (${care.handovers.length})`, `Kasaysayan ng handover (${care.handovers.length})`)}</summary>

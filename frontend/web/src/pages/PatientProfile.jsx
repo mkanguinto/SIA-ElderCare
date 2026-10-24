@@ -20,7 +20,7 @@ function Section({ title, action, children }) {
   );
 }
 
-function Medications({ patientId, canEdit }) {
+export function Medications({ patientId, canEdit }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [adding, setAdding] = useState(false);
@@ -92,7 +92,7 @@ function Medications({ patientId, canEdit }) {
   );
 }
 
-function CareTeam({ patientId, canEdit }) {
+export function CareTeam({ patientId, canEdit }) {
   const toast = useToast();
   const [users, setUsers] = useState(null);
   const [contacts, setContacts] = useState(null);

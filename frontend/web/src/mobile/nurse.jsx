@@ -27,8 +27,8 @@ const NAV = (tr) => [
   { to: `${BASE}/digest`, icon: 'zap', label: tr('Digest', 'Digest') },
   { to: `${BASE}/profile`, icon: 'user', label: tr('Me', 'Ako') },
 ];
-const PRIORITY_WORD = { P1: ['Urgent', 'Agaran'], P2: ['Soon', 'Malapit na'], P3: ['Watch', 'Bantayan'], P4: ['Routine', 'Karaniwan'] };
-const avatarInitials = (name = '') => initials(name.replace(/^(Lola|Lolo) /, ''));
+export const PRIORITY_WORD = { P1: ['Urgent', 'Agaran'], P2: ['Soon', 'Malapit na'], P3: ['Watch', 'Bantayan'], P4: ['Routine', 'Karaniwan'] };
+export const avatarInitials = (name = '') => initials(name.replace(/^(Lola|Lolo) /, ''));
 
 export default function NurseApp({ user, path }) {
   const tr = useT();
@@ -55,7 +55,7 @@ export default function NurseApp({ user, path }) {
   );
 }
 
-function useQueue() {
+export function useQueue() {
   const [q, setQ] = useState(null);
   const load = useCallback(() => api('/api/clinic/queue?pageSize=200').then(setQ).catch((e) => setQ({ error: e.message })), []);
   useEffect(() => {
@@ -153,7 +153,7 @@ export function Queue({ user }) {
 }
 
 /* ------------------------------ N2 patient detail ------------------------------ */
-function breakdown(item, patient) {
+export function breakdown(item, patient) {
   const { health, environment, emr, total } = item.scores;
   const comp = Math.round(0.3 * Math.min(health, environment));
   const emrPts = Math.min(10, emr);
@@ -553,7 +553,7 @@ const DEVICE_WORD = {
   digital_oral: 'oral thermometer', digital_axillary: 'underarm thermometer', infrared_forehead: 'forehead thermometer', infrared_ear: 'ear thermometer', fingertip: 'fingertip oximeter',
 };
 
-function useReviewQueue(patientId, view = 'pending') {
+export function useReviewQueue(patientId, view = 'pending') {
   const [data, setData] = useState(null);
   const load = useCallback(() => api(`/api/checkins/review-queue?view=${view}&pageSize=30${patientId ? `&patientId=${encodeURIComponent(patientId)}` : ''}`)
     .then(setData).catch((e) => setData({ error: e.message })), [patientId, view]);
@@ -583,25 +583,29 @@ const REVIEW_VIEWS = [
   ['archived', 'Demo', 'Demo', 'Demo and test records, archived separately. They were not reviewed and are not part of patient care.', 'Mga demo at test na record. Hindi ito nasuri at hindi bahagi ng pangangalaga.'],
 ];
 
-export function Reviews() {
+/** Check-ins to review. desktop: page header with the view switch on the right and a two-column card grid. */
+export function Reviews({ desktop = false }) {
   const tr = useT();
   const [view, setView] = useState('current');
   const [data, reload] = useReviewQueue(undefined, view);
   const counts = data && data.counts;
   const [, , , en, fil] = REVIEW_VIEWS.find((v) => v[0] === view);
+  const seg = (
+    <div className="m-seg" role="group" aria-label={tr('Which check-ins', 'Aling check-in')} style={desktop ? undefined : { marginBottom: '.75rem' }}>
+      {REVIEW_VIEWS.map(([k, en2, fil2]) => (
+        <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)}>{tr(en2, fil2)}{counts ? ` (${counts[k]})` : ''}</button>
+      ))}
+    </div>
+  );
   return (
     <>
-      <TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={base()} />
-      <div className="m-seg" role="group" aria-label={tr('Which check-ins', 'Aling check-in')} style={{ marginBottom: '.75rem' }}>
-        {REVIEW_VIEWS.map(([k, en2, fil2]) => (
-          <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)}>{tr(en2, fil2)}{counts ? ` (${counts[k]})` : ''}</button>
-        ))}
-      </div>
-      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr(en, fil)}</p>
+      {desktop
+        ? <header className="ad-head"><div><h1>{tr('Check-ins to review', 'Susuriing check-in')}</h1><p>{tr(en, fil)}</p></div>{seg}</header>
+        : <><TopBar title={tr('Check-ins to review', 'Susuriing check-in')} back={base()} />{seg}<p className="m-muted" style={{ marginBottom: '1rem' }}>{tr(en, fil)}</p></>}
       {!data && <Loader />}
       {data && data.error && <p className="m-error">{data.error}</p>}
       {data && data.checkins && !data.checkins.length && <div className="m-note"><strong>{view === 'archived' ? tr('No archived demo records', 'Walang demo record') : tr('Nothing to review', 'Walang susuriin')}</strong>{view === 'current' ? tr('New check-ins appear here as they arrive.', 'Lalabas dito ang mga bagong check-in.') : ''}</div>}
-      <div className="m-stack">{data && data.checkins && data.checkins.map((c) => <ReviewCard key={c.id} c={c} onDone={reload} showPatient />)}</div>
+      <div className={desktop ? 'ad-review-grid' : 'm-stack'}>{data && data.checkins && data.checkins.map((c) => <ReviewCard key={c.id} c={c} onDone={reload} showPatient />)}</div>
       {data && data.pagination && data.pagination.totalItems > (data.checkins || []).length && <p className="m-caption" style={{ marginTop: '.75rem' }}>{tr(`Showing ${data.checkins.length} of ${data.pagination.totalItems}.`, `${data.checkins.length} sa ${data.pagination.totalItems}.`)}</p>}
     </>
   );
@@ -620,7 +624,7 @@ function PatientReviews({ patientId }) {
 }
 
 /** One check-in awaiting the nurse: Mark reviewed (optional note) or Record action (required). */
-function ReviewCard({ c, onDone, showPatient = false }) {
+export function ReviewCard({ c, onDone, showPatient = false }) {
   const tr = useT();
   const saved = useRestoredDraft(`review:${c.id}`);
   const [mode, setMode] = useState(saved ? saved.data.mode : null); // null | 'review' | 'action'
@@ -644,22 +648,24 @@ function ReviewCard({ c, onDone, showPatient = false }) {
   }
 
   return (
-    <article className="m-card" style={{ marginTop: 0 }}>
-      <div className="m-between" style={{ alignItems: 'flex-start' }}>
+    <article className="m-card m-review" style={{ marginTop: 0 }}>
+      <div className="m-row" style={{ alignItems: 'flex-start' }}>
+        {showPatient && <span className={`m-avatar ${toneFor(c.patientName || '')}`} aria-hidden="true">{avatarInitials(c.patientName || '')}</span>}
         <div className="m-grow">
-          {showPatient && <Link to={`${base()}/patients/${c.patientId}`} className="m-link" style={{ padding: 0 }}>{c.patientName}</Link>}
-          <strong style={{ display: 'block', fontSize: '1.125rem' }}>{vitalsSummary(c, tr)}</strong>
+          {showPatient && <Link to={`${base()}/patients/${c.patientId}`} className="m-review-name">{c.patientName}</Link>}
+          <strong className="m-review-vitals">{vitalsSummary(c, tr)}</strong>
           <span className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)}{devices ? ` · ${devices}` : ''}</span>
         </div>
-        <StatusChip status={c.status} />
+        {!showPatient && <StatusChip status={c.status} />}
       </div>
+      {showPatient && <div style={{ marginTop: '.6rem' }}><StatusChip status={c.status} /></div>}
       {c.dataOrigin === 'demo' && <p className="m-caption" style={{ marginTop: '.3rem' }}><Chip tone="info">{tr('Demo record', 'Demo record')}</Chip>{c.archived ? ` ${tr('Archived', 'Naka-archive')} ${relTime(c.archived.at)}` : ''}</p>}
-      {c.anomalies.length > 0 && <p style={{ marginTop: '.4rem', color: 'var(--text-critical)', fontSize: '.875rem', fontWeight: 700 }}>{c.anomalies.map((a) => a.message).join('; ')}</p>}
-      {c.notes && <p className="m-muted" style={{ fontSize: '.875rem', marginTop: '.3rem' }}>“{c.notes}”</p>}
+      {c.anomalies.length > 0 && <p className="m-review-flags"><Icon name="alert" size={18} /><span>{c.anomalies.map((a) => a.message).join('; ')}</span></p>}
+      {c.notes && <p className="m-muted" style={{ fontSize: '.875rem', marginTop: '.5rem' }}>“{c.notes}”</p>}
       {!mode && !c.archived && (
         <div className="m-grid-2" style={{ marginTop: '.75rem' }}>
           <button type="button" className="m-btn" onClick={() => setMode('review')}><Icon name="eye" size={18} />{tr('Mark reviewed', 'Markahang nasuri')}</button>
-          <button type="button" className="m-btn is-dark" onClick={() => setMode('action')}><Icon name="check" size={18} />{tr('Record action', 'Itala ang aksyon')}</button>
+          <button type="button" className="m-btn is-dark m-review-act" onClick={() => setMode('action')}><Icon name="check" size={18} />{tr('Record action', 'Itala ang aksyon')}</button>
         </div>
       )}
       {mode && (

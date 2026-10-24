@@ -8,8 +8,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { ROLE_LABEL, initials, relTime } from '../format';
 import { Chip, toneFor } from '../mobile/kit';
+import Icon from '../mobile/icons';
 
-const ROLE_CHIP = { caregiver: ['ok', 'check', 'Caregiver'], family_member: ['info', 'bell', 'Family (view only)'], clinic_staff: ['ok', 'check', 'Nurse'], system_admin: ['', 'checkCircle', 'System admin'] };
+const ROLE_NAME = { caregiver: 'Caregiver', family_member: 'Family (view only)', clinic_staff: 'Nurse', system_admin: 'System admin' };
 const STATUS_CHIP = { active: ['ok', 'check', 'Active'], pending_activation: ['moderate', 'clock', 'Waiting for activation'], disabled: ['critical', 'x', 'Disabled'] };
 const ACTION_LABEL = {
   account_created: 'Account created', activation_code_sent: 'Activation code sent', account_activated: 'Account activated', activation_failed: 'Activation failed',
@@ -19,6 +20,8 @@ const ACTION_LABEL = {
   session_locked: 'Locked (inactivity)', session_unlocked: 'Unlocked', session_revoked: 'Session ended by admin', sessions_revoked_all: 'Signed out everywhere by admin',
   patients_linked: 'Elders linked',
 };
+// Audit chips: what went well (green), what needs a look (orange), the rest (blue).
+const actionTone = (a) => (/failed|locked|disabled|revoked/.test(a) ? 'high' : /^(login|account_activated|account_enabled|password_reset_completed|session_unlocked|account_created)$/.test(a) ? 'ok' : 'info');
 const when = (ts) => new Date(ts).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 // Only 'delivered' is shown as received. simulated / failed say plainly that nothing reached the person.
@@ -84,18 +87,18 @@ export function Accounts({ Head }) {
       <section className="ad-panel">
         <div className="m-between">
           <h2>All accounts{data && data.total ? ` (${data.total})` : ''}</h2>
-          <div className="m-seg" role="group" aria-label="Show" style={{ width: '30rem', maxWidth: '100%' }}>
+          <div className="m-seg ad-seg" role="group" aria-label="Show">
             {[['all', 'All'], ['pending_activation', 'Waiting'], ['active', 'Active'], ['disabled', 'Disabled']].map(([k, l]) => <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}</button>)}
           </div>
         </div>
         {!data && <p>Loading…</p>}
         {data && data.error && <p className="m-error">{data.error}</p>}
         {data && data.accounts && (
-          <table className="ad-table">
-            <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Sessions</th><th><span className="m-sr">Actions</span></th></tr></thead>
+          <table className="ad-table is-boxed">
+            <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Sessions</th><th>Actions</th></tr></thead>
             <tbody>
               {rows.map((a) => {
-                const [tone, icon, label] = ROLE_CHIP[a.role] || ['', 'user', ROLE_LABEL[a.role]];
+                const label = ROLE_NAME[a.role] || ROLE_LABEL[a.role];
                 const [st, si, sl] = STATUS_CHIP[a.status];
                 const linked = others(a);
                 const dv = a.activation && DELIVERY[a.activation.delivery];
@@ -105,7 +108,7 @@ export function Accounts({ Head }) {
                       <td><div className="ad-user"><span className={`m-avatar ${toneFor(a.name)}`} aria-hidden="true">{initials(a.name)}</span><div><strong>{a.name}</strong>
                         <span className="m-sub">{a.username} · {a.id}{a.staffId ? ` · staff ${a.staffId}` : ''}{a.phone ? ` · ${a.phone}` : ''}</span>
                         {linked.length > 0 && <span className="m-sub">Same person: {linked.map((x) => `${x.username} (${x.role === 'system_admin' ? 'admin' : 'nurse'})`).join(', ')}</span>}</div></div></td>
-                      <td><Chip tone={tone} icon={icon}>{label}</Chip>{a.patients.length > 0 && <span className="m-sub">{a.patients.join(' · ')}</span>}</td>
+                      <td>{label}{a.patients.length > 0 && <span className="m-sub">{a.patients.join(' · ')}</span>}</td>
                       <td><Chip tone={st} icon={si}>{sl}</Chip>
                         {a.activation && <span className="m-sub">Code {a.activation.state === 'ok' ? `valid until ${when(a.activation.expiresAt)}` : a.activation.state}</span>}
                         {dv && <span className="m-sub"><Chip tone={dv[0]} icon={dv[1]}>{dv[2]}</Chip></span>}
@@ -132,20 +135,22 @@ function SmsCheck() {
   const check = useCallback(() => { setC(null); api('/api/admin/sms-check').then(setC).catch((e) => setC({ ready: false, problems: [e.message] })); }, []);
   useEffect(() => { check(); }, [check]);
   const d = c && c.gateway && c.gateway.device;
+  const tone = !c ? 'info' : c.ready ? 'ok' : 'high';
   return (
-    <section className={`m-banner tone-${!c ? 'info' : c.ready ? 'ok' : 'critical'}`} style={{ display: 'block', marginBottom: '1rem' }} aria-live="polite">
-      <div className="m-between">
+    <section className={`m-banner tone-${tone} ad-sms`} aria-live="polite">
+      <Icon name={c && c.ready ? 'checkCircle' : 'alert'} />
+      <div className="m-grow">
         <strong>{!c ? 'Checking SMS…' : c.ready ? 'SMS is live: codes and links are really sent' : 'SMS is NOT ready: codes and links may not reach anyone'}</strong>
-        <button type="button" className="m-link" onClick={check}>Check again</button>
+        {c && c.problems && c.problems.map((p) => <p key={p}>{p}</p>)}
+        {c && c.mode && (
+          <p className="ad-sms-detail">
+            {c.mode.reason}{c.mode.live && c.mode.allowlistSize ? ' (other numbers are simulated, not sent)' : ''}
+            {d ? ` · SMS phone ${d.model || ''} ${d.enabled ? 'enabled' : 'disabled'}, last online ${d.lastSeenAt ? relTime(d.lastSeenAt) : 'unknown'}` : ''}
+            {typeof c.sentToday === 'number' ? ` · ${c.sentToday} of ${c.dailyLimit} texts used today` : ''}
+          </p>
+        )}
       </div>
-      {c && c.problems && c.problems.length > 0 && <ul style={{ margin: '.4rem 0 0 1.1rem' }}>{c.problems.map((p) => <li key={p}>{p}</li>)}</ul>}
-      {c && c.mode && (
-        <p className="m-caption" style={{ marginTop: '.4rem' }}>
-          {c.mode.reason}{c.mode.live && c.mode.allowlistSize ? ' (other numbers are simulated, not sent)' : ''}
-          {d ? ` · SMS phone ${d.model || ''} ${d.enabled ? 'enabled' : 'disabled'}, last online ${d.lastSeenAt ? relTime(d.lastSeenAt) : 'unknown'}` : ''}
-          {typeof c.sentToday === 'number' ? ` · ${c.sentToday} of ${c.dailyLimit} texts used today` : ''}
-        </p>
-      )}
+      <button type="button" className="m-btn ad-btn-auto" onClick={check}>Check again</button>
     </section>
   );
 }
@@ -231,7 +236,7 @@ function NewAccount({ staff, onCreate }) {
       <h2>New account</h2>
       <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Family members are linked to an elder only after the clinic verifies them.
         A nurse who is also an admin gets a second, separate account linked to the same staff ID: separate password and sessions, one person in the audit log.</p>
-      <form className="ad-inline-form" onSubmit={async (e) => {
+      <form onSubmit={async (e) => {
         e.preventDefault();
         const ok = await onCreate({
           role: f.role, name: (person ? person.name : f.name).trim(), username: f.username.trim(), phone: f.phone.trim(),
@@ -240,18 +245,21 @@ function NewAccount({ staff, onCreate }) {
         });
         if (ok) setF({ ...blank, role: f.role });
       }}>
-        <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, staffId: '' })} aria-label="Role">{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        {isStaff && (
-          <select value={f.staffId} onChange={set('staffId')} aria-label="Staff member">
-            <option value="">New staff member (new staff ID)</option>
-            {people.map((p) => <option key={p.staffId} value={p.staffId}>Same person as {p.name} ({p.staffId}, {p.accounts.map((x) => x.username).join(', ')})</option>)}
-          </select>
-        )}
-        <input value={person ? person.name : f.name} onChange={set('name')} readOnly={Boolean(person)} placeholder="Full name" aria-label="Full name" minLength={2} required />
-        <input value={f.username} onChange={set('username')} placeholder={f.role === 'system_admin' ? 'Username, e.g. admin.ana' : 'Username, e.g. caregiver.liza'} aria-label="Username" pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required />
-        <input value={f.phone} onChange={set('phone')} placeholder="Mobile, e.g. 0917 123 4567" aria-label="Mobile number" inputMode="tel" required />
-        {f.role === 'caregiver' && <input value={f.patients} onChange={set('patients')} placeholder="Elders (IDs), e.g. P-1003" aria-label="Elder IDs" />}
-        <button type="submit" className="m-btn is-dark">Create and send code</button>
+        <div className="ad-form-grid">
+          <label className="ad-field"><span>Role</span><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, staffId: '' })}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          {isStaff && (
+            <label className="ad-field"><span>Staff member</span>
+              <select value={f.staffId} onChange={set('staffId')}>
+                <option value="">New staff member (new staff ID)</option>
+                {people.map((p) => <option key={p.staffId} value={p.staffId}>Same person as {p.name} ({p.staffId}, {p.accounts.map((x) => x.username).join(', ')})</option>)}
+              </select></label>
+          )}
+          <label className="ad-field"><span>Full name</span><input value={person ? person.name : f.name} onChange={set('name')} readOnly={Boolean(person)} minLength={2} required /></label>
+          <label className="ad-field"><span>Username</span><input value={f.username} onChange={set('username')} placeholder={f.role === 'system_admin' ? 'admin.ana' : 'caregiver.liza'} pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required /></label>
+          <label className="ad-field"><span>Mobile number</span><input value={f.phone} onChange={set('phone')} placeholder="0917 123 4567" inputMode="tel" required /></label>
+          {f.role === 'caregiver' && <label className="ad-field"><span>Elder IDs</span><input value={f.patients} onChange={set('patients')} placeholder="P-1003" /></label>}
+        </div>
+        <button type="submit" className="m-btn is-dark ad-btn-auto">Create and send code</button>
       </form>
     </section>
   );
@@ -287,16 +295,16 @@ export function AuditLog({ Head }) {
         {!data && <p>Loading…</p>}
         {data && data.error && <p className="m-error">{data.error}</p>}
         {data && data.entries && (
-          <table className="ad-table">
+          <table className="ad-table is-boxed">
             <thead><tr><th>When</th><th>What</th><th>By</th><th>Account</th><th>Details</th></tr></thead>
             <tbody>
               {data.entries.map((e) => (
                 <tr key={e.id}>
                   <td title={new Date(e.at).toISOString()}>{when(e.at)}</td>
-                  <td>{ACTION_LABEL[e.action] || e.action}</td>
-                  <td>{e.actorId}<span className="m-sub">{[e.actorStaffId && `staff ${e.actorStaffId}`, e.actorRole && e.actorRole.replace('_', ' '), e.ip].filter(Boolean).join(' · ')}</span></td>
+                  <td><Chip tone={actionTone(e.action)} icon={actionTone(e.action) === 'ok' ? 'check' : actionTone(e.action) === 'high' ? 'alert' : 'bell'}>{ACTION_LABEL[e.action] || e.action}</Chip></td>
+                  <td><strong>{e.actorId}</strong><span className="m-sub">{[e.actorStaffId && `staff ${e.actorStaffId}`, e.actorRole && e.actorRole.replace('_', ' '), e.ip].filter(Boolean).join(' · ')}</span></td>
                   <td>{e.targetId || '—'}{e.targetStaffId && <span className="m-sub">staff {e.targetStaffId}</span>}</td>
-                  <td className="m-caption">{Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')}</td>
+                  <td className="ad-details">{Object.entries(e.details || {}).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')}</td>
                 </tr>
               ))}
             </tbody>
