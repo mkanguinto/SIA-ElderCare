@@ -177,8 +177,16 @@ async function ensureStatic(ownerId, s) {
 }
 
 /* ------------------------------ Neon (SQL over psql in Docker) ------------------------------ */
+// The URL goes in through an environment variable and the SQL through stdin, so neither (both can hold
+// passwords) ever appears in a process list or in an error message.
 function psql(url, sql) {
-  return execFileSync('docker', ['run', '--rm', '-i', 'postgres:16-alpine', 'psql', url, '-v', 'ON_ERROR_STOP=1', '-qAt', '-c', sql], { encoding: 'utf8' }).trim();
+  try {
+    return execFileSync('docker', ['run', '--rm', '-i', '-e', 'PGURL', 'postgres:16-alpine', 'sh', '-c', 'psql "$PGURL" -v ON_ERROR_STOP=1 -qAt'],
+      { encoding: 'utf8', input: sql, env: { ...process.env, PGURL: url }, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch (e) {
+    const why = String(e.stderr || '').replace(/postgres(ql)?:\/\/\S+/g, '<database url>').replace(/PASSWORD\s+'[^']*'/gi, "PASSWORD '***'").trim();
+    throw new Error(`Neon SQL failed: ${why.split('\n').slice(-3).join(' ') || 'docker or psql could not run (is Docker running?)'}`);
+  }
 }
 function setupNeon() {
   const owner = env.NEON_DATABASE_URL;
