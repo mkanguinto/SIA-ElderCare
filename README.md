@@ -50,7 +50,7 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 flowchart TB
   subgraph Clients
     CA[Caregiver App<br/>React Native]
-    FD[Family Dashboard<br/>React]
+    FD[Caregiver & Family<br/>phone apps]
     CP[Clinic Portal / Admin View<br/>React]
   end
   CA & FD & CP -->|HTTPS + Bearer JWT| GW[API Gateway :8080<br/>OAuth 2.0 token endpoint · JWT · RBAC · rate limit · routing]
@@ -87,7 +87,7 @@ flowchart TB
 | Node-RED EAI layer | `integration/node-red/` | none (flows): SMS content-based router, weather orchestration, DLQ dashboard (Batch 3) |
 | Legacy EMR Adapter | `services/legacy-emr-adapter/` | none (stateless translator) |
 | Mock Legacy EMR | `services/mock-legacy-emr/` | demo data for SoapUI / dev (zero dependencies) |
-| Web dashboards | `frontend/web/` | React (Vite) – caregiver, family, clinic, admin views |
+| Web app | `frontend/web/` | React (Vite) – phone-first caregiver, family and nurse apps, clinic console and admin console in the same design |
 | Caregiver mobile | `frontend/mobile/` | React Native (Expo), offline-first check-ins |
 | Test assets | `testing/` | Postman, JMeter, SoapUI |
 
@@ -139,6 +139,16 @@ Web dashboards:
 ```bash
 cd frontend/web && npm install && npm run dev      # http://localhost:3000 (proxies /api and /oauth to :8080)
 ```
+Open it, tap **Get started** and pick a role (one-tap demo sign-in, on in development or with `VITE_DEMO_LOGIN=true`).
+Caregivers and families use only the phone app (`/m/caregiver`, `/m/family`; on a computer it shows in a phone-sized
+frame); nurses get `/m/nurse` on a phone and the **clinic console** (`/clinic`) on a computer; admins get the web
+console (`/admin`), which also exports the daily digest as JSON / XML. Both consoles use the phone design in a web layout
+(sidebar, wider content): the clinic console runs the same nurse screens - queue with My cases / Handover, check-in
+reviews, family messages, patients, digest, add patient, schedule visit, handover - and the patient page shows the phone
+patient screen beside the clinic records (BP trend, medicines, visits, SMS contacts, care plan, resolved cases, health
+center record). Visits, case history and alert rules keep their desktop pages in the same look; the admin's alert
+rules are at `/admin/alert-rules`. Set `CLINIC_HOTLINE` for the clinic number shown on "Contact the clinic". Use Chrome
+DevTools' device toolbar to see the phone layout.
 Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/mobile/app.json` to your computer's LAN IP, then `cd frontend/mobile && npm install && npx expo start`.
 
 ### Demo accounts (password `ElderCare@2026` – change before any real use)
@@ -146,10 +156,30 @@ Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/
 |---|---|---|
 | `caregiver.maria` | caregiver | P-1001, P-1002 |
 | `family.jose` | family_member | P-1001 |
-| `nurse.ana` | clinic_staff | all |
+| `nurse.ana` | clinic_staff | all · holds P-1001 (lead, Team A; also on Team B) |
+| `nurse.ben` | clinic_staff | all · holds P-1003 (Team A) |
+| `nurse.carla` | clinic_staff | all · holds P-1002 (lead, Team B) |
 | `admin.harold` | system_admin | all |
 
-Users live in `api-gateway/data/users.json` with scrypt hashes. New hash: `node api-gateway/scripts/hash-password.js "NewPassword"`.
+Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gateway/data/users.json` is only the bootstrap list: accounts in it that are not in the database yet are imported at start-up. Without `AUTH_DATABASE_URL` (unit tests, no Docker) the file itself is used.
+
+### Accounts and sessions
+* **The admin creates accounts** (`/admin/users` → Accounts): role, name, username, mobile number. The person gets an **SMS with an activation code** (valid 24 h, single use, 5 wrong tries lock it) and chooses their own password at `/activate`. Password resets go out as an **SMS link** (valid 1 h, `/reset-password`). The admin never sees a code, a link or a password; only a keyed hash is stored. SMS goes through the alert service, so `SMS_DRY_RUN`, `SMS_RECIPIENT_ALLOWLIST` and `SMS_DAILY_LIMIT` apply (add your own number to receive real codes).
+* **SMS status is reported as it is.** The Accounts page starts with an **SMS check** (`GET /api/admin/sms-check`): live or not, allow-list size, the TextBee phone (enabled, last online, SMS permission) and today's count. Every code or link shows its real state: **NOT sent (simulated)** for dry-run or a number off the allow-list, **NOT sent (failed)**, **waiting for the SMS phone** (accepted by TextBee), **sent, not confirmed** (left the phone), **delivered** (delivery report from the network). The page follows a new message with TextBee every 5 s (`GET /api/admin/accounts/:id/messages`); changes are written to the audit log as `sms_delivery_update`. Only *delivered* is ever shown as received.
+* **Audit log** (`/admin/audit`, `GET /api/admin/audit`): account created / activated / disabled / enabled, codes and links sent, sign-ins (and failures), lock / unlock, sessions ended - with who, when and from which IP. Append-only.
+* **One session per user**: signing in again ends the earlier session ("You signed in on another device"). Nurses may keep **one phone and one desktop** session. The admin can see and end sessions per account.
+* **Inactivity lock**: after 15 min (nurses, admin) or 30 min (caregivers, family) without taps or keys the app locks and the server refuses the session until the password is entered (`POST /oauth/lock`, `POST /oauth/unlock`). Three wrong passwords sign the user out. **Two minutes before** the lock a warning counts down with a *Stay signed in* button.
+* **Unsent entries are kept** (check-in, review note, handover): they stay in the form through the lock, and are kept per user in the tab's `sessionStorage` (never `localStorage`) when the session ends elsewhere, so signing in again brings them back with "not sent yet". Another user signing in on the tab drops them, they expire after 12 h, and *Log out* asks before discarding them. A save refused because the session just locked is sent again after unlocking.
+* **The admin is technical, not clinical**: no patient records, check-ins, histories, medicines, visits, care plans or clinic cases, and no clinical actions (alerts, triage, reviews, weather check). The admin's digest export is counts only (`GET /api/clinic/queue/summary`).
+* **Admin who is also a nurse: two separate accounts, one staff identity.** Nurse and admin accounts carry a staff ID (`ST-001`). Creating an admin account for an existing nurse ("Same person as …") links it to the nurse's staff ID: separate password, sessions and role, one account per role, the name must match. The audit log records the staff ID of whoever acted and of the account acted on, and can be filtered by person. An admin cannot send codes or links to, disable or enable their own other account: another admin must do it.
+* Duty coverage and case handover are separate from sessions: signing out never moves a case.
+* **Account SMS carry no links.** Philippine networks (Globe, Smart) block or silently drop person-to-person texts with links, and can still report them delivered. Activation and password-reset texts therefore contain only an 8-character code; the person opens the app (*Activate my account*, or *Sign in → Forgot password? → I have a reset code*) and types it with their username. The admin page says "Reported delivered" and that only the person using the code confirms it arrived.
+
+### Contacting the clinic (with proof)
+* Family members and caregivers tap **Contact the clinic** (`/m/family/contact`, `/m/caregiver/contact`): the clinic name, phone number (`CLINIC_HOTLINE`) and hours, a reason, an optional message and *Please call me back*, then **Call now** or **Send message**.
+* Every contact gets a reference (`CR-000012`) and an append-only timeline: sent / call started (the app cannot tell whether a call connected) → SMS notice to the clinic phone (its real delivery state; *simulated* and *failed* are shown as NOT sent) → **seen by** a named nurse → the nurse's **reply** or closing note, each with the time. The family sees the same timeline.
+* Nurses answer in **Messages** (`/m/nurse/messages`, or *Family messages* with an unseen badge in the clinic console; banner on the queue). API: `POST/GET /api/patients/:id/clinic-contact`, `GET /api/clinic/contact-requests`, `POST /api/clinic/contact-requests/:id/seen|reply|close`, `GET /api/clinic/contact-info`. The admin has no access (patient data). At most 6 contacts per person per hour.
+* Set `CLINIC_HOTLINE` (and optionally `CLINIC_HOTLINE_NAME`, `CLINIC_HOURS`) in `.env`; for real SMS notices the number must be on `SMS_RECIPIENT_ALLOWLIST`.
 
 ---
 
@@ -303,6 +333,15 @@ Every queue item gets a total score (0–100) from health (latest check-in), env
 * Weather risk expires after `ENV_RISK_TTL_HOURS` (24 h) without a new weather event.
 * The queue is sorted by priority, then total score; `GET /api/clinic/queue` returns the thresholds.
 
+### Care teams and nurse handover
+
+* Each elder belongs to a **care team** (several nurses) and has a **monitoring plan** (check-ins per day, review time). One nurse on the team **holds the case**.
+* **Handover:** the nurse holding the case sends concern, action taken, pending action and due time (`POST /api/clinic/handover`). The case stays with her while the handover is **pending**; it moves only when the incoming nurse **accepts** (`POST /api/clinic/handover/:id/accept`). Declining (reason required) or cancelling leaves it where it was. One pending handover per elder; the chain (`from_nurse`, `to_nurse`, `responded_at`) cannot be edited or deleted.
+* `GET /api/clinic/my-cases` (cases I hold) and `GET /api/clinic/queue/pending-handovers` (`incoming` / `outgoing`) back the nurse's **My cases** and **Handover** tabs. Open queue items follow the case (`assigned_to`, `handover_status`). "Assign to me" only works when nobody holds the case.
+* **Duty coverage** (`PUT /api/clinic/duty/me`) is separate from login sessions: going off duty or signing out never moves a case.
+* **Admin** (`/admin/care-teams`) creates teams, adds/removes nurses, links elders to a team and plan and records the *first* case nurse. It cannot move a held case, read handover content, or remove a nurse who still holds cases. Every change is in `GET /api/clinic/care-log`.
+* Caregiver and family links are per elder, so they are unaffected by nurse changes.
+
 ### Visits and Recent Visits
 
 * "Schedule visit" opens a form; the API validates a real date, `HH:MM` time (Manila), visit type, destination (2–120 chars) and location (3–300 chars). Not in the past, at most 180 days ahead, home/clinic visits between 06:00 and 19:59. Setting a case to `scheduled` without a visit is rejected (422).
@@ -410,7 +449,9 @@ Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 | Layer | Tool | Asset |
 |---|---|---|
 | Unit | `node --test` | `*/test/*.test.js` – 60 tests: vitals + patient validation, anomaly rules, heat index, triage thresholds, visit validation, TextBee client + webhook signature, SMS parsing, EMR mapping, gateway auth/RBAC |
-| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 41 checks through the gateway (incl. triage de-escalation, visits, history, medicines, onboarding) |
+| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 160 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
+| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – nurse handover: pending list, Accept, case moves to My cases |
+| Accounts / sessions | `node --test` + smoke + Postman | `api-gateway/test/accounts.test.js`, `accountRules.test.js`; smoke "Accounts and sessions"; Postman folder 12 |
 | Weather demo / failure | fake OpenWeatherMap | `testing/mocks/fake-openweathermap.js` – heatwave + typhoon on demand, no API key |
 | Functional + security | Postman | `testing/postman/ElderCare_Connect.postman_collection.json` (folders 0–4) |
 | Integration (saga) | Postman / Newman | folder **5. Integration** – check-in → family alert → clinic queue → EMR history → triage update |
@@ -457,6 +498,28 @@ Every service has a `.env.example`. Most important:
 
 ## 10. Deploying to the cloud (Section 14)
 
+### Free-tier deployment used for the class demo: Render + Neon + CloudAMQP
+
+| Piece | Where | Notes |
+|---|---|---|
+| Web app (phone UI, clinic pages, admin console) | Render static site `eldercare-web` | always on, served from a CDN |
+| API gateway, check-in, alert, clinic risk, care plan, legacy EMR adapter, mock legacy EMR, Node-RED | 8 Render free web services (Docker, Singapore) | sleep after 15 min idle; the app shows "Starting the servers…" and wakes them via `GET /health/wake` (about 1 min) |
+| PostgreSQL | Neon, one database + one non-superuser login per service | `checkin_db`, `alert_db`, `clinic_db`, `care_db` |
+| RabbitMQ | CloudAMQP free instance | exchanges, retry tiers and DLQs are declared by the services |
+
+1. Put three values in `.env`: `RENDER_API_KEY` (Render > Account settings > API keys), `NEON_DATABASE_URL`
+   (Neon > your project > Connection string) and `CLOUDAMQP_URL` (CloudAMQP > your instance > AMQP URL).
+2. Run `node scripts/deploy-render.mjs`. It creates the Neon databases and logins, creates or updates the Render
+   services, wires their URLs together and starts the deploys. Generated secrets go to `.env.render` (git-ignored).
+3. `node scripts/deploy-render.mjs --status` shows each deploy. Builds take 5–10 minutes the first time.
+4. To ship new code, push and run the script again: Render pulls the public repo by URL, so a push alone does not
+   start a deploy (unless you connect the GitHub account in Render). Set `RENDER_BRANCH` to deploy a branch other than `main`.
+
+Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
+`/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share
+750 hours a month, which is plenty when they only run while someone is using the app.
+
+### Other options
 Single VM (EC2 / Azure VM / GCP): `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up -d --build`. Only the gateway is exposed (on 127.0.0.1, behind a TLS proxy); databases, RabbitMQ and internal services stay private. Full walkthrough: `docs/SUBMISSION_GUIDE.md` §2.
 
 Managed AWS outline:

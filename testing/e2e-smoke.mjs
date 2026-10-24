@@ -1,11 +1,15 @@
+import fs from 'node:fs';
 // ElderCare Connect - end-to-end smoke test (no dependencies, Node 18+).
 // Start all six services (or docker compose up), then:   npm run smoke
 // Optional: GATEWAY_URL=http://host:8080 npm run smoke
 const B=process.env.GATEWAY_URL||'http://localhost:8080'; let pass=0, fail=0;
 const ok=(c,m)=>{ c?pass++:fail++; console.log((c?'PASS ':'FAIL ')+m); };
-const call=async(method,path,token,body)=>{const r=await fetch(B+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let j;try{j=await r.json()}catch{j=null}return {s:r.status,j};};
+// Check-ins created by this test are demo data (archived at the end, never mixed with real records).
+const call=async(method,path,token,body)=>{if(method==='POST'&&path==='/api/checkins'&&body&&!body.dataOrigin)body={...body,dataOrigin:'demo'};const r=await fetch(B+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let j;try{j=await r.json()}catch{j=null}return {s:r.status,j};};
 const login=async u=>(await call('POST','/oauth/token',null,{grant_type:'password',username:u,password:'ElderCare@2026'})).j.access_token;
-const cg=await login('caregiver.maria'), fam=await login('family.jose'), nurse=await login('nurse.ana'), admin=await login('admin.harold');
+// One session per user (Batch 3a): signing in again ends the earlier session, so sections that test sign-in
+// use separate devices (nurses: phone + desktop) or sign the shared users in again afterwards.
+let cg=await login('caregiver.maria'), fam=await login('family.jose'), nurse=await login('nurse.ana'), admin=await login('admin.harold');
 ok(cg&&fam&&nurse&&admin,'4 role logins');
 let r=await call('POST','/api/checkins',cg,{patientId:'P-1002',vitals:{systolic:126,diastolic:80,heartRate:72,temperatureC:36.6,spo2:97},medication:{taken:true}});
 ok(r.s===201&&r.j.checkin.severity==='none','normal check-in 201, no anomaly');
@@ -33,7 +37,8 @@ r=await call('PATCH','/api/clinic/queue/'+item.id,nurse,{status:'in_review',note
 ok((await call('PATCH','/api/clinic/queue/'+item.id,nurse,{status:'bogus'})).s===409,'invalid transition 409');
 r=await call('POST','/api/alerts/dispatch',nurse,{patientId:'P-1001',message:'Nurse visit tomorrow 9AM'}); ok(r.s===202&&r.j.alertId,'manual dispatch 202');
 ok((await call('POST','/api/alerts/dispatch',cg,{patientId:'P-1001',message:'hello there'})).s===403,'caregiver dispatch 403');
-r=await call('POST','/api/alerts/weather-check',admin,{zipCode:'1012'}); ok([200,503].includes(r.s),'weather-check reachable ('+(r.s===503?'503 = OPENWEATHER_API_KEY not set':'200 = mashup ran')+')');
+r=await call('POST','/api/alerts/weather-check',nurse,{zipCode:'1012'}); ok([200,503].includes(r.s),'weather-check reachable ('+(r.s===503?'503 = OPENWEATHER_API_KEY not set':r.s===200?'200 = mashup ran':`${r.s}: ${r.j&&(r.j.message||r.j.error)}`)+')');
+ok((await call('POST','/api/alerts/weather-check',admin,{zipCode:'1012'})).s===403,'admin cannot run the clinical weather check (403)');
 r=await call('GET','/api/admin/health',admin); ok(r.s===200,'admin health ('+r.j.overall+'): '+r.j.services.map(s=>s.name+'='+s.status).join(' '));
 r=await call('GET','/api/patients/P-1001/history',fam); ok(r.s===200&&r.j.trends.totalCheckins>=1,'family history trends');
 r=await call('GET','/api/admin/users',admin); ok(r.s===200&&r.j.users.every(u=>!u.passwordHash),'admin user list without password hashes');
@@ -44,7 +49,7 @@ const caseFor = async (pid) => (await call('GET', `/api/clinic/queue?patientId=$
 const pollCase = async (pid, pred, ms = 4000) => { const t = Date.now(); let c; while (Date.now() - t < ms) { c = await caseFor(pid); if (c && pred(c)) return c; await wait(150); } return c; };
 
 // Triage: a critical reading makes the case Urgent; a normal reading afterwards lowers it (QA vitals-sync bug)
-await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 188, diastolic: 119, heartRate: 108 }, medication: { taken: false } });
+const urgentCheckin = (await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 188, diastolic: 119, heartRate: 108 }, medication: { taken: false } })).j.checkin;
 let kase = await pollCase('P-1001', (c) => c.priority === 'P1');
 ok(kase && kase.priority === 'P1' && kase.category === 'urgent', `critical reading -> Urgent (${kase && kase.priorityRule})`);
 await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 124, diastolic: 80, heartRate: 72, temperatureC: 36.6, spo2: 98 }, medication: { taken: true } });
@@ -66,6 +71,8 @@ ok(r.s === 200 && r.j.visits.some((v) => v.id === visitId), 'caregiver sees the 
 ok((await call('GET', '/api/patients/P-1002/visits', fam)).s === 403, 'family cannot see another patient\'s visits (403)');
 r = await call('PATCH', `/api/clinic/visits/${visitId}`, nurse, { status: 'completed', outcome: 'BP 126/80 on recheck, medicines reviewed', resolveCase: true });
 ok(r.s === 200 && r.j.visit.status === 'completed' && r.j.item.status === 'resolved', 'completing the visit resolves the case');
+r = await call('GET', `/api/checkins/${urgentCheckin.id}`, nurse);
+ok(r.s === 200 && !r.j.checkin.review && ['received', 'awaiting_review'].includes(r.j.checkin.status), 'resolving the case does not mark its check-in reviewed (reviewed and resolved stay separate)');
 r = await call('GET', '/api/clinic/visits?view=recent&patientId=P-1001', nurse);
 ok(r.s === 200 && r.j.visits[0].id === visitId, 'completed visit appears under Recent visits');
 r = await call('GET', '/api/clinic/queue/history?patientId=P-1001', nurse);
@@ -79,7 +86,7 @@ ok((await call('GET', '/api/patients/P-1002/medications', fam)).s === 403, 'fami
 ok((await call('POST', '/api/patients/P-1001/medications', cg, { name: 'X', dosage: '1', frequency: 'daily' })).s === 403, 'caregiver cannot prescribe (403)');
 
 // Patient onboarding (fixed test identity: first run creates it, later runs hit the duplicate check)
-const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000', conditions: ['hypertension'], medications: [{ name: 'Amlodipine', dosage: '5 mg', frequency: 'Once daily', times: ['08:00'] }] };
+const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000', conditions: ['hypertension'], medications: [{ name: 'Amlodipine', dosage: '5 mg', frequency: 'Once daily', times: ['08:00'], source: { type: 'physician_order', prescriber: 'Dr. Test Prescriber' } }] };
 ok((await call('POST', '/api/patients', nurse, { fullName: 'X' })).s === 422, 'onboarding validation (422)');
 r = await call('POST', '/api/patients', nurse, newPatient);
 ok(r.s === 201 || r.s === 409, `onboarding creates a patient or detects the duplicate (${r.s} ${r.j.patient ? r.j.patient.id : r.j.patientId})`);
@@ -131,7 +138,8 @@ ok(r.s === 200 && r.j.cases.length <= 1 && isPage(r.j.pagination, 1, 1), 'case h
 ok((await call('GET', '/api/patients/P-1001/history?limit=2', fam)).j.pagination.pageSize === 2, 'legacy limit= still works');
 
 // JWT: refresh rotation + reuse detection, revocation, logout, key status
-const tok = async (u) => (await call('POST', '/oauth/token', null, { grant_type: 'password', username: u, password: 'ElderCare@2026' })).j;
+// The nurse signs in on her phone here, so the desktop session used by the rest of the test stays open.
+const tok = async (u, device = 'phone') => (await call('POST', '/oauth/token', null, { grant_type: 'password', username: u, password: 'ElderCare@2026', device })).j;
 const refreshWith = (rt) => call('POST', '/oauth/token', null, { grant_type: 'refresh_token', refresh_token: rt });
 const s1 = await tok('nurse.ana');
 const s2 = (await refreshWith(s1.refresh_token)).j;
@@ -146,6 +154,7 @@ ok((await call('POST', '/oauth/revoke', null, { token: s4.access_token, token_ty
 const s5 = await tok('family.jose');
 ok((await call('POST', '/oauth/logout', s5.access_token)).s === 204 && (await call('GET', '/api/alerts/notifications', s5.access_token)).s === 401
   && (await refreshWith(s5.refresh_token)).s === 400, 'logout ends the session (access + refresh)');
+fam = await login('family.jose'); // s5 replaced the shared family session
 r = await call('GET', '/api/admin/security', admin);
 ok(r.s === 200 && r.j.jwt.access.activeKid && r.j.jwt.store.persistent === true, `key status: kid ${r.j.jwt && r.j.jwt.access.activeKid}, next rotation ${r.j.jwt && r.j.jwt.rotation.nextRotationDue}`);
 
@@ -238,13 +247,210 @@ ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', cg, newTask)).s =
 ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, { ...newTask, frequency: 'weekly' })).s === 422, 'weekly task without days rejected (422)');
 r = await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, newTask);
 const addedId = r.j && r.j.id;
+const addedToDraft = Boolean(r.j && r.j.draft);
 ok(r.s === 201 && r.j.category === 'emotional_social', 'clinic staff add a duty (201)');
 r = await call('PATCH', `/api/care/tasks/${addedId}`, nurse, { times: ['15:00', '19:00'] });
 ok(r.s === 200 && r.j.times.length === 2, 'clinic staff change a duty (PATCH 200)');
-ok((await call('DELETE', `/api/care/tasks/${addedId}`, nurse)).s === 204 && (await call('POST', `/api/care/tasks/${addedId}/completions`, cg, { slot: '15:00' })).s === 409, 'retired duty can no longer be ticked off (409)');
+ok(addedToDraft, 'a new duty goes into a draft of the plan, not the plan in use');
+ok((await call('DELETE', `/api/care/tasks/${addedId}`, nurse)).s === 204 && (await call('POST', `/api/care/tasks/${addedId}/completions`, cg, { slot: '15:00' })).s === 409, 'a draft duty cannot be ticked off (409)');
+{ // leave the demo plan as it was: drop the draft this test started
+  const d = (await call('GET', '/api/patients/P-1001/care-plan', nurse)).j.draft;
+  ok(d && (await call('POST', `/api/care-plan/versions/${d.id}/discard`, nurse, { reason: 'Smoke test draft' })).s === 200, 'the smoke test draft is discarded (kept in the history)');
+}
 r = await call('GET', '/api/patients/P-1001/care-plan/history?page=1&pageSize=5', fam);
 ok(r.s === 200 && typeof r.j.adherence.scheduled === 'number' && r.j.adherence.categories.length && r.j.pagination.pageSize === 5 && r.j.completions.length >= 1,
   `family sees adherence: ${r.j.adherence && r.j.adherence.rate}% of ${r.j.adherence && r.j.adherence.scheduled} scheduled duties this week`);
 ok((await call('GET', '/api/admin/health', admin)).j.services.some((x) => x.name === 'care' && x.status === 'up'), 'admin health includes the care-plan service');
+
+// ---- Batch 5.1: check-in monitoring status (Received -> Awaiting review -> Reviewed -> Action recorded) ----
+console.log('\n-- Check-in status flow --');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 150, diastolic: 94 }, measurementDevice: { bp: 'wrist_digital' } });
+const statusId = r.j && r.j.checkin && r.j.checkin.id;
+ok(r.s === 201 && r.j.checkin.status === 'received' && r.j.checkin.measurementDevice.bp === 'wrist_digital', 'check-in saved as received with its measuring device');
+let st = null;
+for (let i = 0; i < 10; i++) {
+  st = (await call('GET', `/api/checkins/${statusId}`, cg)).j;
+  if (st && st.checkin && st.checkin.status === 'awaiting_review') break;
+  await new Promise((res) => setTimeout(res, 500));
+}
+ok(st && st.checkin.status === 'awaiting_review' && st.statusLog.length === 2, 'moves to awaiting review once delivered to the clinic queue');
+r = await call('GET', '/api/checkins/review-queue?pageSize=200', nurse);
+ok(r.s === 200 && r.j.checkins.some((c) => c.id === statusId), 'nurse review queue lists it');
+ok((await call('POST', `/api/checkins/${statusId}/review`, cg, {})).s === 403, 'caregiver cannot review (403)');
+r = await call('POST', `/api/checkins/${statusId}/review`, nurse, { note: 'smoke test review' });
+ok(r.s === 200 && r.j.checkin.status === 'reviewed' && r.j.checkin.review.byId === 'U-CS-001', 'nurse marks it reviewed');
+ok((await call('POST', `/api/checkins/${statusId}/review`, nurse, {})).s === 409, 'cannot be reviewed twice (409)');
+ok((await call('POST', `/api/checkins/${statusId}/action`, nurse, {})).s === 422, 'an action needs text (422)');
+r = await call('POST', `/api/checkins/${statusId}/action`, nurse, { action: 'Smoke test: advised an upper-arm cuff' });
+ok(r.s === 200 && r.j.checkin.status === 'action_recorded', 'nurse records the action');
+r = await call('GET', `/api/checkins/${statusId}`, fam);
+ok(r.s === 200 && r.j.statusLog.map((l) => l.status).join('>') === 'received>awaiting_review>reviewed>action_recorded', 'family sees the full timestamped timeline');
+ok((await call('POST', `/api/checkins/${statusId}/review`, nurse, {})).s === 409, 'a reviewed check-in cannot be reviewed again (409, status history is immutable)');
+ok((await call('POST', `/api/checkins/${statusId}/review`, admin, {})).s === 403, 'admin cannot review check-ins (403, nurses only)');
+r = await call('GET', `/api/checkins/${statusId}`, nurse);
+ok(r.j.checkin.review.byId && r.j.checkin.review.at && r.j.checkin.dataOrigin === 'demo', 'review keeps the nurse id and time; test check-ins are marked demo');
+
+// Pending lists: current, historical (older, still pending - never auto-reviewed), archived demo records
+r = await call('GET', '/api/checkins/review-queue?view=historical', nurse);
+ok(r.s === 200 && r.j.checkins.every((c) => !c.archived && ['received', 'awaiting_review'].includes(c.status)) && typeof r.j.counts.historical === 'number', `historical review list (${r.j.counts.current} current, ${r.j.counts.historical} historical, ${r.j.counts.archived} archived)`);
+ok((await call('GET', '/api/checkins/review-queue?view=old', nurse)).s === 422, 'unknown list view rejected (422)');
+ok((await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 70 }, dataOrigin: 'test' })).s === 422, 'unknown dataOrigin rejected (422)');
+ok((await call('POST', '/api/checkins/archive-demo', cg, {})).s === 403, 'caregiver cannot archive (403)');
+
+// Missing readings are a reason, never zero
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 76 }, vitalsMissing: { bp: 'no_device', spo2: 'not_measured', bloodGlucose: 'unknown' } });
+ok(r.s === 201 && r.j.checkin.vitalsMissing.bp === 'no_device' && r.j.checkin.vitals.systolic === null, 'check-in stores "no device / not measured / unknown" instead of a value');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { spo2: 0 } });
+ok(r.s === 422 && r.j.details.some((d) => d.includes('cannot be 0')), 'a zero reading is rejected (422)');
+r = await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { systolic: 130, diastolic: 82 }, vitalsMissing: { bp: 'unknown' } });
+ok(r.s === 422, 'a value together with a missing reason is rejected (422)');
+
+// ---- Batch 2: care team + nurse handover (the case moves only when the incoming nurse accepts) ----
+console.log('\n-- Care team and handover --');
+const ben = await login('nurse.ben'), carla = await login('nurse.carla');
+const caseIds = async (t) => (await call('GET', '/api/clinic/my-cases', t)).j.cases.map((c) => c.patient.id);
+// Start from a known state: whoever holds P-1001's case hands it to Ana (needed when the test is run again).
+let care = (await call('GET', '/api/clinic/patients/P-1001/care', nurse)).j;
+ok(care.careTeam && care.members.length >= 2 && care.monitoringPlan, `P-1001 belongs to a care team (${care.careTeam && care.careTeam.name}, ${care.members.length} nurses, plan ${care.monitoringPlan && care.monitoringPlan.id})`);
+const due = new Date(Date.now() + 2 * 3600000).toISOString();
+const hand = (from, to, extra = {}) => call('POST', '/api/clinic/handover', from, { patientId: 'P-1001', toNurseId: to, concern: 'BP 168/100 this morning, dizzy on standing', actionTaken: 'Called the caregiver, advised rest and fluids', pendingAction: 'Recheck BP at 6 PM and call the caregiver back', dueTime: due, ...extra });
+for (const h of (await call('GET', '/api/clinic/queue/pending-handovers', nurse)).j.outgoing) await call('POST', `/api/clinic/handover/${h.id}/cancel`, nurse, {});
+for (const h of (await call('GET', '/api/clinic/queue/pending-handovers', ben)).j.outgoing) await call('POST', `/api/clinic/handover/${h.id}/cancel`, ben, {});
+if (care.caseNurse.id === 'U-CS-002') { const back = (await hand(ben, 'U-CS-001')).j.handover; await call('POST', `/api/clinic/handover/${back.id}/accept`, nurse, {}); }
+ok((await caseIds(nurse)).includes('P-1001'), 'Ana holds the P-1001 case');
+await call('POST', '/api/checkins', cg, { patientId: 'P-1001', vitals: { systolic: 172, diastolic: 104, heartRate: 96 } });
+const openCase = await pollCase('P-1001', (c) => Boolean(c));
+ok(openCase && openCase.assignedTo === 'U-CS-001', 'a new clinic case is assigned to the elder\'s case nurse (Ana)');
+
+ok((await hand(ben, 'U-CS-001')).s === 403, 'a nurse who does not hold the case cannot hand it over (403)');
+ok((await hand(nurse, 'U-CS-003')).s === 422, 'the incoming nurse must be on the care team (422)');
+ok((await hand(nurse, 'U-CS-002', { pendingAction: '' })).s === 422, 'pending action is required (422)');
+ok((await hand(cg, 'U-CS-002')).s === 403, 'caregiver cannot submit a handover (403)');
+r = await hand(nurse, 'U-CS-002');
+const hid = r.j && r.j.handover && r.j.handover.id;
+ok(r.s === 201 && r.j.handover.status === 'pending', 'Ana submits the handover to Ben (201, pending)');
+ok((await hand(nurse, 'U-CS-002')).s === 409, 'only one pending handover per elder (409)');
+ok((await caseIds(nurse)).includes('P-1001') && !(await caseIds(ben)).includes('P-1001'), 'while pending, the case stays with Ana (not yet in Ben\'s cases)');
+r = await call('GET', '/api/clinic/queue/pending-handovers', ben);
+ok(r.s === 200 && r.j.incoming.some((h) => h.id === hid && h.pendingAction && h.dueTime), "Ben sees it under Pending handover with concern, action, pending action and due time");
+ok((await call('GET', '/api/clinic/queue?patientId=P-1001', nurse)).j.items[0].handoverStatus === 'pending', 'queue item shows handover_status = pending');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, nurse, {})).s === 403, 'the outgoing nurse cannot accept her own handover (403)');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, carla, {})).s === 403, 'another nurse cannot accept it (403)');
+r = await call('POST', `/api/clinic/handover/${hid}/accept`, ben, {});
+ok(r.s === 200 && r.j.handover.status === 'accepted' && r.j.caseNurse.id === 'U-CS-002', 'Ben accepts (200)');
+ok((await caseIds(ben)).includes('P-1001') && !(await caseIds(nurse)).includes('P-1001'), 'after acceptance the case is in Ben\'s My cases, not Ana\'s');
+const qi = (await call('GET', '/api/clinic/queue?patientId=P-1001', nurse)).j.items[0];
+ok(qi.id === openCase.id && qi.assignedTo === 'U-CS-002' && qi.handoverStatus === 'accepted', 'the open queue item follows the case to Ben (handover_status = accepted)');
+ok((await call('POST', `/api/clinic/handover/${hid}/accept`, ben, {})).s === 409, 'a handover is answered once (409)');
+care = (await call('GET', '/api/clinic/patients/P-1001/care', ben)).j;
+const link = care.handovers.find((h) => h.id === hid);
+ok(link && link.fromNurse.id === 'U-CS-001' && link.toNurse.id === 'U-CS-002' && link.respondedAt, 'handover chain logged: from, to, acceptance time');
+ok((await call('PATCH', `/api/clinic/queue/${qi.id}`, nurse, { assignedTo: 'U-CS-001' })).s === 409, '"Assign to me" cannot take a case another nurse holds (409, handover required)');
+ok((await call('GET', '/api/patients/P-1001', cg)).s === 200 && (await call('GET', '/api/patients/P-1001', fam)).s === 200, 'caregiver and family keep access after the nurse change');
+
+// Decline keeps the case where it is; the chain shows it
+r = await hand(ben, 'U-CS-001');
+ok((await call('POST', `/api/clinic/handover/${r.j.handover.id}/decline`, nurse, {})).s === 422, 'declining needs a reason (422)');
+ok((await call('POST', `/api/clinic/handover/${r.j.handover.id}/decline`, nurse, { note: 'Off duty from 2 PM, ask Carla' })).s === 200 && (await caseIds(ben)).includes('P-1001'), 'declined handover leaves the case with Ben');
+// Hand it back so the demo starts from Ana again
+r = await hand(ben, 'U-CS-001');
+await call('POST', `/api/clinic/handover/${r.j.handover.id}/accept`, nurse, {});
+ok((await caseIds(nurse)).includes('P-1001'), 'handed back to Ana');
+
+// Duty coverage is separate from sessions
+r = await call('PUT', '/api/clinic/duty/me', nurse, { onDuty: false });
+ok(r.s === 200 && r.j.onDuty === false && r.j.cases >= 1 && r.j.warning, 'going off duty keeps the cases and warns (no automatic handover)');
+await call('PUT', '/api/clinic/duty/me', nurse, { onDuty: true });
+ok((await caseIds(nurse)).includes('P-1001'), 'duty change did not move the case');
+
+// Admin: care teams without clinical content
+r = await call('GET', '/api/clinic/care-teams', admin);
+ok(r.s === 200 && r.j.teams.length >= 2 && r.j.monitoringPlans.length >= 3 && !JSON.stringify(r.j).includes('dizzy'), 'admin sees teams, elders and plans, without clinical notes');
+ok((await call('GET', '/api/clinic/patients/P-1001/care', admin)).s === 403, 'admin cannot read the handover chain (clinical, 403)');
+ok((await call('POST', '/api/clinic/handover', admin, {})).s === 403, 'admin cannot submit handovers (403)');
+ok((await call('PUT', '/api/clinic/patients/P-1001/care', admin, { careTeamId: 'CT-MNL-A', caseNurseId: 'U-CS-002' })).s === 409, 'admin cannot move a held case (409, handover required)');
+const teamId = 'CT-TEST-SMOKE'; // fixed id: created on the first run, reused afterwards
+r = await call('POST', '/api/clinic/care-teams', admin, { id: teamId, name: 'Test team (smoke test)', clinicId: 'RHU-MNL-01' });
+ok(r.s === 201 || r.s === 409, `admin creates a care team (${r.s === 201 ? 'created' : 'already there: 409'})`);
+ok((await call('POST', `/api/clinic/care-teams/${teamId}/members`, admin, { nurseId: 'U-CS-003', nurseName: 'Carla Mendoza, RN' })).s === 201, 'admin adds a nurse to it');
+ok((await call('DELETE', `/api/clinic/care-teams/CT-MNL-A/members/U-CS-001`, admin)).s === 409, 'a nurse holding cases cannot be removed from the team (409)');
+ok((await call('DELETE', `/api/clinic/care-teams/${teamId}/members/U-CS-003`, admin)).s === 200, 'a nurse without cases can be removed');
+r = await call('GET', '/api/clinic/care-log?limit=50', admin);
+ok(r.s === 200 && r.j.entries.some((e) => e.action === 'handover_accepted' && e.details.handoverId === hid) && r.j.entries.some((e) => e.action === 'member_added'), 'assignment log records handovers and team changes with who and when');
+ok((await call('GET', '/api/clinic/care-log', nurse)).s === 403, 'nurse cannot read the admin assignment log (403)');
+
+// ---- Batch 3a: accounts, sessions, admin limits ----
+console.log('\n-- Accounts and sessions --');
+const internalToken = process.env.INTERNAL_SERVICE_TOKEN || (() => {
+  try { return (fs.readFileSync(new URL('../.env', import.meta.url), 'utf8').match(/^INTERNAL_SERVICE_TOKEN=(.*)$/m) || [])[1]; } catch { return undefined; }
+})();
+const capturedSms = async (to, purpose) => {
+  const res = await fetch(`${B}/internal/test/account-sms?to=${encodeURIComponent(to)}&purpose=${purpose}`, { headers: { 'x-internal-token': internalToken || '' } });
+  return res.status === 200 ? res.json() : null;
+};
+const uname = `caregiver.smoke${Date.now().toString(36)}`;
+const phone = `0917${String(Date.now()).slice(-7)}`;
+r = await call('POST', '/api/admin/accounts', admin, { username: uname, name: 'Smoke Test Caregiver', role: 'caregiver', phone, patients: ['P-1003'] });
+ok(r.s === 201 && r.j.account.status === 'pending_activation' && r.j.activation.sentTo && !/[A-Z0-9]{4}-[A-Z0-9]{4}/.test(JSON.stringify(r.j)), `admin creates a caregiver account; activation code sent to ${r.j && r.j.activation && r.j.activation.sentTo} (${r.j && r.j.activation && r.j.activation.delivery}), not shown to the admin`);
+const newId = r.j.account && r.j.account.id;
+ok(r.j.activation && r.j.activation.delivery !== 'delivered' && (r.j.activation.delivery !== 'simulated' || /NOT|ALLOWLIST|DRY_RUN|not/i.test(r.j.activation.note || '')),
+  `a number off the allow-list is reported as ${r.j.activation && r.j.activation.delivery} (${r.j.activation && r.j.activation.note}), never as delivered`);
+r = await call('GET', '/api/admin/sms-check', admin);
+ok(r.s === 200 && typeof r.j.ready === 'boolean' && Array.isArray(r.j.problems) && (r.j.mode.live || !r.j.ready),
+  `SMS check: ${r.j.ready ? 'ready' : `not ready (${(r.j.problems || []).join('; ')})`}, ${r.j.mode && r.j.mode.reason}`);
+{
+  const tag = Date.now().toString(36);
+  const nurseRes = await call('POST', '/api/admin/accounts', admin, { username: `nurse.smoke${tag}`, name: `Smoke Nurse ${tag}`, role: 'clinic_staff', phone: `0918${String(Date.now()).slice(-7)}` });
+  const sid = nurseRes.j.account && nurseRes.j.account.staffId;
+  const adm = await call('POST', '/api/admin/accounts', admin, { username: `admin.smoke${tag}`, name: `Smoke Nurse ${tag}`, role: 'system_admin', phone: `0918${String(Date.now()).slice(-7)}`, staffId: sid });
+  const trail = await call('GET', `/api/admin/audit?staffId=${sid}&action=account_created`, admin);
+  ok(nurseRes.s === 201 && adm.s === 201 && adm.j.account.staffId === sid && adm.j.account.id !== nurseRes.j.account.id
+    && trail.j.entries.length === 2 && trail.j.entries.every((e) => e.targetStaffId === sid),
+    `admin who is also a nurse: two separate accounts (${nurseRes.j.account && nurseRes.j.account.id}, ${adm.j.account && adm.j.account.id}) under staff ${sid}, linked in the audit log`);
+}
+r = await call('POST', '/oauth/token', null, { grant_type: 'password', username: uname, password: 'whatever-1' });
+ok(r.s === 400 && r.j.reason === 'account_pending', 'cannot sign in before activation');
+const sms = await capturedSms(phone, 'activation');
+if (sms) {
+  const code = sms.body.match(/code is ([A-Z0-9]{4}-[A-Z0-9]{4})/)[1];
+  ok((await call('POST', '/auth/activate', null, { username: uname, code, password: 'short' })).s === 422, 'weak password rejected at activation (422)');
+  r = await call('POST', '/auth/activate', null, { username: uname, code, password: 'Kalamansi2026' });
+  ok(r.s === 200 && r.j.activated, 'caregiver activates with the SMS code and an own password');
+  r = await call('POST', '/oauth/token', null, { grant_type: 'password', username: uname, password: 'Kalamansi2026' });
+  ok(r.s === 200 && r.j.role === 'caregiver', 'and signs in');
+  ok((await call('POST', '/auth/activate', null, { username: uname, code, password: 'Kalamansi2026' })).s === 400, 'the activation code works once');
+  r = await call('POST', `/api/admin/accounts/${newId}/password-reset`, admin, {});
+  ok(r.s === 200 && !JSON.stringify(r.j).includes('#'), 'admin sends a password-reset code by SMS without seeing it');
+  ok((await call('POST', `/api/admin/accounts/${newId}/disable`, admin, { reason: 'Smoke test account' })).s === 200, 'admin disables the test account');
+} else {
+  console.log('SKIP activation checks (ACCOUNT_SMS_CAPTURE is off or INTERNAL_SERVICE_TOKEN unknown)');
+}
+const fam1 = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'family.jose', password: 'ElderCare@2026' })).j;
+const fam2 = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'family.jose', password: 'ElderCare@2026' })).j;
+r = await call('GET', '/api/patients/P-1001', fam1.access_token);
+ok(r.s === 401 && r.j.reason === 'session_replaced' && (await call('GET', '/api/patients/P-1001', fam2.access_token)).s === 200, 'signing in again ends the earlier session (single session)');
+fam = fam2.access_token;
+const nPhone = (await call('POST', '/oauth/token', null, { grant_type: 'password', username: 'nurse.ana', password: 'ElderCare@2026', device: 'phone' })).j;
+ok((await call('GET', '/api/clinic/my-cases', nPhone.access_token)).s === 200 && (await call('GET', '/api/clinic/my-cases', nurse)).s === 200, 'a nurse keeps one phone and one desktop session');
+ok((await call('POST', '/oauth/lock', nPhone.access_token)).s === 204 && (await call('GET', '/api/clinic/my-cases', nPhone.access_token)).j.reason === 'session_locked', 'a locked session is refused until the password is entered');
+r = await call('POST', '/oauth/unlock', null, { refresh_token: nPhone.refresh_token, password: 'ElderCare@2026' });
+ok(r.s === 200 && (await call('GET', '/api/clinic/my-cases', r.j.access_token)).s === 200, 'unlock with the password');
+for (const [m, p] of [['GET', '/api/patients/P-1001'], ['GET', '/api/clinic/queue'], ['GET', '/api/checkins/review-queue'], ['POST', '/api/alerts/dispatch']]) {
+  ok((await call(m, p, admin, m === 'POST' ? {} : undefined)).s === 403, `admin cannot ${m} ${p} (403)`);
+}
+r = await call('GET', '/api/clinic/queue/summary', admin);
+ok(r.s === 200 && typeof r.j.open.total === 'number' && !JSON.stringify(r.j).includes('Lola'), `admin digest is counts only (${r.j.open && r.j.open.total} open cases, no names)`);
+r = await call('GET', '/api/admin/audit?limit=100', admin);
+ok(r.s === 200 && ['account_created', 'login', 'session_locked'].every((a) => r.j.entries.some((e) => e.action === a)), 'account audit log records who did what and when');
+
+// Archive this run's pending demo check-ins: they leave the pending lists without being marked reviewed.
+const lastDemo = (await call('POST', '/api/checkins', cg, { patientId: 'P-1002', vitals: { heartRate: 71 } })).j.checkin;
+r = await call('POST', '/api/checkins/archive-demo', nurse, {});
+ok(r.s === 200 && r.j.archived >= 1, `nurse archives pending demo check-ins (${r.j && r.j.archived})`);
+r = await call('GET', `/api/checkins/${lastDemo.id}`, nurse);
+ok(r.j.checkin.archived && r.j.checkin.status !== 'reviewed' && !r.j.checkin.review, 'an archived demo record is not marked reviewed');
+ok((await call('POST', `/api/checkins/${lastDemo.id}/review`, nurse, {})).s === 409, 'archived demo record cannot be reviewed (409)');
+r = await call('GET', '/api/checkins/review-queue?view=pending&pageSize=200', nurse);
+ok(!r.j.checkins.some((c) => c.dataOrigin === 'demo'), 'no demo record left in the pending review lists');
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

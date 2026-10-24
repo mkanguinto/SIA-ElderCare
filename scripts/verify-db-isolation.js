@@ -33,6 +33,7 @@ function targets() {
     { service: 'alert-service', user: 'alert_svc', password: env.ALERT_DB_PASSWORD || 'alert_pass', port: 5434, db: 'alert_db' },
     { service: 'clinic-risk-service', user: 'clinic_svc', password: env.CLINIC_DB_PASSWORD || 'clinic_pass', port: 5435, db: 'clinic_db' },
     { service: 'care-plan-service', user: 'care_svc', password: env.CARE_DB_PASSWORD || 'care_pass', port: 5436, db: 'care_db' },
+    { service: 'api-gateway', user: 'auth_svc', password: env.AUTH_DB_PASSWORD || 'auth_pass', port: 5437, db: 'auth_db' },
   ].map((t) => ({ host: 'localhost', ...t }));
 }
 

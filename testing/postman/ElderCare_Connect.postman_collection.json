@@ -461,7 +461,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1003\",\n  \"vitals\": {\n    \"heartRate\": 70\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1003\",\n  \"vitals\": {\n    \"heartRate\": 70\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -598,7 +598,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 126,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 97\n  },\n  \"medication\": {\n    \"taken\": true\n  },\n  \"mobilityStatus\": \"assisted\",\n  \"mood\": \"good\",\n  \"notes\": \"Ate breakfast, walked with walker\"\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 126,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 97\n  },\n  \"medication\": {\n    \"taken\": true\n  },\n  \"mobilityStatus\": \"assisted\",\n  \"mood\": \"good\",\n  \"notes\": \"Ate breakfast, walked with walker\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -645,7 +645,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 400,\n    \"diastolic\": 500\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 400,\n    \"diastolic\": 500\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -700,7 +700,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1002\",\n  \"idempotencyKey\": \"{{idemKey}}\",\n  \"vitals\": {\n    \"heartRate\": 74\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"idempotencyKey\": \"{{idemKey}}\",\n  \"vitals\": {\n    \"heartRate\": 74\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -916,7 +916,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
+                "value": "Bearer {{nurseToken}}"
               }
             ],
             "url": {
@@ -1038,7 +1038,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 186,\n    \"diastolic\": 118,\n    \"heartRate\": 104,\n    \"temperatureC\": 37.1,\n    \"spo2\": 95\n  },\n  \"medication\": {\n    \"taken\": false,\n    \"missed\": [\n      \"Losartan\"\n    ]\n  },\n  \"mobilityStatus\": \"normal\",\n  \"mood\": \"neutral\",\n  \"notes\": \"Complains of headache and blurred vision\"\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 186,\n    \"diastolic\": 118,\n    \"heartRate\": 104,\n    \"temperatureC\": 37.1,\n    \"spo2\": 95\n  },\n  \"medication\": {\n    \"taken\": false,\n    \"missed\": [\n      \"Losartan\"\n    ]\n  },\n  \"mobilityStatus\": \"normal\",\n  \"mood\": \"neutral\",\n  \"notes\": \"Complains of headache and blurred vision\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1277,7 +1277,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 124,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 98\n  },\n  \"medication\": {\n    \"taken\": true\n  }\n}",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 124,\n    \"diastolic\": 80,\n    \"heartRate\": 72,\n    \"temperatureC\": 36.6,\n    \"spo2\": 98\n  },\n  \"medication\": {\n    \"taken\": true\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2807,7 +2807,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -3017,7 +3017,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\"\n}",
+                  "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4334,6 +4334,2793 @@
           }
         }
       ]
+    },
+    {
+      "name": "10. Batch 5.1 - Check-in status flow (Received -> Awaiting review -> Reviewed -> Action recorded)",
+      "item": [
+        {
+          "name": "Caregiver submits a check-in with measuring devices -> 201, status received",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"starts as received\", () => pm.expect(c.status).to.eql(\"received\"));",
+                  "pm.test(\"devices stored\", () => pm.expect(c.measurementDevice).to.eql({ bp: \"upper_arm_digital\", thermometer: \"digital_oral\" }));",
+                  "pm.collectionVariables.set(\"statusCheckinId\", c.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"idempotencyKey\": \"pm-status-{{$timestamp}}\",\n  \"vitals\": {\n    \"systolic\": 152,\n    \"diastolic\": 96,\n    \"heartRate\": 88,\n    \"temperatureC\": 36.9\n  },\n  \"measurementDevice\": {\n    \"bp\": \"upper_arm_digital\",\n    \"thermometer\": \"digital_oral\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Invalid device -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"names the field\", () => pm.expect(pm.response.json().details.join(' ')).to.include(\"measurementDevice.bp\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1001\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 85\n  },\n  \"measurementDevice\": {\n    \"bp\": \"phone_camera\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Caregiver sees it awaiting review once it reached the clinic queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"awaiting review\", () => pm.expect(j.checkin.status).to.eql(\"awaiting_review\"));",
+                  "pm.test(\"log: received then awaiting_review, with timestamps\", () => {",
+                  "  pm.expect(j.statusLog.map((l) => l.status)).to.eql([\"received\", \"awaiting_review\"]);",
+                  "  j.statusLog.forEach((l) => pm.expect(Date.parse(l.changedAt)).to.be.a(\"number\"));",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// the outbox relay moves it to awaiting_review after the broker confirms (normally < 1 s)",
+                  "setTimeout(() => {}, 2500);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse review queue lists it",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"contains the new check-in with the patient name\", () => { const c = j.checkins.find((x) => x.id === pm.collectionVariables.get(\"statusCheckinId\")); pm.expect(c).to.be.ok; pm.expect(c.patientName).to.be.a(\"string\"); });",
+                  "pm.test(\"paginated\", () => pm.expect(j.pagination.totalItems).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?pageSize=200",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "pageSize",
+                  "value": "200"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caregiver cannot review -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Family cannot see the review queue -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse marks it reviewed -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"reviewed by the nurse\", () => { pm.expect(c.status).to.eql(\"reviewed\"); pm.expect(c.review.byId).to.eql(\"U-CS-001\"); pm.expect(c.review.byName).to.include(\"Ana\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"High but stable. Recheck tonight.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reviewing twice -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Action without text -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "action"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Nurse records the action -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"action recorded\", () => { pm.expect(j.checkin.status).to.eql(\"action_recorded\"); pm.expect(j.checkin.action.text).to.include(\"recheck\"); });",
+                  "pm.test(\"full timeline\", () => pm.expect(j.statusLog.map((l) => l.status)).to.eql([\"received\", \"awaiting_review\", \"reviewed\", \"action_recorded\"]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/action",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "action"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"Called the caregiver: rest, recheck at 6 PM\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Family sees the full status timeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"action_recorded with 4 steps\", () => { const j = pm.response.json(); pm.expect(j.checkin.status).to.eql(\"action_recorded\"); pm.expect(j.statusLog).to.have.length(4); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "History shows the status on each check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"every check-in has a status\", () => pm.response.json().checkins.forEach((c) => pm.expect([\"received\",\"awaiting_review\",\"reviewed\",\"action_recorded\"]).to.include(c.status)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001/history?days=1&pageSize=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Missing readings recorded as a reason (not measured / no device / unknown) -> 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const c = pm.response.json().checkin;",
+                  "pm.test(\"reasons stored\", () => pm.expect(c.vitalsMissing).to.eql({ bp: \"no_device\", spo2: \"not_measured\", bloodGlucose: \"unknown\" }));",
+                  "pm.test(\"no zero stored for the missing BP\", () => pm.expect(c.vitals.systolic).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"heartRate\": 76\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"no_device\",\n    \"spo2\": \"not_measured\",\n    \"bloodGlucose\": \"unknown\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A zero reading -> 422 (use vitalsMissing instead)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"explains why\", () => pm.expect(pm.response.json().details.join(\" \")).to.include(\"cannot be 0\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"spo2\": 0\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A value together with a missing reason -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dataOrigin\": \"demo\",\n  \"patientId\": \"P-1002\",\n  \"vitals\": {\n    \"systolic\": 130,\n    \"diastolic\": 82\n  },\n  \"vitalsMissing\": {\n    \"bp\": \"unknown\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin cannot review a check-in -> 403 (nurses only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/{{statusCheckinId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "{{statusCheckinId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Historical review list: older pending check-ins, never auto-reviewed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"only pending, not archived\", () => j.checkins.forEach((c) => { pm.expect(c.archived).to.eql(null); pm.expect([\"received\", \"awaiting_review\"]).to.include(c.status); }));",
+                  "pm.test(\"counts per list\", () => pm.expect(j.counts).to.have.keys(\"current\", \"historical\", \"archived\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?view=historical",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "view",
+                  "value": "historical"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caregiver cannot archive demo records -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{caregiverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/archive-demo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "archive-demo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Nurse archives pending demo check-ins (status unchanged) -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"count returned\", () => pm.expect(pm.response.json().archived).to.be.a(\"number\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/archive-demo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "archive-demo"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Archived list holds demo records only, none reviewed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"demo only, still pending\", () => pm.response.json().checkins.forEach((c) => { pm.expect(c.dataOrigin).to.eql(\"demo\"); pm.expect(c.review).to.eql(null); }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/checkins/review-queue?view=archived",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "checkins",
+                "review-queue"
+              ],
+              "query": [
+                {
+                  "key": "view",
+                  "value": "archived"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Batch 2 - Care team and nurse handover (submit -> accept -> case in the new nurse's queue)",
+      "item": [
+        {
+          "name": "Login - nurse.ben (incoming nurse)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"benToken\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ben\",\n  \"password\": \"{{demoPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Care team of P-1001: Ana holds the case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"team with several nurses\", () => pm.expect(j.members.length).to.be.at.least(2));",
+                  "pm.test(\"Ana is the case nurse\", () => pm.expect(j.caseNurse.id).to.eql(\"U-CS-001\"));",
+                  "pm.test(\"monitoring plan linked\", () => pm.expect(j.monitoringPlan.id).to.be.a(\"string\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "A nurse who does not hold the case cannot hand it over -> 403",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-001\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Handover without pending action -> 422",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-002\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ana submits handover to Ben -> 201 pending",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const h = pm.response.json().handover;",
+                  "pm.test(\"pending\", () => pm.expect(h.status).to.eql(\"pending\"));",
+                  "pm.test(\"all four fields kept\", () => { pm.expect(h.concern).to.be.a(\"string\"); pm.expect(h.actionTaken).to.be.a(\"string\"); pm.expect(h.pendingAction).to.be.a(\"string\"); pm.expect(h.dueTime).to.be.a(\"string\"); });",
+                  "pm.collectionVariables.set(\"handoverId\", h.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-002\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "While pending, the case is not in Ben's cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"not transferred yet\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.not.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ben sees it under Pending handover",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"incoming\", () => pm.expect(pm.response.json().incoming.map((h) => h.id)).to.include(pm.collectionVariables.get(\"handoverId\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue/pending-handovers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue",
+                "pending-handovers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "The outgoing nurse cannot accept -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Ben accepts -> 200, case moves",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"accepted\", () => pm.expect(j.handover.status).to.eql(\"accepted\"));",
+                  "pm.test(\"Ben now holds the case\", () => pm.expect(j.caseNurse.id).to.eql(\"U-CS-002\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Case is now in Ben's My cases",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"transferred\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "... and no longer in Ana's",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"gone\", () => pm.expect(pm.response.json().cases.map((c) => c.patient.id)).to.not.include(\"P-1001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Accepting twice -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "Handover chain: from, to, acceptance time",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const h = pm.response.json().handovers.find((x) => x.id === pm.collectionVariables.get(\"handoverId\"));",
+                  "pm.test(\"logged\", () => { pm.expect(h.fromNurse.id).to.eql(\"U-CS-001\"); pm.expect(h.toNurse.id).to.eql(\"U-CS-002\"); pm.expect(h.respondedAt).to.be.a(\"string\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin sees care teams (no clinical content)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"teams and plans\", () => { pm.expect(j.teams.length).to.be.at.least(2); pm.expect(j.monitoringPlans.length).to.be.at.least(3); });",
+                  "pm.test(\"no handover concern text\", () => pm.expect(pm.response.text()).to.not.include(\"dizzy\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/care-teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "care-teams"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read the handover chain -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot move a held case -> 409 handover required",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/patients/P-1001/care",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "patients",
+                "P-1001",
+                "care"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"careTeamId\": \"CT-MNL-A\",\n  \"caseNurseId\": \"U-CS-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Assignment log records the accepted handover",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"handover_accepted entry\", () => pm.expect(pm.response.json().entries.some((e) => e.action === \"handover_accepted\" && e.details.handoverId === pm.collectionVariables.get(\"handoverId\"))).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/care-log",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "care-log"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ben hands the case back to Ana -> 201",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"handoverDue\", new Date(Date.now() + 2 * 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set(\"handoverBackId\", pm.response.json().handover.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{benToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"toNurseId\": \"U-CS-001\",\n  \"concern\": \"BP 168/100 this morning, dizzy on standing\",\n  \"actionTaken\": \"Called the caregiver, advised rest and fluids\",\n  \"pendingAction\": \"Recheck BP at 6 PM and call the caregiver back\",\n  \"dueTime\": \"{{handoverDue}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ana accepts -> 200 (demo back to the start)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Ana holds it again\", () => pm.expect(pm.response.json().caseNurse.id).to.eql(\"U-CS-001\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/handover/{{handoverBackId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "handover",
+                "{{handoverBackId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Batch 3a - Accounts and sessions (create -> activate -> sign in, single session, lock, admin limits)",
+      "item": [
+        {
+          "name": "Admin creates a caregiver account -> 201 pending, code sent by SMS (not shown)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const t = Date.now().toString();",
+                  "pm.collectionVariables.set(\"newUser\", \"caregiver.pm\" + Date.now().toString(36));",
+                  "pm.collectionVariables.set(\"newPhone\", \"0918\" + t.slice(-7));",
+                  "pm.collectionVariables.set(\"activationCode\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"pending activation\", () => pm.expect(j.account.status).to.eql(\"pending_activation\"));",
+                  "pm.test(\"code not in the response\", () => pm.expect(pm.response.text()).to.not.match(/[A-Z0-9]{4}-[A-Z0-9]{4}/));",
+                  "pm.test(\"masked number only\", () => pm.expect(j.activation.sentTo).to.match(/^\\+63 9/));",
+                  "pm.test(\"not allow-listed: reported as simulated (NOT sent), never delivered\", () => pm.expect(j.activation.delivery).to.eql(\"simulated\"));",
+                  "pm.collectionVariables.set(\"newAccountId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"name\": \"Postman Caregiver\",\n  \"role\": \"caregiver\",\n  \"phone\": \"{{newPhone}}\",\n  \"patients\": [\"P-1003\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Sign-in before activation -> 400 account_pending",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"account_pending\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"{{newUser}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "(local testing) read the captured activation SMS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get(\"internalToken\")) { pm.test.skip(\"set internalToken (and ACCOUNT_SMS_CAPTURE=true) to run the activation steps\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const m = pm.response.json().body.match(/code is ([A-Z0-9]{4}-[A-Z0-9]{4})/);",
+                  "pm.test(\"activation code in the SMS\", () => pm.expect(m).to.not.be.null);",
+                  "if (m) pm.collectionVariables.set(\"activationCode\", m[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Internal-Token",
+                "value": "{{internalToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/test/account-sms?to={{newPhone}}&purpose=activation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "test",
+                "account-sms"
+              ],
+              "query": [
+                {
+                  "key": "to",
+                  "value": "{{newPhone}}"
+                },
+                {
+                  "key": "purpose",
+                  "value": "activation"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Activation with a weak password -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"short\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Activation with the SMS code -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"activated\", () => pm.expect(pm.response.json().activated).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "New caregiver signs in -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"caregiver role\", () => pm.expect(pm.response.json().role).to.eql(\"caregiver\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"{{newUser}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "The code works once -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const skip = !pm.variables.get(\"internalToken\") || !pm.collectionVariables.get(\"activationCode\");",
+                  "if (skip) { pm.test.skip(\"no activation code\", () => {}); return; }",
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{newUser}}\",\n  \"code\": \"{{activationCode}}\",\n  \"password\": \"Kalamansi2026\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin disables the test account -> 200 (reason required)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"disabled\", () => pm.expect(pm.response.json().account.status).to.eql(\"disabled\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts/{{newAccountId}}/disable",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts",
+                "{{newAccountId}}",
+                "disable"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman test account\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Signing in again ends the earlier session (single session)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"familyTokenOld\", pm.collectionVariables.get(\"familyToken\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"familyToken\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"family.jose\",\n  \"password\": \"{{demoPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Earlier family session -> 401 session_replaced",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"session_replaced\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{familyTokenOld}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nurse phone sign-in keeps the desktop session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set(\"phoneAccess\", j.access_token);",
+                  "pm.collectionVariables.set(\"phoneRefresh\", j.refresh_token);",
+                  "pm.test(\"phone session\", () => pm.expect(j.session.deviceClass).to.eql(\"phone\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"password\",\n  \"username\": \"nurse.ana\",\n  \"password\": \"{{demoPassword}}\",\n  \"device\": \"phone\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Desktop nurse session still works",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{nurseToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "App reports idle -> session locked (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "lock"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Locked session -> 401 session_locked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"reason\", () => pm.expect(pm.response.json().reason).to.eql(\"session_locked\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unlock with the password -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"phoneAccess\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "unlock"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{phoneRefresh}}\",\n  \"password\": \"{{demoPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Unlocked session works again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{phoneAccess}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/my-cases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "my-cases"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read a patient record -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/patients/P-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "patients",
+                "P-1001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot read the clinic queue -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin cannot dispatch an alert -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/dispatch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "dispatch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"P-1001\",\n  \"message\": \"test message\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin digest: counts only, no names",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"counts\", () => pm.expect(pm.response.json().open.total).to.be.a(\"number\"));",
+                  "pm.test(\"no patient names\", () => pm.expect(pm.response.text()).to.not.include(\"Lola\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/clinic/queue/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "clinic",
+                "queue",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Account audit log: who did what, when",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const e = pm.response.json().entries;",
+                  "pm.test(\"account_created by the admin\", () => pm.expect(e.some((x) => x.action === \"account_created\" && x.actorId === \"U-AD-001\" && x.at)).to.be.true);",
+                  "pm.test(\"no secrets\", () => pm.expect(pm.response.text()).to.not.match(/code is|scrypt\\$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit?limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "SMS check: says plainly whether codes really reach anyone",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"ready + problems + mode\", () => { pm.expect(j.ready).to.be.a(\"boolean\"); pm.expect(j.problems).to.be.an(\"array\"); pm.expect(j.mode).to.have.property(\"live\"); });",
+                  "pm.test(\"not live => not ready, with a NOT sent warning\", () => { if (!j.mode.live) { pm.expect(j.ready).to.eql(false); pm.expect(j.problems.join(\" \")).to.match(/NOT sent/); } });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/sms-check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "sms-check"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin creates a nurse (new staff ID)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = Date.now().toString(36);",
+                  "pm.collectionVariables.set(\"staffNurseUser\", \"nurse.pm\" + r);",
+                  "pm.collectionVariables.set(\"staffName\", \"Postman Nurse \" + r);",
+                  "pm.collectionVariables.set(\"staffPhone\", \"0919\" + Date.now().toString().slice(-7));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"gets a staff ID\", () => pm.expect(j.account.staffId).to.match(/^ST-\\d{3,6}$/));",
+                  "pm.collectionVariables.set(\"staffId\", j.account.staffId);",
+                  "pm.collectionVariables.set(\"staffNurseId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{staffNurseUser}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"clinic_staff\",\n  \"phone\": \"{{staffPhone}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Same staff ID with a different name -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.pmx{{$timestamp}}\",\n  \"name\": \"Somebody Else\",\n  \"role\": \"system_admin\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Second nurse account for the same person -> 409 (one account per role)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"nurse.pmx{{$timestamp}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"clinic_staff\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Separate admin account for the same person, linked by staff ID -> 201",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"same staff ID, separate account\", () => { pm.expect(j.account.staffId).to.eql(pm.collectionVariables.get(\"staffId\")); pm.expect(j.account.id).to.not.eql(pm.collectionVariables.get(\"staffNurseId\")); pm.expect(j.account.role).to.eql(\"system_admin\"); });",
+                  "pm.collectionVariables.set(\"staffAdminId\", j.account.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin.pm{{$timestamp}}\",\n  \"name\": \"{{staffName}}\",\n  \"role\": \"system_admin\",\n  \"phone\": \"{{staffPhone}}\",\n  \"staffId\": \"{{staffId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Audit log by staff ID shows both accounts of the person",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().entries.map(e => e.targetId);",
+                  "pm.test(\"nurse and admin account under one staff ID\", () => { pm.expect(ids).to.include(pm.collectionVariables.get(\"staffNurseId\")); pm.expect(ids).to.include(pm.collectionVariables.get(\"staffAdminId\")); });",
+                  "pm.test(\"entries carry the staff ID\", () => pm.response.json().entries.forEach(e => pm.expect(e.targetStaffId).to.eql(pm.collectionVariables.get(\"staffId\"))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/audit?staffId={{staffId}}&action=account_created",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "staffId",
+                  "value": "{{staffId}}"
+                },
+                {
+                  "key": "action",
+                  "value": "account_created"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -4419,6 +7206,82 @@
     },
     {
       "key": "smsId",
+      "value": ""
+    },
+    {
+      "key": "statusCheckinId",
+      "value": ""
+    },
+    {
+      "key": "benToken",
+      "value": ""
+    },
+    {
+      "key": "handoverId",
+      "value": ""
+    },
+    {
+      "key": "handoverBackId",
+      "value": ""
+    },
+    {
+      "key": "handoverDue",
+      "value": ""
+    },
+    {
+      "key": "internalToken",
+      "value": ""
+    },
+    {
+      "key": "newUser",
+      "value": ""
+    },
+    {
+      "key": "newPhone",
+      "value": ""
+    },
+    {
+      "key": "newAccountId",
+      "value": ""
+    },
+    {
+      "key": "activationCode",
+      "value": ""
+    },
+    {
+      "key": "familyTokenOld",
+      "value": ""
+    },
+    {
+      "key": "phoneAccess",
+      "value": ""
+    },
+    {
+      "key": "phoneRefresh",
+      "value": ""
+    },
+    {
+      "key": "staffNurseUser",
+      "value": ""
+    },
+    {
+      "key": "staffName",
+      "value": ""
+    },
+    {
+      "key": "staffPhone",
+      "value": ""
+    },
+    {
+      "key": "staffId",
+      "value": ""
+    },
+    {
+      "key": "staffNurseId",
+      "value": ""
+    },
+    {
+      "key": "staffAdminId",
       "value": ""
     }
   ]

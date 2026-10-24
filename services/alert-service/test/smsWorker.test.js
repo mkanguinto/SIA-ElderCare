@@ -20,7 +20,7 @@ const fakePool = {
       const r = rows.get(params[0]);
       return { rows: r ? [{ status: r.status }] : [] };
     }
-    if (/count\(\*\)::int AS n/.test(sql)) return { rows: [{ n: 0 }] };
+    if (/count\(\*\).* AS n/s.test(sql)) return { rows: [{ n: 0 }] }; // sentToday (alert + account SMS)
     if (/^UPDATE notification_log SET/.test(sql)) {
       const keys = [...sql.matchAll(/(\w+) = \$(\d+)/g)].filter(([, k]) => k !== 'id');
       const r = rows.get(params[0]);

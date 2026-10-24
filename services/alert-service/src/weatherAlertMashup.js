@@ -90,6 +90,24 @@ async function fetchWeatherByZip(zipCode, countryCode = 'PH', coords = {}) {
   return risk.toRiskProfile(owm, { zipCode, countryCode, alerts });
 }
 
+/**
+ * Current weather at a point (the caregiver's phone location), for the check-in screen.
+ * Cached in memory per ~1 km grid cell for CACHE_TTL_MIN so a busy barangay makes one OWM call.
+ */
+const pointCache = new Map();
+async function getWeatherAtPoint(lat, lon) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const hit = pointCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MIN * 60000) return { ...hit.profile, cache: 'fresh' };
+  const res = await request('openweathermap', {
+    method: 'GET', url: `${OWM_BASE}/data/2.5/weather`, params: { appid: apiKey(), units: 'metric', lat, lon },
+  }, { retries: 1, timeoutMs: 5000 });
+  const profile = risk.toRiskProfile(res.data, {});
+  if (pointCache.size > 500) pointCache.clear();
+  pointCache.set(key, { at: Date.now(), profile });
+  return { ...profile, cache: 'miss' };
+}
+
 /* ------------------------------------------------------------------ */
 /* 2. Cache-aware lookup with stale fallback                           */
 /* ------------------------------------------------------------------ */
@@ -315,6 +333,7 @@ function startScheduler() {
 module.exports = {
   fetchWeatherByZip,
   getWeatherForZip,
+  getWeatherAtPoint,
   loadWeatherRules,
   exceedsHeatThreshold,
   sendHeatWarningSms,

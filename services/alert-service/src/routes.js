@@ -4,7 +4,8 @@ const express = require('express');
 const { pool } = require('./db');
 const { dispatchAlert, SEVERITY_RANK } = require('./notifier');
 const mashup = require('./weatherAlertMashup');
-const { verifyWebhookSignature } = require('./textbeeClient');
+const { verifyWebhookSignature, batchStatus, gatewayHealth } = require('./textbeeClient');
+const { sentToday, DAILY_LIMIT } = require('./smsWorker');
 const { sendSms, normalizePhone, mode: smsMode, allowlist } = require('./smsSender');
 const logger = require('./lib/logger');
 const { requireInternalToken, internalHeaders } = require('./lib/internalAuth');
@@ -14,6 +15,7 @@ const { request } = require('./lib/resilientHttp');
 const { parseSmsCheckin, HELP_TEXT: SMS_HELP_TEXT } = require('./smsCheckinParser');
 const { parsePagination, pageInfo } = require('./lib/pagination');
 const alertRules = require('./alertRules');
+const { heatLevel } = require('./weatherRisk');
 
 const router = express.Router();
 router.use(requireInternalToken);
@@ -201,6 +203,47 @@ router.delete('/api/alerts/rules/:code', async (req, res, next) => {
     logger.info('alert rule deleted', { code: req.params.code, by: req.user.id });
     return res.status(204).end();
   } catch (err) {
+    return next(err);
+  }
+});
+
+/* --------------------- GET /api/alerts/weather/current ----------------------- */
+// Outdoor conditions where the caregiver is right now (lat/lon from the phone), or at a patient's ZIP code
+// when location is not shared. Shown on the check-in screen next to the elder's body temperature.
+router.get('/api/alerts/weather/current', async (req, res, next) => {
+  try {
+    if (!process.env.OPENWEATHER_API_KEY) return res.status(503).json({ error: 'not_configured', message: 'Weather is not set up (OPENWEATHER_API_KEY)' });
+    const lat = Number(req.query.lat);
+    const lon = Number(req.query.lon);
+    const zip = String(req.query.zip || '').trim();
+    let w;
+    let source;
+    if (req.query.lat !== undefined || req.query.lon !== undefined) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        return res.status(422).json({ error: 'validation_failed', details: ['lat must be -90..90 and lon -180..180'] });
+      }
+      w = await mashup.getWeatherAtPoint(lat, lon);
+      source = 'device_location';
+    } else if (/^[A-Za-z0-9 -]{3,10}$/.test(zip)) {
+      w = await mashup.getWeatherForZip(zip, String(req.query.country || 'PH').toUpperCase().slice(0, 2));
+      source = 'patient_address';
+    } else {
+      return res.status(422).json({ error: 'validation_failed', details: ['Give lat and lon, or zip'] });
+    }
+    const level = w.heatIndexC !== null ? heatLevel(w.heatIndexC) : null;
+    return res.json({
+      source,
+      locationName: w.locationName,
+      temperatureC: w.temperatureC,
+      feelsLikeC: w.feelsLikeC,
+      humidity: w.humidity,
+      heatIndexC: w.heatIndexC,
+      heatLevel: level,
+      conditions: (w.conditions || []).map((c) => c.description),
+      observedAt: w.observedAt,
+    });
+  } catch (err) {
+    if (err.response || err.code) return res.status(502).json({ error: 'weather_unavailable', message: 'Weather service did not answer. Try again in a minute.' });
     return next(err);
   }
 });
@@ -420,6 +463,92 @@ const SMS_ROUTE_HANDLERS = {
   help: async () => `${SMS_HELP_TEXT} In an emergency text SOS.`,
   unknown: async () => `Sorry, we did not understand that message. ${SMS_HELP_TEXT}`,
 };
+
+/**
+ * Account messages from the gateway (activation codes, password-reset links). Sent straight away, not queued,
+ * through the same dry-run / allow-list rules as alerts. The text is never logged or stored here because it
+ * carries a one-time secret; only its length and the outcome are logged.
+ */
+const ACCOUNT_PURPOSES = ['activation', 'password_reset', 'family_activation', 'clinic_contact'];
+const maskNumber = (n) => `${n.slice(0, 3)} ${n.slice(3, 4)}•• ••• ${n.slice(-4)}`;
+
+/**
+ * Account messages for the gateway (activation code, password-reset link). The answer says honestly what
+ * happened: 'simulated' means NOTHING was sent (dry-run, or the number is not allow-listed); 'queued' means
+ * TextBee accepted it for the sending phone - not that it arrived. GET .../:ref follows it to sent / delivered.
+ */
+router.post('/internal/messages/sms', async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const errors = [];
+    const to = typeof b.to === 'string' ? normalizePhone(b.to) : null;
+    if (!to) errors.push('to must be a Philippine mobile number');
+    if (typeof b.body !== 'string' || !b.body.trim() || b.body.length > 480) errors.push('body is required (at most 480 characters)');
+    if (!ACCOUNT_PURPOSES.includes(b.purpose)) errors.push(`purpose must be one of: ${ACCOUNT_PURPOSES.join(', ')}`);
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    const m = smsMode();
+    const real = m.live && (!m.allowlistSize || allowlist().has(to));
+    const log = (status, ref, note) => pool.query('INSERT INTO account_sms_log (purpose, sent_to, status, provider_ref, note) VALUES ($1,$2,$3,$4,$5)', [b.purpose, maskNumber(to), status, ref || null, note || null]);
+    if (real && (await sentToday()) >= DAILY_LIMIT()) {
+      const note = `Daily SMS limit reached (${DAILY_LIMIT()})`;
+      await log('failed', null, note);
+      return res.status(429).json({ error: 'sms_limit', status: 'failed', message: `${note}. Try again tomorrow.` });
+    }
+    try {
+      const r = await sendSms({ to, body: b.body });
+      const status = r.simulated ? 'simulated' : 'queued';
+      const note = r.simulated ? r.note : (r.warning && r.warning.message) || null;
+      await log(status, r.simulated ? null : r.sid, note);
+      logger.info('account sms', { purpose: b.purpose, status, chars: b.body.length });
+      return res.json({ status, note, ref: r.simulated ? null : r.sid });
+    } catch (err) {
+      await log('failed', null, String(err.message).slice(0, 300));
+      logger.warn('account sms failed', { purpose: b.purpose, error: err.message });
+      return res.status(502).json({ error: 'sms_failed', status: 'failed', message: err.permanent ? `The SMS provider rejected the message (${String(err.message).slice(0, 160)})` : 'The SMS could not be sent, try again' });
+    }
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/** Follows an account SMS: asks TextBee for the batch (the phone reports sent / delivered / failed). */
+router.get('/internal/messages/sms/:ref', async (req, res, next) => {
+  try {
+    if (!/^[A-Za-z0-9_-]{4,80}$/.test(req.params.ref)) return res.status(404).json({ error: 'not_found' });
+    const { rows: [row] } = await pool.query('SELECT * FROM account_sms_log WHERE provider_ref = $1', [req.params.ref]);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    let { status, note } = row;
+    if (['queued', 'sent', 'unknown'].includes(status)) {
+      try {
+        const r = await batchStatus(row.provider_ref);
+        if (r.status !== status || (r.error && r.error !== note)) {
+          status = r.status;
+          note = r.error || note;
+          await pool.query('UPDATE account_sms_log SET status = $2, note = $3, updated_at = now() WHERE id = $1', [row.id, status, note]);
+        }
+      } catch (err) {
+        logger.warn('textbee status check failed', { error: err.message });
+      }
+    }
+    return res.json({ status, note, sentTo: row.sent_to, purpose: row.purpose, createdAt: row.created_at });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/** SMS readiness for the admin: mode, allow-list size, the sending phone, permission, today's count. */
+router.get('/internal/messages/sms-health', async (req, res, next) => {
+  try {
+    const m = smsMode();
+    let gateway = null;
+    if (m.provider === 'textbee' && process.env.TEXTBEE_API_KEY) {
+      try { gateway = await gatewayHealth(); } catch (err) { gateway = { error: `TextBee: ${err.response ? err.response.status : err.code || err.message}` }; }
+    }
+    return res.json({ mode: m, gateway, sentToday: await sentToday(), dailyLimit: DAILY_LIMIT() });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 router.post('/internal/sms/status', async (req, res, next) => {
   try {

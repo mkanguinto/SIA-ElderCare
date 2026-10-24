@@ -11,8 +11,11 @@
  * Each occurrence is a "slot" identified by (task, date, slot) where slot is "HH:MM" or "any".
  */
 const { CATEGORY_CODES } = require('./catalog');
+const { source: planSource } = require('./planContent');
 
 const FREQUENCIES = ['daily', 'weekly', 'once', 'as_needed'];
+// Readings a measurement task asks for (the same vital signs as the check-in).
+const MEASUREMENTS = ['bp', 'heart_rate', 'temperature', 'spo2', 'blood_glucose'];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ANY = 'any';
@@ -28,7 +31,8 @@ const isDate = (v) => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(
 function validateTask(body, { partial = false, existing = null } = {}) {
   const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
   const errors = [];
-  const allowed = ['category', 'title', 'instructions', 'frequency', 'times', 'daysOfWeek', 'dueDate', 'startDate', 'endDate', 'active'];
+  const allowed = ['category', 'title', 'instructions', 'frequency', 'times', 'daysOfWeek', 'dueDate', 'startDate', 'endDate', 'active',
+    'kind', 'measurement', 'specialised', 'source'];
   const unknown = Object.keys(b).filter((k) => !allowed.includes(k));
   if (unknown.length) errors.push(`unknown field(s): ${unknown.join(', ')}`);
   const has = (k) => b[k] !== undefined;
@@ -69,6 +73,26 @@ function validateTask(body, { partial = false, existing = null } = {}) {
     if (typeof b.active !== 'boolean') errors.push('active must be true or false');
     else value.active = b.active;
   }
+  if (has('kind')) {
+    if (!['task', 'measurement'].includes(b.kind)) errors.push('kind must be task or measurement');
+    else value.kind = b.kind;
+  }
+  if (has('measurement')) {
+    if (b.measurement !== null && !MEASUREMENTS.includes(b.measurement)) errors.push(`measurement must be one of: ${MEASUREMENTS.join(', ')}`);
+    else value.measurement = b.measurement;
+  }
+  if (has('specialised')) {
+    if (typeof b.specialised !== 'boolean') errors.push('specialised must be true or false');
+    else value.specialised = b.specialised;
+  }
+  if (has('source')) {
+    if (b.source === null) value.source = null;
+    else {
+      const srcErrors = [];
+      value.source = planSource(b.source, 'source', srcErrors);
+      errors.push(...srcErrors.map((e) => e.replace(/^source\.source/, 'source')));
+    }
+  }
 
   // Cross-field rules on the merged result.
   const m = { times: [], daysOfWeek: [], dueDate: null, startDate: null, endDate: null, ...(existing || {}), ...value };
@@ -77,6 +101,10 @@ function validateTask(body, { partial = false, existing = null } = {}) {
     if (m.frequency === 'weekly' && !m.daysOfWeek.length) errors.push('weekly tasks need daysOfWeek');
     if (m.frequency === 'once' && !m.dueDate) errors.push('one-time tasks need a dueDate');
     if (m.startDate && m.endDate && m.endDate < m.startDate) errors.push('endDate must be on or after startDate');
+    if (m.kind === 'measurement' && !m.measurement) errors.push(`measurement tasks need measurement (${MEASUREMENTS.join(', ')})`);
+    if (m.kind !== 'measurement' && m.measurement) errors.push('measurement is only for measurement tasks');
+    // Specialised care (e.g. a therapeutic diet, wound care) needs a clinical source, not only the nurse's assessment.
+    if (m.specialised && !(m.source && m.source.type && m.source.type !== 'nurse_assessment')) errors.push('specialised tasks need a clinical source (source.type other than nurse_assessment)');
   }
   if (partial && !errors.length && !Object.keys(value).length) errors.push('nothing to update');
   return { errors, value };
@@ -158,7 +186,9 @@ function buildChecklist(tasks, completions, date, now, onceDone = new Set()) {
   const count = (s) => items.filter((i) => i.status === s).length;
   return {
     date,
-    summary: { total: items.length, done: count('done'), skipped: count('skipped'), pending: count('pending'), overdue: count('overdue'), missed: count('missed') },
+    // Nothing is assumed: a slot without a report stays pending, overdue or missed (no report), never done.
+    summary: { total: items.length, done: count('done'), notDone: count('not_done'), notApplicable: count('not_applicable'), skipped: count('skipped'),
+      pending: count('pending'), overdue: count('overdue'), missed: count('missed') },
     items,
     asNeeded,
   };
@@ -166,10 +196,12 @@ function buildChecklist(tasks, completions, date, now, onceDone = new Set()) {
 
 /**
  * Adherence per category over [from, to] for recurring tasks (daily / weekly / once).
- * done / scheduled, where skipped and missed both count as not done.
+ * done / scheduled, where not done, skipped and missed count as not done and not applicable is left out.
  */
 function adherence(tasks, completions, from, to) {
   const doneKeys = new Set(completions.filter((c) => c.status === 'done').map((c) => `${c.taskId}|${c.date}|${c.slot}`));
+  // A slot the caregiver marked "not applicable" (e.g. the elder was in hospital) is not counted either way.
+  const naKeys = new Set(completions.filter((c) => c.status === 'not_applicable').map((c) => `${c.taskId}|${c.date}|${c.slot}`));
   const per = {};
   const bump = (cat, isDone) => {
     per[cat] = per[cat] || { scheduled: 0, done: 0 };
@@ -182,7 +214,7 @@ function adherence(tasks, completions, from, to) {
         if (t.active && t.dueDate === d) bump(t.category, completions.some((c) => c.taskId === t.id && c.status === 'done'));
         continue;
       }
-      for (const slot of slotsOn(t, d)) bump(t.category, doneKeys.has(`${t.id}|${d}|${slot}`));
+      for (const slot of slotsOn(t, d)) if (!naKeys.has(`${t.id}|${d}|${slot}`)) bump(t.category, doneKeys.has(`${t.id}|${d}|${slot}`));
     }
   }
   const categories = Object.entries(per).map(([category, v]) => ({ category, ...v, rate: v.scheduled ? Math.round((v.done / v.scheduled) * 100) : null }));
@@ -192,5 +224,5 @@ function adherence(tasks, completions, from, to) {
 }
 
 module.exports = {
-  FREQUENCIES, ANY, TIME_RE, isDate, validateTask, localNow, addDays, slotsOn, buildChecklist, adherence,
+  FREQUENCIES, MEASUREMENTS, ANY, TIME_RE, isDate, validateTask, localNow, addDays, slotsOn, buildChecklist, adherence,
 };

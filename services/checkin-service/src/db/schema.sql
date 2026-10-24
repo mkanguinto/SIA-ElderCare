@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS checkins (
   severity_score       SMALLINT    NOT NULL DEFAULT 0,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Outdoor conditions where the caregiver was when the check-in was taken (OpenWeatherMap via the alert service)
+ALTER TABLE checkins ADD COLUMN IF NOT EXISTS environment JSONB;
+
 CREATE INDEX IF NOT EXISTS idx_checkins_patient_time ON checkins (patient_id, recorded_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_checkins_idempotency ON checkins (caregiver_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 

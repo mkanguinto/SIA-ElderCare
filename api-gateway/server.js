@@ -15,6 +15,7 @@ const config = require('./src/config'); // loads .env first and fails fast on mi
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 
 const logger = require('./src/lib/logger');
@@ -22,6 +23,8 @@ const { requestContext } = require('./src/middleware/requestContext');
 const oauthRoutes = require('./src/routes/oauth');
 const adminRoutes = require('./src/routes/admin');
 const directoryRoutes = require('./src/routes/directory');
+const accountRoutes = require('./src/routes/accounts');
+const { store: accountStore } = require('./src/auth/accountStore');
 const apiRoutes = require('./src/routes');
 const { forwardTo } = require('./src/lib/proxy');
 const { verifyTextbeeSignature } = require('./src/middleware/textbeeSignature');
@@ -77,7 +80,26 @@ const authLimiter = rateLimit({
 
 // Public endpoints
 app.get('/health', (req, res) => res.json({ status: 'up', service: 'api-gateway', uptimeSec: Math.round(process.uptime()) }));
+
+// GET /health/wake : public, no data. On free hosting (Render free tier) idle services sleep and take
+// ~1 minute to start, so the app calls this when it opens: every downstream /health is pinged in parallel
+// (which starts the sleeping ones) and the reply says which are already up. Only up/down is returned.
+app.get('/health/wake', async (req, res) => {
+  const results = await Promise.all(Object.entries(config.services).map(async ([name, url]) => {
+    try {
+      const r = await axios.get(`${url}/health`, { timeout: Number(process.env.WAKE_PROBE_TIMEOUT_MS || 4000), validateStatus: () => true });
+      return [name, r.status === 200];
+    } catch {
+      return [name, false];
+    }
+  }));
+  const services = Object.fromEntries(results);
+  res.set('Cache-Control', 'no-store').json({ ready: results.every(([, up]) => up), services });
+});
 app.use('/oauth', authLimiter, oauthRoutes);
+// Account activation and password reset (codes / links from SMS): public, same brute-force limit as sign-in.
+app.use('/auth', authLimiter, accountRoutes.pub);
+app.use('/internal/test', accountRoutes.testing);
 // TextBee (Android SMS gateway): delivery receipts + incoming SMS (check-ins, SOS, STOP/START) from
 // caregivers without internet (Risk 3). No JWT (TextBee cannot send one); X-Signature is verified instead:
 // here, before the Node-RED content-based router (Batch 3), or by the alert service in direct mode.
@@ -89,6 +111,7 @@ if (config.textbee.webhookTarget === 'node-red') {
 
 // Protected endpoints
 app.use('/api', apiLimiter);
+app.use('/api/admin', accountRoutes.admin);
 app.use('/api/admin', adminRoutes);
 app.use('/api/directory', directoryRoutes);
 app.use('/api', apiRoutes);
@@ -102,9 +125,17 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  const server = app.listen(config.port, () => logger.info('api-gateway listening', { port: config.port, env: config.nodeEnv }));
+  let server;
+  if (config.accountSmsCapture) logger.warn('ACCOUNT_SMS_CAPTURE is on: activation codes can be read through /internal/test (local testing only)');
+  accountStore.init().then(() => {
+    server = app.listen(config.port, () => logger.info('api-gateway listening', { port: config.port, env: config.nodeEnv, accounts: accountStore.kind }));
+  }).catch((err) => {
+    logger.error('account store failed to start', { error: err.message });
+    process.exit(1);
+  });
   const shutdown = (signal) => {
     logger.info('shutting down', { signal });
+    if (!server) process.exit(0);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 10000).unref();
   };

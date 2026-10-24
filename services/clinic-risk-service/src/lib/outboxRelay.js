@@ -26,8 +26,10 @@ const crypto = require('crypto');
  * @param {string} o.source            service name written into every event
  * @param {number} [o.maxAttempts]
  * @param {number} [o.pollMs]
+ * @param {(client: import('pg').PoolClient, row: {event_type:string, payload:object}) => Promise<void>} [o.onDelivered]
+ *        runs in the same transaction right after a row is marked delivered (e.g. advance a business status)
  */
-function createOutbox({ pool, logger, deliver, source, maxAttempts = Number(process.env.OUTBOX_MAX_ATTEMPTS || 10), pollMs = Number(process.env.OUTBOX_POLL_MS || 2000) }) {
+function createOutbox({ pool, logger, deliver, source, onDelivered, maxAttempts = Number(process.env.OUTBOX_MAX_ATTEMPTS || 10), pollMs = Number(process.env.OUTBOX_POLL_MS || 2000) }) {
   const BATCH = 25;
   let running = false;
   let timer = null;
@@ -66,6 +68,17 @@ function createOutbox({ pool, logger, deliver, source, maxAttempts = Number(proc
             try {
               await deliver({ routingKey: row.event_type, event: row.payload, target: row.target });
               await client.query(`UPDATE outbox_events SET status = 'delivered', delivered_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = $1`, [row.id]);
+              if (onDelivered) {
+                // A failing hook must not make a delivered event look undelivered (it would be published twice).
+                await client.query('SAVEPOINT on_delivered');
+                try {
+                  await onDelivered(client, row);
+                  await client.query('RELEASE SAVEPOINT on_delivered');
+                } catch (hookErr) {
+                  await client.query('ROLLBACK TO SAVEPOINT on_delivered');
+                  logger.warn('outbox onDelivered hook failed', { eventId: row.payload.eventId, error: hookErr.message });
+                }
+              }
             } catch (err) {
               const attempts = row.attempts + 1;
               const failed = err.permanent || attempts >= maxAttempts;
