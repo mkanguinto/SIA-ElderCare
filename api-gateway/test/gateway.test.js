@@ -263,3 +263,14 @@ test('contact the clinic: family and caregiver of the elder send, nurses answer,
   assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: nurse, body: {} })).status, 200);
   assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: admin, body: {} })).status, 403);
 });
+
+test('who looks after an elder: caregiver and family of that elder, and nurses; admin no', async () => {
+  const fam = (await login('family.jose')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  const r = await call('GET', '/api/patients/P-1001/people', { token: fam });
+  assert.strictEqual(r.status, 200);
+  assert.ok(r.body.caregivers.some((c) => c.name), 'caregiver names');
+  assert.ok(!JSON.stringify(r.body).includes('passwordHash'));
+  assert.strictEqual((await call('GET', '/api/patients/P-1002/people', { token: fam })).status, 403);
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/people', { token: admin })).status, 403);
+});

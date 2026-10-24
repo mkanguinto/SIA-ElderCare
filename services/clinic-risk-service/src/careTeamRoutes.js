@@ -9,6 +9,7 @@
  *   GET  /api/clinic/my-cases                     elders whose case I hold, with the open queue item and any outgoing handover
  *   GET  /api/clinic/queue/pending-handovers      {incoming, outgoing} pending handovers for me
  *   GET  /api/clinic/patients/:id/care            care team, case nurse, duty, handover chain (nurses)
+ *   GET  /api/clinic/patients/:id/care-summary    care team and case nurse names (the elder's caregiver / family, nurses)
  *   GET  /api/clinic/duty                         nurses and whether they are on duty
  *   PUT  /api/clinic/duty/me                      {onDuty}  set by the nurse; independent of login sessions
  *   GET  /api/clinic/care-teams                   teams, members, elders, monitoring plans (nurses, admin; no clinical content)
@@ -234,6 +235,25 @@ router.get('/api/clinic/patients/:id/care', async (req, res, next) => {
         return { id: m.nurse_id, name: m.nurse_name, teamRole: m.team_role, onDuty: Boolean(d && d.on_duty), dutySince: d ? d.changed_at : null };
       }),
       handovers: chain.map(toHandoverDto),
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+/** Who looks after an elder, for the elder's caregiver and family (names only, nothing clinical). */
+router.get('/api/clinic/patients/:id/care-summary', async (req, res, next) => {
+  try {
+    if (!ID_RE.test(req.params.id)) return res.status(404).json({ error: 'not_found' });
+    const linked = req.user && ['caregiver', 'family_member'].includes(req.user.role) && req.user.patients.includes(req.params.id);
+    if (!isNurse(req) && !linked) return forbid(res, 'You are not linked to this elder');
+    const { rows: [r] } = await pool.query(
+      'SELECT pc.case_nurse_id, pc.case_nurse_name, t.name AS team_name FROM patient_care pc LEFT JOIN care_teams t ON t.id = pc.care_team_id WHERE pc.patient_id = $1',
+      [req.params.id],
+    );
+    return res.json({
+      careTeam: r && r.team_name ? { name: r.team_name } : null,
+      caseNurse: r && r.case_nurse_id ? { id: r.case_nurse_id, name: r.case_nurse_name } : null,
     });
   } catch (err) {
     return next(err);

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, loadDraft } from '../api';
 import { Link, navigate } from '../router';
-import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL } from '../format';
+import { age, relTime, initials, visitWhen, VISIT_TYPE_LABEL, conditionLabel } from '../format';
 import Icon from './icons';
 import { readOutbox, queueCheckin, flushOutbox, onOutboxChange, todaysDoses, SLOTS, slotOf, vitalsWarning, vitalErrors, alertHeadline, MISSING_REASONS, vitalsSummary } from './data';
 import { AlertsList, AlertDetail, Profile, useNotifications } from './common';
@@ -14,6 +14,7 @@ import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import { StatusChip, StatusTimeline, statusLine } from './status';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ContactClinic } from './contact';
+import { Avatar, Badge, WeekDots, QuickAction, PatientPicker, SwitchPill, usePeople, sirenIcon } from './figma';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
   isToday, clock, hhmm, manilaHour, toneFor, shortName, EMERGENCY_PHONE, TONE,
@@ -65,13 +66,15 @@ export default function CaregiverApp({ user, path }) {
   else if (sub === '/duties') screen = <Duties user={user} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
   else if (sub === '/alerts') screen = <CaregiverAlerts user={user} />;
-  else if (sub === '/profile') screen = <Profile user={user} back={BASE} extra={<ReminderSetting />} />;
+  else if (sub === '/profile') screen = <Profile user={user} back={BASE} notifications={remindersSupported() ? <ReminderSwitch /> : null} />;
   else if (sub.startsWith('/checkins/')) screen = <CheckinDetail id={sub.split('/')[2]} />;
+  else if (sub === '/patients') screen = <Patients user={user} />;
+  else if (sub.startsWith('/patients/')) screen = <PatientProfile user={user} patientId={decodeURIComponent(sub.split('/')[2])} />;
   else if (sub === '/contact') screen = <CaregiverContact user={user} />;
   else screen = <Home user={user} />;
   const wizard = sub.startsWith('/check-in');
   return (
-    <MobileFrame plain={wizard} emergency>
+    <MobileFrame plain={wizard} light>
       {screen}
       {!wizard && <BottomNav items={NAV(tr)} />}
       <ReminderRunner user={user} />
@@ -86,10 +89,7 @@ function Home({ user }) {
   const [outbox, online] = useOutbox(user.id);
   const alerts = useNotifications(null, 20);
   const newAlerts = (alerts || []).filter((a) => isToday(a.createdAt)).length;
-  const checklists = useChecklists(elders);
   const weather = useOutsideWeather(elders && elders[0]);
-  const plan = useMemo(() => (elders ? buildPlan(elders, checklists) : []), [elders, checklists]);
-
   const [unsent] = useState(() => loadDraft('checkin'));
 
   if (!online || outbox.length) return <Offline user={user} outbox={outbox} online={online} alerts={newAlerts} />;
@@ -102,6 +102,7 @@ function Home({ user }) {
   const done = status.filter((s) => s.latest).length;
   const due = status.find((s) => !s.latest);
   const firstDose = due && due.meds.flatMap((m) => m.times).sort()[0];
+  const visit = status.flatMap((e) => e.visits.map((v) => ({ ...v, who: e.fullName })))[0];
 
   return (
     <>
@@ -119,20 +120,23 @@ function Home({ user }) {
             <h2>{tr(`${done} of ${status.length} done`, `${done} sa ${status.length} tapos na`)}</h2>
             <p className="m-muted">{due
               ? tr(`${shortName(due.fullName)} is due now${firstDose ? ` (${hhmm(firstDose)})` : ''}.`, `Kailangan nang i-check-in si ${shortName(due.fullName)}.`)
-              : tr('Everyone is checked in for today.', 'Tapos na ang lahat ng check-in ngayon.')}</p>
+              : tr('Everyone is checked in for today', 'Tapos na ang lahat ng check-in ngayon')}</p>
           </div>
           <Ring value={status.length ? done / status.length : 0} label={tr(`${done} of ${status.length} check-ins done`, `${done} sa ${status.length} tapos`)} />
         </div>
         <div style={{ marginTop: '1rem' }}>
-          <Cta onClick={() => navigate(`${BASE}/check-in${due ? `?patient=${due.id}` : ''}`)}>{tr('Start check-in', 'Simulan ang check-in')}</Cta>
+          {due
+            ? <Cta onClick={() => navigate(`${BASE}/check-in?patient=${due.id}`)}>{tr('Start check-in', 'Simulan ang check-in')}</Cta>
+            : <Cta onClick={() => navigate(`${BASE}/patients/${status[0].id}`)}>{tr('View summary', 'Tingnan ang buod')}</Cta>}
         </div>
       </section>
 
-      <nav className="m-quick" aria-label={tr('Quick actions', 'Mabilisang aksyon')}>
-        <Link to={`${BASE}/check-in`} className="is-primary"><span className="m-quick-icon"><Icon name="clipboard" /></span>{tr('Check-in', 'Check-in')}</Link>
-        <Link to={`${BASE}/medicines`}><span className="m-quick-icon"><Icon name="pill" /></span>{tr('Medicines', 'Gamot')}</Link>
-        <Link to={`${BASE}/contact`}><span className="m-quick-icon"><Icon name="phone" /></span>{tr('Contact clinic', 'Klinika')}</Link>
-        <a href={`tel:${EMERGENCY_PHONE}`} className="is-danger"><span className="m-quick-icon"><Icon name="alert" /></span>{tr('Emergency', 'Emergency')}</a>
+      <h2 className="m-label" style={{ marginTop: '1.25rem' }}>{tr('Quick Actions', 'Mabilisang aksyon')}</h2>
+      <nav className="m-qa" aria-label={tr('Quick actions', 'Mabilisang aksyon')}>
+        <QuickAction to={`${BASE}/check-in`} LinkComponent={Link} icon="clipboard" label={tr('Check-in', 'Check-in')} />
+        <QuickAction to={`${BASE}/medicines`} LinkComponent={Link} icon="pill" label={tr('Medicines', 'Gamot')} />
+        <QuickAction to={`${BASE}/contact`} LinkComponent={Link} icon="phone" label={tr('Call clinic', 'Klinika')} />
+        <QuickAction href={`tel:${EMERGENCY_PHONE}`} img={sirenIcon} danger label={tr('Emergency', 'Emergency')} />
       </nav>
 
       {weather.status === 'ready' && DANGEROUS_HEAT.includes(weather.weather.heatLevel) && (
@@ -140,117 +144,165 @@ function Home({ user }) {
       )}
       <ReminderPrompt />
 
-      <div className="m-between"><h2 className="m-section-title">{tr('Your elders', 'Iyong mga inaalagaan')}</h2></div>
-      <div className="m-stack">
-        {status.map((e) => {
-          const sev = e.latest && e.latest.severity;
-          const chip = !e.latest
-            ? <Chip tone="moderate" icon="clock">{tr('Due now', 'Kailangan na')}</Chip>
-            : sev === 'none' || sev === 'low' ? <Chip tone="ok" icon="check">{tr('Normal', 'Normal')}</Chip>
-              : <Chip tone={TONE[sev]} icon="alert">{tr('Needs attention', 'Kailangang bantayan')}</Chip>;
-          return (
-            <Link key={e.id} to={`${BASE}/check-in?patient=${e.id}`} className="m-list-row">
-              <span className={`m-avatar ${e.latest ? 'tone-blue' : 'tone-amber'}`} aria-hidden="true">{initials(e.fullName.replace(/^(Lola|Lolo) /, ''))}</span>
-              <span className="m-grow">
-                <strong>{e.fullName}</strong>
-                <span className="m-sub">{e.latest
-                  ? tr(`Checked in ${clock(e.latest.recordedAt)}${sev === 'none' ? ' · all normal' : ''}`, `Na-check-in ${clock(e.latest.recordedAt)}`)
-                  : tr(`Due now · last check-in ${e.last ? relTime(e.last.recordedAt) : 'never'}`, `Kailangan na · huling check-in ${e.last ? relTime(e.last.recordedAt) : 'wala pa'}`)}</span>
-                {chip}
-                <WeekStrip checkins={e.checkins} />
-              </span>
-              <Icon name="chevron" />
-            </Link>
-          );
-        })}
+      <div className="m-between" style={{ marginTop: '1.25rem' }}>
+        <h2 className="m-label" style={{ margin: 0 }}>{tr('Your Patients', 'Iyong mga pasyente')}</h2>
+        <Link to={`${BASE}/patients`} className="m-link">{tr('See all', 'Lahat')}</Link>
+      </div>
+      <div style={{ marginTop: '.75rem' }}>
+        {status.map((e) => <PatientCard key={e.id} e={e} tr={tr} />)}
       </div>
 
-      {status.flatMap((e) => e.visits.map((v) => ({ ...v, who: e.fullName }))).slice(0, 1).map((v) => (
-        <section key={v.id} style={{ marginTop: '1rem' }}>
-          <h2 className="m-section-title">{tr('Upcoming visit', 'Darating na bisita')}</h2>
+      {visit && (
+        <section style={{ marginTop: '1rem' }}>
+          <h2 className="m-label">{tr('Upcoming visit', 'Darating na bisita')}</h2>
           <div className="m-card m-row" style={{ alignItems: 'flex-start' }}>
             <span className="m-thumb tone-ok" aria-hidden="true"><Icon name="calendar" /></span>
-            <div className="m-grow"><strong>{visitWhen(v)}</strong>
-              <p className="m-muted" style={{ fontSize: '.9375rem' }}>{VISIT_TYPE_LABEL[v.visitType]} · {v.who}</p>
-              <p className="m-caption">{v.destination}{v.location ? ` · ${v.location}` : ''}</p>
-              {v.notes && <p className="m-caption">{tr('Note from the nurse:', 'Tala ng nars:')} {v.notes}</p>}</div>
+            <div className="m-grow"><strong>{visitWhen(visit)}</strong>
+              <p className="m-muted" style={{ fontSize: '.9375rem' }}>{VISIT_TYPE_LABEL[visit.visitType]} · {visit.who}</p>
+              <p className="m-caption">{visit.destination}{visit.location ? ` · ${visit.location}` : ''}</p>
+              {visit.notes && <p className="m-caption">{tr('Note from the nurse:', 'Tala ng nars:')} {visit.notes}</p>}</div>
           </div>
         </section>
-      ))}
-
-      <div className="m-between"><h2 className="m-section-title">{tr("Today's plan", 'Plano ngayon')}</h2><Link to={`${BASE}/duties`} className="m-link">{tr('All duties', 'Lahat ng gawain')}</Link></div>
-      <TodayPlan plan={plan} />
-
-      <h2 className="m-section-title">{tr('This week', 'Ngayong linggo')}</h2>
-      <div className="m-stack">
-        {status.flatMap((e) => e.checkins.map((c) => ({ ...c, who: e.fullName }))).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 6).map((c) => (
-          <Link key={c.id} to={`${BASE}/checkins/${c.id}`} className="m-card m-card-link" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
-            <div className="m-between">
-              <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : c.vitalsMissing && c.vitalsMissing.bp ? tr('BP not taken', 'Walang BP') : tr('No BP', 'Walang BP')}</strong>
-              <Chip tone={TONE[c.severity] || 'ok'} icon={['none', 'low'].includes(c.severity) ? 'check' : 'alert'}>{SEVERITY_WORD[c.severity] ? tr(...SEVERITY_WORD[c.severity]) : c.severity}</Chip>
-            </div>
-            <p className="m-caption">{c.who} · {isToday(c.recordedAt) ? clock(c.recordedAt) : relTime(c.recordedAt)} · {vitalsSummary(c, tr)}
-              {c.medication.taken === false ? tr(' · medicine missed', ' · hindi nainom ang gamot') : ''}</p>
-            <div className="m-row" style={{ gap: '.5rem', marginTop: '.4rem', alignItems: 'center' }}>
-              <StatusChip status={c.status} />
-              <span className="m-caption" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine(c, tr)}</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+      )}
     </>
   );
 }
 
-const PLAN_STATUS = {
-  done: ['ok', 'check', 'Done', 'Tapos'],
-  skipped: ['moderate', 'x', 'Skipped', 'Nilaktawan'],
-  missed: ['critical', 'alert', 'Missed', 'Hindi nagawa'],
-  overdue: ['high', 'alert', 'Overdue', 'Huli na'],
-  due: ['info', 'clock', 'Later', 'Mamaya'],
-};
-const PLAN_ICON = { checkin: 'clipboard', dose: 'pill', duty: 'heart' };
+/** Grey patient card: name, today's state, last check-in time, the week's dots. */
+function PatientCard({ e, tr }) {
+  const sev = e.latest && e.latest.severity;
+  const badge = !e.latest ? <Badge tone="moderate">{tr('Due now', 'Kailangan na')}</Badge>
+    : sev === 'none' || sev === 'low' ? <Badge>{tr('All Normal', 'Normal lahat')}</Badge>
+      : <Badge tone="critical">{tr('Needs attention', 'Bantayan')}</Badge>;
+  return (
+    <Link to={`${BASE}/patients/${e.id}`} className="m-person">
+      <Avatar name={e.fullName} />
+      <span className="m-grow">
+        <span className="m-row" style={{ gap: '.5rem', flexWrap: 'wrap' }}><strong>{shortName(e.fullName)}</strong>{badge}</span>
+        <span className="m-sub">{e.latest
+          ? tr(`Checked in at ${clock(e.latest.recordedAt)}`, `Na-check-in ${clock(e.latest.recordedAt)}`)
+          : tr(`Not checked in yet today${e.last ? ` · last ${relTime(e.last.recordedAt)}` : ''}`, 'Wala pang check-in ngayon')}</span>
+        <WeekDots checkins={e.checkins} />
+      </span>
+      <Icon name="chevron" />
+    </Link>
+  );
+}
 
-/** Check-ins, medicines and duties for all elders in one time-ordered list, with a "Now" marker. */
-function TodayPlan({ plan }) {
+/** "See all": every assigned elder. */
+function Patients({ user }) {
   const tr = useT();
-  const { lang } = usePrefs();
-  const [showDone, setShowDone] = useState(false);
-  if (!plan.length) return <div className="m-note">{tr('Nothing scheduled today.', 'Walang nakatakda ngayon.')}</div>;
-  const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const finished = plan.filter((i) => i.status === 'done' || i.status === 'skipped').length;
-  const shown = showDone ? plan : plan.filter((i) => i.status !== 'done' && i.status !== 'skipped');
-  const nowIndex = shown.findIndex((i) => i.time > now);
+  const [elders] = useElders(user);
   return (
     <>
-      <p className="m-caption" style={{ marginBottom: '.5rem' }}>
-        {tr(`${finished} of ${plan.length} done today`, `${finished} sa ${plan.length} tapos ngayon`)} ·{' '}
-        <button type="button" className="m-link" style={{ padding: 0, fontSize: 'inherit' }} onClick={() => setShowDone(!showDone)}>{showDone ? tr('Hide finished', 'Itago ang tapos') : tr('Show finished', 'Ipakita ang tapos')}</button>
-      </p>
-      <ol className="m-plan">
-        {shown.map((i, n) => {
-          const [tone, icon, en, fil] = PLAN_STATUS[i.status] || PLAN_STATUS.due;
-          const to = i.kind === 'duty' ? `${BASE}/duties` : `${BASE}/check-in?patient=${i.patientId}`;
-          return (
-            <React.Fragment key={i.id}>
-              {n === nowIndex && <li className="m-plan-now" aria-label={tr(`Now, ${hhmm(now)}`, `Ngayon, ${hhmm(now)}`)}><span>{tr('Now', 'Ngayon')} · {hhmm(now)}</span></li>}
-              <li>
-                <Link to={to} className={`m-plan-item is-${i.status}`}>
-                  <span className="m-plan-time">{hhmm(i.time)}</span>
-                  <span className={`m-thumb tone-${tone === 'high' ? 'moderate' : tone}`} style={{ width: '2.25rem', height: '2.25rem' }} aria-hidden="true"><Icon name={PLAN_ICON[i.kind]} size={18} /></span>
-                  <span className="m-grow">
-                    <strong>{lang === 'fil' ? i.titleFil : i.title}</strong>
-                    <span className="m-sub">{i.who}{i.detail ? ` · ${i.detail}` : ''}</span>
-                    <Chip tone={tone} icon={icon}>{tr(en, fil)}</Chip>
-                  </span>
-                </Link>
-              </li>
-            </React.Fragment>
-          );
-        })}
-        {nowIndex === -1 && shown.length > 0 && <li className="m-plan-now"><span>{tr('Now', 'Ngayon')} · {hhmm(now)}</span></li>}
-      </ol>
-      {!shown.length && <div className="m-note">{tr('Everything for today is done.', 'Tapos na ang lahat ngayon.')}</div>}
+      <TopBar title={tr('Your Patients', 'Iyong mga pasyente')} back={BASE} />
+      {!elders ? <Loader /> : elders.map((e) => {
+        const today = e.checkins.filter((c) => isToday(c.recordedAt));
+        return <PatientCard key={e.id} e={{ ...e, latest: today[0] || null, last: e.checkins[0] || null }} tr={tr} />;
+      })}
+    </>
+  );
+}
+
+const PROFILE_TABS = [['vitals', 'Vitals', 'Vital signs'], ['medicines', 'Medicines', 'Gamot'], ['notes', 'Notes', 'Tala']];
+
+/** Patient profile (Figma "Your Patients"): who, what needs attention, start a check-in, the last 7 days. */
+function PatientProfile({ user, patientId }) {
+  const tr = useT();
+  const [elders] = useElders(user);
+  const people = usePeople(patientId);
+  const [tab, setTab] = useState('vitals');
+  if (!elders) return <><TopBar title={tr('Patient Profile', 'Profile ng pasyente')} back={BASE} /><Loader /></>;
+  const e = elders.find((x) => x.id === patientId);
+  if (!e) return <><TopBar title={tr('Patient Profile', 'Profile ng pasyente')} back={BASE} /><div className="m-note">{tr('This elder is not assigned to you.', 'Hindi nakatalaga sa iyo ang pasyenteng ito.')}</div></>;
+  const latest = e.checkins[0];
+  const byName = (id) => (people && people.caregivers.find((c) => c.id === id) || {}).name;
+  const doses = todaysDoses(e.meds, e.checkins);
+  const attention = [
+    ...(latest && isToday(latest.recordedAt) ? latest.anomalies.map((a) => a.message) : []),
+    ...(!e.checkins.some((c) => isToday(c.recordedAt)) ? [tr('No check-in yet today', 'Wala pang check-in ngayon')] : []),
+    ...doses.filter((d) => d.status === 'missed').map((d) => tr(`${d.med.name} was missed (${hhmm(d.time)})`, `Hindi nainom ang ${d.med.name} (${hhmm(d.time)})`)),
+    ...(latest && latest.mobilityStatus === 'fall_reported' && isToday(latest.recordedAt) ? [tr('A fall was reported', 'May naiulat na pagkahulog')] : []),
+  ];
+  const week = e.checkins.filter((c) => Date.now() - new Date(c.recordedAt).getTime() < 7 * 86400000);
+  const from = new Date(Date.now() - 6 * 86400000).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+  const to = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' });
+  const conditions = (e.conditions || []).map(conditionLabel);
+  const notes = e.checkins.filter((c) => c.notes).slice(0, 10);
+  return (
+    <>
+      <TopBar title={tr('Patient Profile', 'Profile ng pasyente')} back={BASE} />
+      <section className="m-soft">
+        <div className="m-row" style={{ alignItems: 'flex-start' }}>
+          <Avatar name={e.fullName} />
+          <div className="m-grow">
+            <strong style={{ display: 'block', fontSize: '1rem' }}>{e.fullName}</strong>
+            <span className="m-caption" style={{ display: 'block' }}>{[age(e.birthDate) && tr(`${age(e.birthDate)} years old`, `${age(e.birthDate)} taong gulang`), conditions[0]].filter(Boolean).join(' · ')}</span>
+            {e.addressLine && <span className="m-caption" style={{ display: 'block' }}>{e.addressLine}</span>}
+          </div>
+        </div>
+        <p className="m-caption" style={{ marginTop: '.6rem' }}><strong style={{ color: 'var(--text-primary)' }}>{tr('Latest check-in:', 'Huling check-in:')}</strong>{' '}
+          {latest ? `${isToday(latest.recordedAt) ? tr('today', 'ngayon') : relTime(latest.recordedAt)}, ${clock(latest.recordedAt)}${byName(latest.caregiverId) ? tr(` by ${byName(latest.caregiverId)}`, ` ni ${byName(latest.caregiverId)}`) : ''}` : tr('none yet', 'wala pa')}</p>
+      </section>
+
+      <h2 className="m-label">{tr('Needs Attention', 'Kailangang bantayan')}</h2>
+      <div className="m-attn-box">
+        {attention.length
+          ? <ul>{attention.map((a, i) => <li key={i} style={{ color: 'var(--text-critical)', fontWeight: 700 }}>{a}</li>)}</ul>
+          : <p className="m-muted">{tr('Nothing needs attention right now.', 'Walang kailangang bantayan ngayon.')}</p>}
+      </div>
+
+      <div style={{ margin: '1rem 0' }}><Cta onClick={() => navigate(`${BASE}/check-in?patient=${e.id}`)}>{tr('Start daily Check-in', 'Simulan ang check-in')}</Cta></div>
+
+      <div className="m-tabs3" role="group" aria-label={tr('Show', 'Ipakita')}>
+        {PROFILE_TABS.map(([k, en, fil]) => <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)}>{tr(en, fil)}</button>)}
+      </div>
+      <p className="m-caption" style={{ margin: '.6rem 0 .75rem' }}>{tr(`Last 7 days · ${from} to ${to}`, `Huling 7 araw · ${from} hanggang ${to}`)}</p>
+      {tab === 'vitals' && (
+        <div className="m-stack">
+          {!week.length && <div className="m-note">{tr('No check-ins in the last 7 days.', 'Walang check-in sa huling 7 araw.')}</div>}
+          {week.map((c) => (
+            <Link key={c.id} to={`${BASE}/checkins/${c.id}`} className="m-card m-card-link" style={{ marginTop: 0, padding: '.875rem 1rem' }}>
+              <div className="m-between">
+                <strong>{c.vitals.systolic ? `BP ${c.vitals.systolic}/${c.vitals.diastolic}` : c.vitalsMissing && c.vitalsMissing.bp ? tr('BP not taken', 'Walang BP') : tr('No BP', 'Walang BP')}</strong>
+                <Chip tone={TONE[c.severity] || 'ok'} icon={['none', 'low'].includes(c.severity) ? 'check' : 'alert'}>{SEVERITY_WORD[c.severity] ? tr(...SEVERITY_WORD[c.severity]) : c.severity}</Chip>
+              </div>
+              <p className="m-caption">{isToday(c.recordedAt) ? clock(c.recordedAt) : `${relTime(c.recordedAt)}, ${clock(c.recordedAt)}`} · {vitalsSummary(c, tr)}{c.medication.taken === false ? tr(' · medicine missed', ' · hindi nainom ang gamot') : ''}</p>
+              <div className="m-row" style={{ gap: '.5rem', marginTop: '.4rem', alignItems: 'center' }}>
+                <StatusChip status={c.status} />
+                <span className="m-caption" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{statusLine(c, tr)}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+      {tab === 'medicines' && (
+        <div className="m-stack">
+          {doses.length ? doses.map((d) => <DoseRow key={d.id} d={d} tr={tr} />) : <div className="m-note">{tr('No medicines prescribed.', 'Walang nakatakdang gamot.')}</div>}
+        </div>
+      )}
+      {tab === 'notes' && (
+        <div className="m-stack">
+          {!notes.length && <div className="m-note">{tr('No notes yet.', 'Wala pang tala.')}</div>}
+          {notes.map((c) => <div key={c.id} className="m-info-box" style={{ marginTop: 0 }}><p className="m-caption">{relTime(c.recordedAt)}, {clock(c.recordedAt)}</p><p>{c.notes}</p></div>)}
+        </div>
+      )}
+
+      <div className="m-info-box" style={{ marginTop: '1.25rem' }}>
+        <h3>{tr('Known Conditions', 'Mga kondisyon')}</h3>
+        {conditions.length ? <div className="m-pills" style={{ gap: '.35rem' }}>{conditions.map((c) => <Chip key={c}>{c}</Chip>)}</div> : <p className="m-muted">{tr('None recorded.', 'Walang naitala.')}</p>}
+        {e.mobilityRestricted && <p className="m-caption" style={{ marginTop: '.35rem' }}>{tr('Limited mobility', 'Limitado ang galaw')}</p>}
+      </div>
+      <div className="m-info-box">
+        <h3>{tr('Care Team', 'Care team')}</h3>
+        {!people ? <p className="m-muted">{tr('Loading…', 'Naglo-load…')}</p> : (
+          <ul className="m-steps-list">
+            {people.caseNurse && <li><Icon name="heartPulse" /><div><strong>{people.caseNurse.name}</strong><span className="m-sub">{tr('Case nurse', 'Nars')}{people.careTeam ? ` · ${people.careTeam.name}` : ''}</span></div></li>}
+            {people.caregivers.map((c) => <li key={c.id}><Icon name="user" /><div><strong>{c.name}{c.id === user.id ? tr(' (you)', ' (ikaw)') : ''}</strong><span className="m-sub">{tr('Caregiver', 'Tagapag-alaga')}</span></div></li>)}
+            {people.family.map((f) => <li key={f.id}><Icon name="users" /><div><strong>{f.name}</strong><span className="m-sub">{tr('Family (view only)', 'Pamilya')}</span></div></li>)}
+          </ul>
+        )}
+      </div>
     </>
   );
 }
@@ -306,24 +358,21 @@ function ReminderPrompt() {
   );
 }
 
-function ReminderSetting() {
+/** Profile switch for phone reminders (only where the browser supports notifications). */
+function ReminderSwitch() {
   const tr = useT();
   const [on, setOn] = useState(remindersOn());
   const [msg, setMsg] = useState('');
-  if (!remindersSupported()) return null;
   return (
-    <>
-      <h2 className="m-section-title">{tr('Reminders', 'Mga paalala')}</h2>
-      <div className="m-pills">
-        <button type="button" className="m-pill" aria-pressed={on} onClick={async () => {
-          if (on) { disableReminders(); setOn(false); return; }
-          const p = await enableReminders();
-          setOn(p === 'granted');
-          setMsg(p === 'denied' ? tr('Notifications are blocked. Allow them for this site in your browser settings.', 'Naka-block ang abiso. Payagan ito sa browser settings.') : '');
-        }}><Icon name="bell" size={18} />{on ? tr('Reminders on', 'Naka-on ang paalala') : tr('Turn on reminders', 'I-on ang paalala')}</button>
-      </div>
-      <p className="m-caption" style={{ marginTop: '.5rem' }}>{msg || tr('Reminders work while the app is open or installed on this phone.', 'Gumagana ang paalala habang bukas o naka-install ang app.')}</p>
-    </>
+    <span style={{ display: 'grid', justifyItems: 'end' }}>
+      <SwitchPill on={on} label={tr('Notifications & Reminders', 'Abiso at paalala')} onClick={async () => {
+        if (on) { disableReminders(); setOn(false); return; }
+        const p = await enableReminders();
+        setOn(p === 'granted');
+        setMsg(p === 'denied' ? tr('Blocked: allow notifications for this site in the browser settings.', 'Naka-block: payagan sa browser settings.') : '');
+      }} />
+      {msg && <span className="m-caption" role="status" style={{ maxWidth: '12rem', textAlign: 'right' }}>{msg}</span>}
+    </span>
   );
 }
 
@@ -334,8 +383,7 @@ function Duties({ user }) {
   const [elders] = useElders(user);
   return (
     <>
-      <TopBar title={tr('Care duties', 'Mga gawain')} back={BASE} />
-      <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('Tick off each duty when it is done. If you could not do one, skip it and say why.', 'Markahan ang bawat gawain kapag tapos na. Kung hindi nagawa, laktawan at sabihin kung bakit.')}</p>
+      <TopBar title={tr('Care Duties', 'Mga gawain')} back={BASE} />
       {!elders ? <Loader /> : <DutiesScreen patients={elders} editable />}
     </>
   );
@@ -490,21 +538,21 @@ function VitalField({ k, label, value, onChange, error, hint, placeholder, decim
 }
 
 /** "Not measured / No device / Unknown": why a reading is empty, so the nurse never mistakes it for 0 or normal. */
+/** "No reading?" under a vital: why it is empty (never a zero). A small dropdown so it fits half-width fields. */
 function MissingPicker({ label, value, onChange }) {
   const tr = useT();
   return (
-    <div className="m-missing" role="radiogroup" aria-label={tr(`${label}: why is it empty?`, `${label}: bakit walang sukat?`)}>
+    <label className={`m-missing-select ${value ? 'is-set' : ''}`}>
       <span>{tr('No reading?', 'Walang sukat?')}</span>
-      {MISSING_REASONS.map(([k, en, fil]) => (
-        <button key={k} type="button" role="radio" aria-checked={value === k} aria-pressed={value === k} onClick={() => onChange(value === k ? undefined : k)}>{tr(en, fil)}</button>
-      ))}
-    </div>
+      <select value={value || ''} onChange={(e) => onChange(e.target.value || undefined)} aria-label={tr(`${label}: why is it empty?`, `${label}: bakit walang sukat?`)}>
+        <option value="">{tr('Choose why', 'Pumili')}</option>
+        {MISSING_REASONS.map(([k, en, fil]) => <option key={k} value={k}>{tr(en, fil)}</option>)}
+      </select>
+    </label>
   );
 }
 
 const EMPTY_VITALS = { systolic: '', diastolic: '', heartRate: '', temperatureC: '', spo2: '', bloodGlucose: '' };
-const MOBILITY = [['normal', 'Walks alone', 'Nakakalakad mag-isa'], ['assisted', 'Needs help', 'Kailangan ng tulong'], ['wheelchair', 'Wheelchair', 'Wheelchair'], ['bedridden', 'In bed', 'Nakahiga']];
-const MOOD = [['good', 'Good', 'Mabuti'], ['neutral', 'Okay', 'Okay lang'], ['low', 'Low / sad', 'Malungkot'], ['agitated', 'Agitated', 'Balisa']];
 
 function CheckIn({ user }) {
   const tr = useT();
@@ -516,7 +564,6 @@ function CheckIn({ user }) {
   const draft = saved && (!fromUrl || fromUrl === saved.data.patientId) ? saved : null;
   const d = draft ? draft.data : {};
   const [patientId, setPatientId] = useState(() => fromUrl || d.patientId || user.patients[0]);
-  const [picking, setPicking] = useState(false);
   const [step, setStep] = useState(d.step || 1);
   const [vitals, setVitals] = useState(d.vitals || EMPTY_VITALS);
   const [missing, setMissingState] = useState(d.missing || {});
@@ -528,14 +575,15 @@ function CheckIn({ user }) {
   const [mobility, setMobility] = useState(d.mobility || null);
   const [mood, setMood] = useState(d.mood || null);
   const [notes, setNotes] = useState(d.notes || '');
+  const [vitalsNote, setVitalsNote] = useState(d.vitalsNote || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(null);
   const entered = Object.values(vitals).some((x) => x !== '') || Object.keys(missing).length > 0 || Object.keys(given).length > 0
-    || symptoms.length > 0 || Boolean(mobility || mood || notes.trim());
-  useKeepDraft('checkin', { patientId, step, vitals, missing, given, reasons, symptoms, mobility, mood, notes }, entered && !sent);
+    || symptoms.length > 0 || Boolean(mobility || mood || notes.trim() || vitalsNote.trim());
+  useKeepDraft('checkin', { patientId, step, vitals, missing, given, reasons, symptoms, mobility, mood, notes, vitalsNote }, entered && !sent);
   function discardDraft() {
-    setStep(1); setVitals(EMPTY_VITALS); setMissingState({}); setGiven({}); setReasons({}); setSymptoms([]); setMobility(null); setMood(null); setNotes('');
+    setStep(1); setVitals(EMPTY_VITALS); setMissingState({}); setGiven({}); setReasons({}); setSymptoms([]); setMobility(null); setMood(null); setNotes(''); setVitalsNote('');
   }
 
   const patient = elders && elders.find((e) => e.id === patientId);
@@ -583,7 +631,7 @@ function CheckIn({ user }) {
     const answered = meds.filter((m) => given[m.id] !== undefined);
     const missed = meds.filter((m) => given[m.id] === false).map((m) => `${m.name} ${m.dosage}${reasons[m.id] ? ` – ${reasons[m.id]}` : ''}`.slice(0, 100));
     const told = SYMPTOMS.filter((s) => symptoms.includes(s.key) && s.key !== 'fall' && s.key !== 'confused').map((s) => s.en);
-    const noteText = [told.length ? `Reported: ${told.join('; ')}.` : '', notes.trim()].filter(Boolean).join(' ');
+    const noteText = [vitalsNote.trim() ? `Vitals: ${vitalsNote.trim()}${/[.!?]$/.test(vitalsNote.trim()) ? '' : '.'}` : '', told.length ? `Reported: ${told.join('; ')}.` : '', notes.trim()].filter(Boolean).join(' ');
     return {
       patientId,
       idempotencyKey: `pwa-${crypto.randomUUID()}`,
@@ -645,35 +693,38 @@ function CheckIn({ user }) {
       <DraftNotice draft={draft} onDiscard={discardDraft} />
       {step === 1 && (
         <div className="m-stack">
-          <div className="m-card m-row" style={{ padding: '.875rem 1rem' }}>
-            <span className={`m-avatar ${toneFor(patient ? patient.fullName : '')}`} aria-hidden="true" style={{ width: '2.5rem', height: '2.5rem', fontSize: '.875rem' }}>{patient ? initials(patient.fullName.replace(/^(Lola|Lolo) /, '')) : ''}</span>
-            <div className="m-grow"><strong>{patient ? patient.fullName : patientId}</strong>
-              <p className="m-caption">{patient && [age(patient.birthDate) && tr(`${age(patient.birthDate)} yrs`, `${age(patient.birthDate)} taon`), patient.addressLine].filter(Boolean).join(' · ')}</p></div>
-            {elders.length > 1 && <button type="button" className="m-link" onClick={() => setPicking(!picking)} aria-expanded={picking}>{tr('Change', 'Palitan')}</button>}
-          </div>
-          {picking && (
-            <div className="m-pills" role="radiogroup" aria-label={tr('Patient', 'Pasyente')}>
-              {elders.map((e) => <button key={e.id} type="button" role="radio" aria-checked={e.id === patientId} className="m-pill" aria-pressed={e.id === patientId} onClick={() => { setPatientId(e.id); setGiven({}); setReasons({}); setPicking(false); }}>{e.fullName}</button>)}
-            </div>
-          )}
-          <WeatherCard state={weather} fallbackLabel={patient ? patient.addressLine : ''} />
+          <PatientPicker
+            patients={elders.map((x) => ({ id: x.id, name: x.fullName, sub: [age(x.birthDate) && tr(`${age(x.birthDate)} years old`, `${age(x.birthDate)} taong gulang`), (x.conditions || []).map(conditionLabel)[0]].filter(Boolean).join(' · ') }))}
+            value={patientId}
+            onChange={(id) => { setPatientId(id); setGiven({}); setReasons({}); }}
+          />
           <div className="m-between">
             <p style={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: '.875rem' }}>{tr('Blood pressure', 'Presyon ng dugo')}</p>
             {bluetoothSupported() && <button type="button" className="m-link" onClick={readMonitor} disabled={bt.busy}><Icon name="zap" size={16} /> {bt.busy ? tr('Connecting…', 'Kumokonekta…') : tr('Read from Bluetooth monitor', 'Basahin mula sa Bluetooth monitor')}</button>}
           </div>
           {bt.msg && <p className="m-caption" role="status">{bt.msg}</p>}
-          <DevicePicker devices={devices} setDevice={setDevice} />
           <div className="m-grid-2">
             <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
             <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
           </div>
           {vitals.systolic === '' && vitals.diastolic === '' && <MissingPicker label={tr('Blood pressure', 'Presyon ng dugo')} {...missingFor('bp')} />}
-          <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} missing={missingFor('heartRate')} />
-          <VitalField k="temperatureC" decimal label={tr('Body temperature (°C)', 'Temperatura ng katawan (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} hint={tr('Use a thermometer', 'Gumamit ng thermometer')} missing={missingFor('temperatureC')} />
+          <div className="m-grid-2" style={{ alignItems: 'start' }}>
+            <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} missing={missingFor('heartRate')} />
+            <VitalField k="temperatureC" decimal label={tr('Temperature (°C)', 'Temperatura (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} missing={missingFor('temperatureC')} />
+          </div>
           <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Normal is 95% or higher', 'Normal ang 95% pataas')} missing={missingFor('spo2')} />
-          <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL, optional)', 'Blood sugar (mg/dL, opsyonal)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} missing={missingFor('bloodGlucose')} />
+          <details className="m-more">
+            <summary>{tr('Blood sugar and measuring devices (optional)', 'Blood sugar at gamit sa pagsukat (opsyonal)')}</summary>
+            <div className="m-stack" style={{ marginTop: '.75rem' }}>
+              <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL)', 'Blood sugar (mg/dL)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} missing={missingFor('bloodGlucose')} />
+              <DevicePicker devices={devices} setDevice={setDevice} />
+            </div>
+          </details>
           {hasErrors && <Banner tone="critical" role="alert">{tr('Please fix the fields marked in red to continue.', 'Ayusin muna ang mga pulang field para magpatuloy.')}</Banner>}
           {warning && <Banner tone={warning.tone} role="alert">{lang === 'fil' ? warning.fil : warning.en}</Banner>}
+          {/* Figma note: notes here too, so the nurse on duty sees context even when step 3 is skipped. */}
+          <label className="m-field"><span>{tr('Notes (Optional)', 'Tala (opsyonal)')}</span>
+            <textarea rows="2" maxLength={500} value={vitalsNote} onChange={(e) => setVitalsNote(e.target.value)} placeholder={tr('e.g., Re-checked BP on left arm after resting', 'hal. Inulit ang BP sa kaliwang braso pagkatapos magpahinga')} /></label>
           <div className="m-footer-actions"><Cta onClick={() => { setTried(true); if (!Object.keys(vitalErrors(vitals, { pair: true })).length) goTo(2); }} disabled={hasErrors}>{tr('Next: medicines', 'Susunod: gamot')}</Cta></div>
         </div>
       )}
@@ -723,17 +774,11 @@ function CheckIn({ user }) {
               </label>
             );
           })}
-          <fieldset className="m-fieldset"><legend>{tr('Moving around', 'Paggalaw')}</legend>
-            <div className="m-pills">{MOBILITY.map(([k, en, fil]) => <button key={k} type="button" className="m-pill" aria-pressed={mobility === k} disabled={symptoms.includes('fall')} onClick={() => setMobility(mobility === k ? null : k)}>{tr(en, fil)}</button>)}</div>
-          </fieldset>
-          <fieldset className="m-fieldset"><legend>{tr('Mood', 'Pakiramdam')}</legend>
-            <div className="m-pills">{MOOD.map(([k, en, fil]) => <button key={k} type="button" className="m-pill" aria-pressed={mood === k} disabled={symptoms.includes('confused')} onClick={() => setMood(mood === k ? null : k)}>{tr(en, fil)}</button>)}</div>
-          </fieldset>
-          <label className="m-field"><span>{tr('Notes for the nurse (optional)', 'Tala para sa nars (opsyonal)')}</span><textarea rows="3" maxLength={1500} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+          <label className="m-field"><span>{tr('Notes (Optional)', 'Tala (opsyonal)')}</span><textarea rows="3" maxLength={1500} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tr('e.g., Felt dizzy after waking up, rested 10 min.', 'hal. Nahilo pagkagising, nagpahinga ng 10 minuto.')} /></label>
           {error && <p className="m-error" role="alert">{error}</p>}
           <div className="m-footer-actions">
             <BackStep step={step} goTo={goTo} />
-            <Cta onClick={submit} disabled={busy || hasErrors}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send check-in', 'Ipadala ang check-in')}</Cta></div>
+            <Cta onClick={submit} disabled={busy || hasErrors}>{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send Check-in', 'Ipadala ang check-in')}</Cta></div>
         </div>
       )}
     </>
@@ -748,6 +793,8 @@ function Sent({ sent, patient }) {
   const flagged = c && c.severity !== 'none' && c.severity !== 'low';
   const name = patient ? patient.fullName : '';
   const short = shortName(name);
+  const people = usePeople(c && flagged ? c.patientId : null);
+  const nurse = people && people.caseNurse ? people.caseNurse.name.replace(/,.*$/, '') : null;
 
   useEffect(() => {
     if (!c || !flagged) return undefined;
@@ -809,7 +856,7 @@ function Sent({ sent, patient }) {
               </li>
               <li>
                 <span style={{ color: 'var(--accent-moderate)' }}><Icon name="clock" /></span>
-                <div><strong>{tr('A nurse will review it', 'Susuriin ito ng nars')}</strong><span className="m-sub">{tr('Keep your phone nearby', 'Panatilihing malapit ang phone')}</span></div>
+                <div><strong>{nurse ? tr(`Nurse ${nurse.split(' ')[0]} will review it`, `Susuriin ito ni Nurse ${nurse.split(' ')[0]}`) : tr('A nurse will review it', 'Susuriin ito ng nars')}</strong><span className="m-sub">{tr('Keep your phone nearby: the clinic may call you', 'Panatilihing malapit ang phone: baka tumawag ang klinika')}</span></div>
                 <span className="m-time">{tr('Next', 'Susunod')}</span>
               </li>
             </>
@@ -821,12 +868,9 @@ function Sent({ sent, patient }) {
           )}
         </ul>
       </section>
-      <section className="m-card">
-        <h2 className="m-card-title">{tr('Check-in status', 'Status ng check-in')}</h2>
-        <StatusTimeline checkinId={c.id} />
-      </section>
+      <p style={{ textAlign: 'center', marginTop: '.75rem' }}><Link to={`${BASE}/checkins/${c.id}`} className="m-link">{tr('Track this check-in (received → reviewed)', 'Subaybayan ang check-in')}</Link></p>
       <div className="m-footer-actions">
-        <button type="button" className="m-btn is-block" onClick={() => navigate(`${BASE}/contact`)}>{tr('Contact the clinic', 'Makipag-ugnayan sa klinika')}</button>
+        <button type="button" className="m-btn is-block m-btn-call" onClick={() => navigate(`${BASE}/contact`)}><span>{tr('Call the clinic', 'Tawagan ang klinika')}</span><Icon name="phone" /></button>
         <Cta onClick={() => navigate(BASE)}>{tr('Back to home', 'Bumalik sa home')}</Cta>
       </div>
     </>
@@ -853,23 +897,37 @@ export function DoseRow({ d, tr }) {
 
 function Medicines({ user }) {
   const tr = useT();
+  const { lang } = usePrefs();
   const [elders] = useElders(user);
+  const [patientId, setPatientId] = useState(() => new URLSearchParams(window.location.search).get('patient') || user.patients[0]);
+  const e = elders && (elders.find((x) => x.id === patientId) || elders[0]);
+  const doses = e ? todaysDoses(e.meds, e.checkins) : [];
   return (
     <>
       <TopBar title={tr('Medicines', 'Mga gamot')} back={BASE} />
       {!elders && <Loader />}
-      {(elders || []).map((e) => {
-        const doses = todaysDoses(e.meds, e.checkins);
-        return (
-          <section key={e.id} style={{ marginBottom: '1.25rem' }}>
-            <h2 className="m-section-title" style={{ marginTop: 0 }}>{e.fullName}</h2>
-            <div className="m-stack">
-              {doses.length ? doses.map((d) => <DoseRow key={d.id} d={d} tr={tr} />) : <div className="m-note">{tr('No medicines prescribed.', 'Walang nakatakdang gamot.')}</div>}
-            </div>
-          </section>
-        );
-      })}
-      <p className="m-caption">{tr('Record medicines in the daily check-in. Only the clinic can change prescriptions.', 'Itala ang gamot sa check-in. Klinika lang ang puwedeng magbago ng reseta.')}</p>
+      {e && (
+        <>
+          <h2 className="m-label">{tr('Patient', 'Pasyente')}</h2>
+          <PatientPicker
+            patients={elders.map((x) => ({ id: x.id, name: x.fullName, sub: [age(x.birthDate) && tr(`${age(x.birthDate)} years old`, `${age(x.birthDate)} taong gulang`), (x.conditions || []).map(conditionLabel)[0]].filter(Boolean).join(' · ') }))}
+            value={e.id}
+            onChange={setPatientId}
+          />
+          {!doses.length && <div className="m-note" style={{ marginTop: '1rem' }}>{tr('No medicines prescribed.', 'Walang nakatakdang gamot.')}</div>}
+          {SLOTS.map((slot) => {
+            const list = doses.filter((d) => d.slot === slot.key);
+            if (!list.length) return null;
+            return (
+              <section key={slot.key}>
+                <h3 className="m-label" style={{ color: 'var(--text-secondary)', fontSize: '.875rem' }}>{lang === 'fil' ? slot.fil : slot.en}</h3>
+                <div className="m-stack">{list.map((d) => <DoseRow key={d.id} d={d} tr={tr} />)}</div>
+              </section>
+            );
+          })}
+        </>
+      )}
+      <p className="m-caption" style={{ marginTop: '1rem' }}>{tr('Record medicines in the daily check-in. Only the clinic can change prescriptions.', 'Itala ang gamot sa check-in. Klinika lang ang puwedeng magbago ng reseta.')}</p>
     </>
   );
 }

@@ -4,7 +4,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { DUTY_CATEGORY_LABEL } from '../format';
 import Icon from './icons';
-import { Chip, Loader, useT, manilaDay, hhmm, useMobileToast } from './kit';
+import { Chip, Loader, useT, usePrefs, manilaDay, hhmm, useMobileToast } from './kit';
+import { PatientPicker } from './figma';
+import { SLOTS, slotOf } from './data';
 
 const STATUS = {
   done: ['ok', 'check', 'Done', 'Tapos'],
@@ -63,6 +65,7 @@ export function DutiesSummary({ patientId, to, LinkComponent }) {
 /** Full checklist for one patient. `editable` = caregiver. */
 export function DutiesScreen({ patients, editable }) {
   const tr = useT();
+  const { lang } = usePrefs();
   const [toast, setToast] = useMobileToast();
   const [patientId, setPatientId] = useState(patients[0] && patients[0].id);
   const days = Array.from({ length: editable ? DAYS_BACK + 1 : 1 }, (_, i) => manilaDay(Date.now() - i * 86400000));
@@ -93,13 +96,15 @@ export function DutiesScreen({ patients, editable }) {
   return (
     <>
       {toast}
-      {patients.length > 1 && (
-        <div className="m-pills" role="radiogroup" aria-label={tr('Patient', 'Pasyente')} style={{ marginBottom: '.75rem' }}>
-          {patients.map((p) => <button key={p.id} type="button" role="radio" aria-checked={p.id === patientId} aria-pressed={p.id === patientId} className="m-pill" onClick={() => setPatientId(p.id)}>{p.fullName}</button>)}
-        </div>
+      {patients[0] && patients[0].fullName && (
+        <>
+          <h2 className="m-label">{tr('Patient', 'Pasyente')}</h2>
+          <PatientPicker patients={patients.map((p) => ({ id: p.id, name: p.fullName }))} value={patientId} onChange={setPatientId} />
+        </>
       )}
+      <h2 className="m-label">{tr('Date', 'Petsa')}</h2>
       {editable && (
-        <div className="m-pills m-scroll-x" role="radiogroup" aria-label={tr('Day', 'Araw')} style={{ marginBottom: '1rem' }}>
+        <div className="m-pills m-scroll-x" role="radiogroup" aria-label={tr('Day', 'Araw')} style={{ marginBottom: '.75rem' }}>
           {days.map((d, i) => <button key={d} type="button" role="radio" aria-checked={d === date} aria-pressed={d === date} className="m-pill" onClick={() => setDate(d)}>{dayLabel(d, i)}</button>)}
         </div>
       )}
@@ -107,20 +112,26 @@ export function DutiesScreen({ patients, editable }) {
       {state && state.error && <p className="m-error">{state.error}</p>}
       {state && state.checklist && (
         <>
-          {state.plan && (state.plan.goals || state.plan.notes) && (
-            <div className="m-note" style={{ marginBottom: '.75rem' }}>
-              {state.plan.goals && <><strong>{tr('Goals', 'Layunin')}</strong>{state.plan.goals}</>}
-              {state.plan.notes && <p style={{ marginTop: '.35rem' }}>{state.plan.notes}</p>}
-            </div>
-          )}
-          <div className="m-counts" style={{ marginBottom: '.75rem' }}>
-            <div className="m-count tone-ok" style={{ background: 'var(--bg-ok)', color: 'var(--text-ok)' }}><small>{tr('Done', 'Tapos')}</small><strong>{state.checklist.summary.done}/{state.checklist.summary.total}</strong></div>
-            <div className="m-count tone-high"><small>{date === days[0] ? tr('Overdue', 'Huli na') : tr('Missed', 'Hindi nagawa')}</small><strong>{state.checklist.summary.overdue + state.checklist.summary.missed}</strong></div>
-            <div className="m-count tone-moderate"><small>{tr('Skipped', 'Nilaktawan')}</small><strong>{state.checklist.summary.skipped}</strong></div>
-          </div>
+          <section className="m-hero m-duty-hero">
+            <p className="m-caption" style={{ color: 'var(--text-brand)' }}>{new Date(`${date}T12:00:00+08:00`).toLocaleDateString(lang === 'fil' ? 'fil-PH' : 'en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' })}</p>
+            <h2>{tr(`${state.checklist.summary.done} of ${state.checklist.summary.total} duties done`, `${state.checklist.summary.done} sa ${state.checklist.summary.total} gawain tapos`)}</h2>
+            <div className="m-duty-bar"><span style={{ width: `${state.checklist.summary.total ? (state.checklist.summary.done / state.checklist.summary.total) * 100 : 0}%` }} /></div>
+            {(state.checklist.summary.overdue + state.checklist.summary.missed + state.checklist.summary.skipped) > 0 && (
+              <p className="m-caption" style={{ marginTop: '.5rem' }}>{[
+                state.checklist.summary.overdue + state.checklist.summary.missed ? tr(`${state.checklist.summary.overdue + state.checklist.summary.missed} ${date === days[0] ? 'overdue' : 'missed'}`, `${state.checklist.summary.overdue + state.checklist.summary.missed} huli`) : '',
+                state.checklist.summary.skipped ? tr(`${state.checklist.summary.skipped} skipped`, `${state.checklist.summary.skipped} nilaktawan`) : '',
+              ].filter(Boolean).join(' · ')}</p>
+            )}
+          </section>
           {!state.checklist.items.length && <div className="m-note">{tr('No duties planned for this day.', 'Walang gawain sa araw na ito.')}</div>}
+          {[...SLOTS, { key: 'any', en: 'Any time', fil: 'Kahit kailan' }].map((slot) => {
+            const list = state.checklist.items.filter((item) => (item.slot && item.slot !== 'any' ? slotOf(item.slot) : 'any') === slot.key);
+            if (!list.length) return null;
+            return (
+          <section key={slot.key}>
+          <h3 className="m-label">{lang === 'fil' ? slot.fil : slot.en}</h3>
           <div className="m-stack">
-            {state.checklist.items.map((item) => {
+            {list.map((item) => {
               const key = `${item.taskId}|${item.slot}`;
               const [tone, icon, en, fil] = STATUS[item.status] || STATUS.pending;
               const canAct = editable && ['pending', 'overdue', 'missed', 'skipped'].includes(item.status);
@@ -156,6 +167,9 @@ export function DutiesScreen({ patients, editable }) {
               );
             })}
           </div>
+          </section>
+            );
+          })}
           {state.checklist.asNeeded.length > 0 && (
             <>
               <h2 className="m-section-title">{tr('As needed', 'Kung kailangan')}</h2>
@@ -168,6 +182,12 @@ export function DutiesScreen({ patients, editable }) {
                 ))}
               </div>
             </>
+          )}
+          {state.plan && (state.plan.goals || state.plan.notes) && (
+            <div className="m-note" style={{ marginTop: '1rem' }}>
+              {state.plan.goals && <><strong>{tr('Goals', 'Layunin')}</strong>{state.plan.goals}</>}
+              {state.plan.notes && <p style={{ marginTop: '.35rem' }}>{state.plan.notes}</p>}
+            </div>
           )}
           <Adherence adherence={state.adherence} />
         </>

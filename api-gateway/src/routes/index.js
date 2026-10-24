@@ -29,6 +29,7 @@
  * | GET/POST | /api/patients/:id/clinic-contact  | family, caregiver (own; POST), clinic (GET) | Clinic Risk Queue |
  * | GET    | /api/clinic/contact-requests, POST /:id/seen|reply|close | clinic         | Clinic Risk Queue      |
  * | GET    | /api/clinic/contact-info            | any signed-in user                  | Clinic Risk Queue      |
+ * | GET    | /api/patients/:id/people            | caregiver, family (own), clinic     | gateway + Clinic Risk  |
  * | GET    | /api/clinic/queue/history           | clinic, admin                       | Clinic Risk Queue      |
  * | POST   | /api/clinic/queue/:itemId/visits    | clinic                              | Clinic Risk Queue      |
  * | GET    | /api/clinic/visits                  | clinic, admin                       | Clinic Risk Queue      |
@@ -57,7 +58,10 @@ const express = require('express');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize, requirePatientAccess, requireBodyPatientAccess } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
-const { forwardTo } = require('../lib/proxy');
+const config = require('../config');
+const { forwardTo, buildHeaders } = require('../lib/proxy');
+const { request } = require('../lib/resilientHttp');
+const { store } = require('../auth/accountStore');
 
 const router = express.Router();
 
@@ -118,6 +122,26 @@ router.get(
     return `/api/clinic/visits?patientId=${encodeURIComponent(req.params.id)}&view=${view}`;
   }),
 );
+
+// Who looks after an elder: caregivers and family linked to them (names only) and the care team's case nurse.
+// For the phone apps ("Sent by Maria Santos", "Caregiver: ... · Nurse: ..."); nothing clinical.
+router.get('/patients/:id/people', authorize(...PATIENT_DATA), requirePatientAccess('id'), async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const linked = (await store.list()).filter((a) => a.status === 'active' && (a.patients || []).includes(id));
+    const pick = (role) => linked.filter((a) => a.role === role).map((a) => ({ id: a.id, name: a.name }));
+    let care = { careTeam: null, caseNurse: null };
+    try {
+      const r = await request('clinic', {
+        method: 'GET', url: `${config.services.clinic}/api/clinic/patients/${encodeURIComponent(id)}/care-summary`, headers: buildHeaders(req), validateStatus: () => true,
+      }, { retries: 1, timeoutMs: config.upstreamTimeoutMs });
+      if (r.status === 200) care = r.data;
+    } catch { /* names only: the page still shows caregivers and family */ }
+    res.json({ patientId: id, caregivers: pick('caregiver'), family: pick('family_member'), ...care });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Contacting the clinic, with proof: family / caregiver send a message or start a call; nurses see, reply, close.
 router.get('/clinic/contact-info', authorize(ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));

@@ -6,6 +6,7 @@ import { ROLE_LABEL, relTime } from '../format';
 import Icon from './icons';
 import { alertHeadline, explainAlert } from './data';
 import { TopBar, Chip, Cta, Loader, usePrefs, useT, clock, isToday, TONE, shortName } from './kit';
+import { Avatar, Badge, PrefRow, LangToggle, SwitchPill, usePeople } from './figma';
 
 const SMS_WORD = {
   delivered: ['delivered', 'naihatid'], sent: ['sent', 'naipadala'], simulated: ['test mode, not really sent', 'test mode, hindi talaga naipadala'],
@@ -59,7 +60,7 @@ export function AlertsList({ base, patientNames = {}, back }) {
   );
 }
 
-export function AlertDetail({ id, back, callCaregiverLabel }) {
+export function AlertDetail({ id, back }) {
   const tr = useT();
   const { lang } = usePrefs();
   const list = useNotifications(null, 60);
@@ -123,8 +124,7 @@ export function AlertDetail({ id, back, callCaregiverLabel }) {
       </section>
 
       <div className="m-footer-actions">
-        {callCaregiverLabel && <button type="button" className="m-btn is-block" disabled title={tr('Caregiver phone numbers are not in the system yet', 'Wala pang numero ng tagapag-alaga')}>{callCaregiverLabel}</button>}
-        <CallClinic />
+        <CallClinic label={window.location.pathname.startsWith('/m/family') ? tr('Message the clinic', 'Magmensahe sa klinika') : undefined} />
       </div>
     </>
   );
@@ -137,26 +137,65 @@ export function CallClinic({ label }) {
   return <Cta onClick={() => navigate(`${base}/contact`)}>{label || tr('Contact the clinic', 'Makipag-ugnayan sa klinika')}</Cta>;
 }
 
-export function Profile({ user, back, desktopTo, extra }) {
+/** Names of the elders on an account (Profile: assigned patients / your relative). */
+function useElderNames(ids) {
+  const [list, setList] = useState(null);
+  useEffect(() => {
+    Promise.all(ids.map((id) => api(`/api/patients/${encodeURIComponent(id)}`).then((p) => ({ id, name: p.fullName })).catch(() => ({ id, name: id })))).then(setList);
+  }, [ids.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  return list;
+}
+
+/** The family member's relative: who cares for them (caregiver, case nurse). */
+function RelativeCard({ elder }) {
   const tr = useT();
-  const { big, lang, setPrefs } = usePrefs();
+  const people = usePeople(elder.id);
+  return (
+    <div className="m-info-box m-row" style={{ alignItems: 'flex-start' }}>
+      <Avatar name={elder.name} />
+      <div className="m-grow">
+        <strong style={{ display: 'block' }}>{elder.name}</strong>
+        {people && people.caregivers.length > 0 && <span className="m-caption" style={{ display: 'block' }}>{tr('Caregiver', 'Tagapag-alaga')}: {people.caregivers.map((c) => c.name).join(', ')}</span>}
+        {people && people.caseNurse && <span className="m-caption" style={{ display: 'block' }}>{tr('Nurse', 'Nars')}: {people.caseNurse.name.replace(/,.*$/, '')}{people.careTeam ? `, ${people.careTeam.name}` : ''}</span>}
+      </div>
+      <Badge>{tr('Linked', 'Naka-link')}</Badge>
+    </div>
+  );
+}
+
+/** Profile (Figma "Profile"): who you are, your elders, app preferences, log out. */
+export function Profile({ user, back, desktopTo, notifications }) {
+  const tr = useT();
+  const { big, setPrefs } = usePrefs();
+  const elders = useElderNames(user.role === 'clinic_staff' ? [] : user.patients);
   return (
     <>
       <TopBar title={tr('Profile', 'Profile')} back={back} />
-      <section className="m-card m-row">
-        <span className="m-avatar" aria-hidden="true">{user.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('')}</span>
-        <div><strong style={{ fontSize: '1.125rem' }}>{user.name}</strong><p className="m-muted">{ROLE_LABEL[user.role]}</p></div>
+      <section className="m-soft m-row">
+        <Avatar name={user.name} />
+        <div><strong style={{ fontSize: '1.125rem', display: 'block' }}>{user.name}</strong><span className="m-muted">{ROLE_LABEL[user.role]}</span></div>
       </section>
-      <h2 className="m-section-title">{tr('Display', 'Display')}</h2>
-      <div className="m-pills">
-        <button type="button" className="m-pill" aria-pressed={big} onClick={() => setPrefs({ big: !big })}><Icon name="textSize" size={18} />{tr('Big text', 'Malaking letra')}</button>
-        <button type="button" className="m-pill" aria-pressed={lang === 'fil'} onClick={() => setPrefs({ lang: lang === 'fil' ? 'en' : 'fil' })}><Icon name="globe" size={18} />Filipino</button>
-      </div>
-      {extra}
-      <div className="m-stack" style={{ marginTop: '1.5rem' }}>
-        {desktopTo && <button type="button" className="m-btn is-block" onClick={() => navigate(desktopTo)}><Icon name="monitor" />{tr('Open the desktop view', 'Buksan ang desktop view')}</button>}
-        <button type="button" className="m-btn is-block" onClick={requestSignOut}><Icon name="logout" />{tr('Log out', 'Mag-log out')}</button>
-      </div>
+      {user.role === 'caregiver' && (
+        <>
+          <h2 className="m-label">{tr('Assigned Patients', 'Mga nakatalagang pasyente')}</h2>
+          {!elders ? <Loader /> : elders.map((e) => (
+            <div key={e.id} className="m-info-box m-row"><Avatar name={e.name} /><strong className="m-grow" style={{ fontSize: '.9375rem' }}>{e.name}</strong><Badge>{tr('Active', 'Aktibo')}</Badge></div>
+          ))}
+        </>
+      )}
+      {user.role === 'family_member' && (
+        <>
+          <h2 className="m-label">{tr('Your Relative', 'Iyong kamag-anak')}</h2>
+          {!elders ? <Loader /> : elders.map((e) => <RelativeCard key={e.id} elder={e} />)}
+          {elders && !elders.length && <div className="m-note">{tr('Not linked to an elder yet. The health center links you after verifying you.', 'Hindi pa naka-link.')}</div>}
+        </>
+      )}
+      <h2 className="m-label">{tr('App Preferences', 'Mga setting')}</h2>
+      <PrefRow icon="globe" label={tr('Language', 'Wika')}><LangToggle /></PrefRow>
+      <PrefRow icon="textSize" label={tr('Large Text Mode', 'Malaking letra')} last={!notifications}><SwitchPill on={big} onClick={() => setPrefs({ big: !big })} label={tr('Large Text Mode', 'Malaking letra')} /></PrefRow>
+      {notifications && <PrefRow icon="bell" label={tr('Notifications & Reminders', 'Abiso at paalala')} last>{notifications}</PrefRow>}
+      {desktopTo && <button type="button" className="m-btn is-block" style={{ marginTop: '1rem' }} onClick={() => navigate(desktopTo)}><Icon name="monitor" />{tr('Open the desktop view', 'Buksan ang desktop view')}</button>}
+      <button type="button" className="m-logout" onClick={requestSignOut}><Icon name="logout" size={18} />{tr('Log out', 'Mag-log out')}</button>
     </>
   );
 }

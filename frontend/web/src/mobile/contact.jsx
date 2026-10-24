@@ -82,6 +82,10 @@ export function ContactCard({ r, mine, children }) {
 /** Family / caregiver: call or message the clinic, and see every earlier contact with its proof. */
 export function ContactClinic({ user, patients, back }) {
   const tr = useT();
+  // Family members are often abroad (OFWs): a call to a Philippine number is billed as an international call
+  // and the elder's care happens through the caregiver on site. Family members message the clinic (free over
+  // data, recorded with proof); caregivers can also call.
+  const canCall = user.role !== 'family_member';
   const info = useClinicInfo();
   const [patientId, setPatientId] = useState(() => new URLSearchParams(window.location.search).get('patient') || patients[0].id);
   const [reason, setReason] = useState(null);
@@ -117,10 +121,11 @@ export function ContactClinic({ user, patients, back }) {
       <TopBar title={tr('Contact the clinic', 'Makipag-ugnayan sa klinika')} back={back} />
       <section className="m-card" style={{ marginTop: 0 }}>
         <p className="m-eyebrow">{info.name}</p>
-        {info.phone
+        {canCall && (info.phone
           ? <p style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '.02em', margin: '.2rem 0' }}><a href={`tel:${info.tel}`} style={{ color: 'inherit', textDecoration: 'none' }}>{info.phone}</a></p>
-          : <p className="m-muted" style={{ margin: '.3rem 0' }}>{tr('The clinic phone number is not set up yet. Send a message: the nurses see it in their app.', 'Wala pang numero ng klinika. Magpadala ng mensahe.')}</p>}
-        <p className="m-caption">{info.hours} · {tr('For an emergency call 911.', 'Kung emergency, tumawag sa 911.')}</p>
+          : <p className="m-muted" style={{ margin: '.3rem 0' }}>{tr('The clinic phone number is not set up yet. Send a message: the nurses see it in their app.', 'Wala pang numero ng klinika. Magpadala ng mensahe.')}</p>)}
+        {!canCall && <p className="m-muted" style={{ margin: '.3rem 0' }}>{tr('Send the clinic a message. It is free over the internet, wherever you are, and the nurse replies here. The nurse contacts the caregiver who is with your relative.', 'Magpadala ng mensahe sa klinika. Libre ito sa internet saan ka man naroroon. Sasagot ang nars dito.')}</p>}
+        <p className="m-caption">{info.hours}{canCall ? ` · ${tr('For an emergency call 911.', 'Kung emergency, tumawag sa 911.')}` : ''}</p>
       </section>
 
       {done && (
@@ -147,9 +152,9 @@ export function ContactClinic({ user, patients, back }) {
         <span className="m-box" aria-hidden="true"><Icon name="check" size={18} strokeWidth={3} /></span>
       </label>
       {error && <p className="m-error" role="alert">{error}</p>}
-      <div className="m-grid-2" style={{ marginTop: '.75rem' }}>
-        <button type="button" className="m-btn" disabled={busy || !reason || !info.phone} onClick={() => send('call')} title={info.phone ? undefined : 'No clinic number yet'}><Icon name="phone" size={18} />{tr('Call now', 'Tumawag')}</button>
-        <button type="button" className="m-btn is-dark" disabled={busy || !reason} onClick={() => send('message')}><Icon name="message" size={18} />{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send message', 'Ipadala')}</button>
+      <div className={canCall ? 'm-grid-2' : ''} style={{ marginTop: '.75rem' }}>
+        {canCall && <button type="button" className="m-btn" disabled={busy || !reason || !info.phone} onClick={() => send('call')} title={info.phone ? undefined : 'No clinic number yet'}><Icon name="phone" size={18} />{tr('Call now', 'Tumawag')}</button>}
+        <button type="button" className={`m-btn is-dark ${canCall ? '' : 'is-block'}`} disabled={busy || !reason} onClick={() => send('message')}><Icon name="message" size={18} />{busy ? tr('Sending…', 'Ipinapadala…') : tr('Send message', 'Ipadala')}</button>
       </div>
       {!reason && <p className="m-caption" style={{ marginTop: '.4rem' }}>{tr('Choose a reason first.', 'Pumili muna ng dahilan.')}</p>}
 

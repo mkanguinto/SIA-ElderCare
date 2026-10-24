@@ -64,10 +64,10 @@ export const toneFor = (seed = '') => AVATAR_TONES[[...seed].reduce((a, c) => a 
 export const shortName = (n = '') => n.split(' ').slice(0, 2).join(' ');
 
 /* ------------------------------ layout ------------------------------ */
-export function MobileFrame({ children, plain = false, emergency = false }) {
+export function MobileFrame({ children, plain = false, emergency = false, light = false }) {
   return (
-    <div className="m-root">
-      <main className={`m-app ${plain ? 'is-plain' : ''} ${emergency ? 'has-emergency' : ''}`} id="main">
+    <div className={`m-root ${light ? 'is-light' : ''}`}>
+      <main className={`m-app ${plain ? 'is-plain' : ''} ${emergency ? 'has-emergency' : ''} ${light ? 'is-light' : ''}`} id="main">
         {emergency && <EmergencyBar />}
         {children}
       </main>
@@ -96,7 +96,7 @@ export function BottomNav({ items }) {
   return (
     <nav className="m-nav" aria-label={tr('Main', 'Pangunahin')}>
       {items.map((it) => (
-        <Link key={it.to} to={it.to} exact={it.exact !== false} activeClassName="is-active" aria-label={it.label}>
+        <Link key={it.to} to={it.to} exact={it.exact !== false} activeClassName="is-active" aria-label={it.label} title={it.label}>
           <Icon name={it.icon} />
           <span className="m-nav-label">{it.label}</span>
         </Link>

@@ -11,10 +11,11 @@ export default async function run({ shots } = {}) {
   try {
     await page.login('family.jose');
     await page.goto('/m/family');
-    check(await page.waitFor('Contact the clinic'), 'family Today has "Contact the clinic"');
-    await page.click('Contact the clinic');
+    check(await page.waitFor('Message the clinic'), 'family Today has "Message the clinic"');
+    await page.click('Message the clinic');
     check(await page.waitFor('What is it about?'), 'opens the contact screen (no pop-up)');
-    check((await page.text()).includes('For an emergency call 911'), 'shows the clinic number or says it is not set up, and the emergency number');
+    const t0 = await page.text();
+    check(t0.includes('free over the internet') && !t0.includes('Call now'), 'family (often abroad) messages the clinic for free; no call button and no 911 button');
     await page.click('Worried about their condition');
     await page.type('textarea', note);
     await page.click('Send message');

@@ -81,4 +81,4 @@ function forwardTo(serviceKey, pathBuilder) {
   };
 }
 
-module.exports = { forwardTo };
+module.exports = { forwardTo, buildHeaders };
