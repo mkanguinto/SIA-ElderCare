@@ -162,7 +162,10 @@ export function CareToday({ patientId, editable = false, date, compact = false }
   );
 }
 
-const EMPTY_TASK = { category: 'physical_medical', title: '', instructions: '', frequency: 'daily', times: '08:00', daysOfWeek: [], dueDate: '' };
+// No default time: times are agreed with the elder and the caregiver and typed in by the nurse.
+const EMPTY_TASK = { category: 'physical_medical', title: '', instructions: '', frequency: 'daily', times: '', daysOfWeek: [], dueDate: '', kind: 'task', measurement: '', specialised: false, sourceType: '', sourceWho: '', sourceRef: '' };
+const MEASUREMENT_LABEL = { bp: 'Blood pressure', heart_rate: 'Heart rate', temperature: 'Temperature', spo2: 'Oxygen (SpO2)', blood_glucose: 'Blood sugar' };
+const SOURCE_LABEL = { physician_order: "Physician's order", partner_clinic: 'Partner clinic', hospital_discharge: 'Hospital discharge', clinic_protocol: 'Clinic protocol' };
 
 function toBody(f) {
   const body = { category: f.category, title: f.title.trim(), frequency: f.frequency, instructions: f.instructions.trim() || null };
@@ -170,11 +173,20 @@ function toBody(f) {
   if (['daily', 'weekly'].includes(f.frequency)) body.times = times;
   if (f.frequency === 'weekly') body.daysOfWeek = f.daysOfWeek;
   if (f.frequency === 'once') body.dueDate = f.dueDate;
+  body.kind = f.kind || 'task';
+  body.measurement = f.kind === 'measurement' ? f.measurement || null : null;
+  body.specialised = Boolean(f.specialised);
+  body.source = f.specialised || f.sourceType
+    ? { type: f.sourceType || undefined, ...(f.sourceWho ? { clinician: f.sourceWho.trim() } : {}), ...(f.sourceRef ? { reference: f.sourceRef.trim() } : {}) }
+    : null;
   return body;
 }
 
-/** Clinic staff: goals/notes and the duty list, with add-from-suggestion, edit and retire (readOnly for admins). */
-export function CarePlanEditor({ patientId, readOnly = false }) {
+/**
+ * The task list of a care plan. With `versionId` (a draft) the nurse adds, edits and retires the draft's tasks;
+ * without it the tasks of the plan in use are listed read-only (they change only through a new draft).
+ */
+export function CarePlanEditor({ patientId, versionId = null, readOnly = !versionId, showGoals = false, onChanged }) {
   const toast = useToast();
   const [plan, setPlan] = useState(null);
   const [catalog, setCatalog] = useState(null);
@@ -184,8 +196,11 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState([]);
 
-  const load = () => api(`/api/patients/${encodeURIComponent(patientId)}/care-plan`).then((p) => { setPlan(p); setGoals(null); setError(''); }).catch((e) => setError(e.message));
-  useEffect(() => { load(); api('/api/care/categories').then((c) => setCatalog(c.categories)).catch(() => setCatalog([])); }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = () => (versionId
+    ? api(`/api/care-plan/versions/${versionId}`).then((v) => ({ plan: { goals: v.content.goals, notes: v.content.notes }, tasks: v.tasks }))
+    : api(`/api/patients/${encodeURIComponent(patientId)}/care-plan`))
+    .then((p) => { setPlan(p); setGoals(null); setError(''); }).catch((e) => setError(e.message));
+  useEffect(() => { load(); api('/api/care/categories').then((c) => setCatalog(c.categories)).catch(() => setCatalog([])); }, [patientId, versionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -197,9 +212,10 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
       const body = toBody(form);
       if (form.id) await api(`/api/care/tasks/${form.id}`, { method: 'PATCH', body });
       else await api(`/api/patients/${encodeURIComponent(patientId)}/care-plan/tasks`, { method: 'POST', body });
-      toast({ title: form.id ? 'Duty updated' : 'Duty added to the care plan', tone: 'success' });
+      toast({ title: form.id ? 'Task updated in the draft' : 'Task added to the draft', tone: 'success' });
       setForm(null);
       load();
+      if (onChanged) onChanged();
     } catch (err) {
       setProblems(err.details || [err.message]);
     } finally {
@@ -211,8 +227,9 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
     if (!window.confirm(`Remove “${t.title}” from the care plan? Its history is kept.`)) return;
     try {
       await api(`/api/care/tasks/${t.id}`, { method: 'DELETE' });
-      toast({ title: 'Duty removed', tone: 'success' });
+      toast({ title: 'Task removed from the draft', tone: 'success' });
       load();
+      if (onChanged) onChanged();
     } catch (err) {
       toast({ title: err.message, tone: 'error' });
     }
@@ -235,7 +252,7 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
 
   return (
     <>
-      {goals ? (
+      {showGoals && (goals ? (
         <form onSubmit={saveGoals} className="inline-form">
           <label className="field"><span>Goals</span><textarea rows="2" maxLength={2000} value={goals.goals} onChange={(e) => setGoals({ ...goals, goals: e.target.value })} /></label>
           <label className="field"><span>Notes for the caregiver</span><textarea rows="2" maxLength={2000} value={goals.notes} onChange={(e) => setGoals({ ...goals, notes: e.target.value })} /></label>
@@ -247,26 +264,28 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
           {plan.plan && plan.plan.notes && <p className="small"><strong>Notes:</strong> {plan.plan.notes}</p>}
           {!readOnly && <button type="button" className="btn btn-quiet btn-sm" onClick={() => setGoals({ goals: (plan.plan && plan.plan.goals) || '', notes: (plan.plan && plan.plan.notes) || '' })}>Edit goals and notes</button>}
         </div>
-      )}
+      ))}
 
-      {plan.tasks.filter((t) => t.active).length === 0 && <Empty title="No duties yet">Add the caregiver's daily duties, for example medicines, meals and safety checks.</Empty>}
+      {plan.tasks.filter((t) => t.active).length === 0 && <Empty title="No tasks yet">{readOnly ? 'Start a draft of the plan to add tasks.' : 'Add the tasks agreed with the elder and the caregiver. Medicines come from the prescription records.'}</Empty>}
       <ul className="duty-list">
         {plan.tasks.filter((t) => t.active).map((t) => (
           <li key={t.id} className="duty">
             <div className="duty-main">
               <strong>{t.title}</strong>
-              <span className="muted small">{DUTY_CATEGORY_LABEL[t.category]} · {dutySchedule(t)}</span>
+              <span className="muted small">{DUTY_CATEGORY_LABEL[t.category]} · {dutySchedule(t)}{t.kind === 'measurement' ? ` · reading: ${MEASUREMENT_LABEL[t.measurement] || t.measurement}` : ''}</span>
               {t.instructions && <span className="small">{t.instructions}</span>}
+              {t.specialised && <span className="small">Specialised · source: {t.source ? [SOURCE_LABEL[t.source.type] || t.source.type, t.source.clinician, t.source.reference].filter(Boolean).join(', ') : 'missing'}</span>}
             </div>
             {!readOnly && <div className="duty-side btn-row">
-              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setForm({ id: t.id, category: t.category, title: t.title, instructions: t.instructions || '', frequency: t.frequency, times: t.times.join(', '), daysOfWeek: t.daysOfWeek, dueDate: t.dueDate || '' })}>Edit</button>
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setForm({ id: t.id, category: t.category, title: t.title, instructions: t.instructions || '', frequency: t.frequency, times: t.times.join(', '), daysOfWeek: t.daysOfWeek, dueDate: t.dueDate || '',
+                kind: t.kind || 'task', measurement: t.measurement || '', specialised: Boolean(t.specialised), sourceType: (t.source && t.source.type) || '', sourceWho: (t.source && t.source.clinician) || '', sourceRef: (t.source && t.source.reference) || '' })}>Edit</button>
               <button type="button" className="btn btn-quiet btn-sm" onClick={() => retire(t)}>Remove</button>
             </div>}
           </li>
         ))}
       </ul>
 
-      {!form && !readOnly && <button type="button" className="btn btn-secondary" onClick={() => { setForm(EMPTY_TASK); setProblems([]); }}>Add a duty</button>}
+      {!form && !readOnly && <button type="button" className="btn btn-secondary" onClick={() => { setForm(EMPTY_TASK); setProblems([]); }}>Add a task</button>}
       {form && (
         <form className="inline-form" onSubmit={saveTask} noValidate>
           <h3 className="duty-subhead">{form.id ? 'Edit duty' : 'New duty'}</h3>
@@ -286,12 +305,28 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
           {!form.id && suggestions && (
             <div className="chips-row" aria-label="Suggestions">
               {suggestions.suggestions.map((s) => (
-                <button key={s.title} type="button" className="chip chip-btn" onClick={() => setForm({ ...form, title: s.title, frequency: s.frequency, times: (s.times || []).join(', ') || form.times, daysOfWeek: s.daysOfWeek || [] })}>{s.title}</button>
+                <button key={s.title} type="button" className="chip chip-btn" onClick={() => setForm({ ...form, title: s.title, frequency: s.frequency, kind: s.kind || 'task', measurement: s.measurement || '', specialised: Boolean(s.specialised) })}>{s.title}</button>
               ))}
             </div>
           )}
           <label className="field"><span>Duty</span><input value={form.title} onChange={set('title')} maxLength={160} required /></label>
           <label className="field"><span>Instructions (optional)</span><input value={form.instructions} onChange={set('instructions')} maxLength={1000} /></label>
+          <div className="form-grid">
+            <label className="field"><span>Type</span>
+              <select value={form.kind} onChange={set('kind')}><option value="task">Task (done / not done)</option><option value="measurement">Reading (value, not measured, no device)</option></select></label>
+            {form.kind === 'measurement' && (
+              <label className="field"><span>Reading</span>
+                <select value={form.measurement} onChange={set('measurement')}><option value="">Choose</option>{Object.entries(MEASUREMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+            )}
+          </div>
+          <label className="check"><input type="checkbox" checked={form.specialised} onChange={(e) => setForm({ ...form, specialised: e.target.checked })} /> Specialised care (e.g. wound care, a therapeutic diet): needs a clinical source</label>
+          {form.specialised && (
+            <div className="form-grid">
+              <label className="field"><span>Source</span><select value={form.sourceType} onChange={set('sourceType')}><option value="">Choose</option>{Object.entries(SOURCE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+              <label className="field"><span>Clinician or facility</span><input value={form.sourceWho} onChange={set('sourceWho')} maxLength={120} placeholder="Dr. L. Reyes" /></label>
+              <label className="field"><span>Reference (order, protocol)</span><input value={form.sourceRef} onChange={set('sourceRef')} maxLength={160} /></label>
+            </div>
+          )}
           {['daily', 'weekly'].includes(form.frequency) && (
             <label className="field"><span>Times (24-hour, comma separated){form.frequency === 'weekly' ? ' – optional' : ''}</span><input value={form.times} onChange={set('times')} placeholder="08:00, 20:00" /></label>
           )}
@@ -308,7 +343,7 @@ export function CarePlanEditor({ patientId, readOnly = false }) {
           )}
           {form.frequency === 'once' && <label className="field"><span>Due date</span><input type="date" value={form.dueDate} onChange={set('dueDate')} /></label>}
           <div className="btn-row form-actions">
-            <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : form.id ? 'Save changes' : 'Add duty'}</button>
+            <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : form.id ? 'Save changes' : 'Add task'}</button>
             <button type="button" className="btn btn-quiet" onClick={() => setForm(null)}>Cancel</button>
           </div>
         </form>

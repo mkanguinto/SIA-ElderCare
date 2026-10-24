@@ -234,6 +234,9 @@ services:
       SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
       CARE_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"
+      # Care-team check for plan changes, and the prescription records for the medicine checklist.
+      CLINIC_SERVICE_URL: http://clinic-risk-service:4003
+      CHECKIN_SERVICE_URL: http://checkin-service:4001
     depends_on:
       care-db: { condition: service_healthy }
 

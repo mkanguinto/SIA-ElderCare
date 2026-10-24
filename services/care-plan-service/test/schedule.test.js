@@ -7,15 +7,32 @@ const { CATEGORIES, CATEGORY_CODES } = require('../src/catalog');
 
 const task = (over) => ({ id: 't1', category: 'physical_medical', title: 'Give medicines', frequency: 'daily', times: ['08:00', '20:00'], daysOfWeek: [], dueDate: null, startDate: null, endDate: null, active: true, ...over });
 
-test('catalogue covers the eight caregiver duty areas, each with suggestions that validate', () => {
+test('catalogue covers the eight caregiver duty areas; suggestions carry no times, diets, fluid amounts or medicines', () => {
   assert.deepStrictEqual(CATEGORY_CODES, ['personal_care', 'physical_medical', 'meals_household', 'transportation', 'emotional_social', 'home_safety', 'communication', 'records']);
   for (const c of CATEGORIES) {
     assert.ok(c.suggestions.length >= 3, c.code);
     for (const s of c.suggestions) {
-      const body = { category: c.code, title: s.title, frequency: s.frequency, ...(s.times ? { times: s.times } : {}), ...(s.daysOfWeek ? { daysOfWeek: s.daysOfWeek } : {}), ...(s.frequency === 'once' ? { dueDate: '2026-12-01' } : {}) };
+      assert.strictEqual(s.times, undefined, `${s.title}: no built-in time`);
+      assert.strictEqual(s.daysOfWeek, undefined, `${s.title}: no built-in day`);
+      assert.doesNotMatch(s.title, /^give .*medicine|low-salt|every \d+ hours|\bml\b|litre|metformin/i, `${s.title}: no therapeutic diet, fluid target or medicine`);
+      // The nurse adds the schedule agreed with the elder; then the suggestion is a valid task.
+      const body = { category: c.code, title: s.title, frequency: s.frequency,
+        ...(s.frequency === 'daily' ? { times: ['09:00'] } : {}), ...(s.frequency === 'weekly' ? { daysOfWeek: [1] } : {}), ...(s.frequency === 'once' ? { dueDate: '2026-12-01' } : {}),
+        ...(s.kind ? { kind: s.kind, measurement: s.measurement } : {}),
+        ...(s.specialised ? { specialised: true, source: { type: 'physician_order', clinician: 'Dr. Reyes' } } : {}) };
       assert.deepStrictEqual(validateTask(body).errors, [], `${c.code}: ${s.title}`);
     }
   }
+});
+
+test('specialised and measurement tasks need what makes them safe', () => {
+  const base = { category: 'physical_medical', title: 'Wound care', frequency: 'daily', times: ['09:00'] };
+  assert.match(validateTask({ ...base, specialised: true }).errors.join(), /clinical source/);
+  assert.match(validateTask({ ...base, specialised: true, source: { type: 'nurse_assessment' } }).errors.join(), /clinical source/);
+  assert.deepStrictEqual(validateTask({ ...base, specialised: true, source: { type: 'physician_order', clinician: 'Dr. Reyes', date: '2026-10-01' } }).errors, []);
+  assert.match(validateTask({ ...base, kind: 'measurement' }).errors.join(), /measurement tasks need measurement/);
+  assert.match(validateTask({ ...base, measurement: 'bp' }).errors.join(), /only for measurement tasks/);
+  assert.deepStrictEqual(validateTask({ ...base, title: 'Blood pressure', kind: 'measurement', measurement: 'bp' }).errors, []);
 });
 
 test('task validation: required fields, formats and cross-field rules', () => {

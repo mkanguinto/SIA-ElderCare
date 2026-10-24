@@ -74,6 +74,8 @@ function HandoverCard({ h, mode, onDone }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [ack, setAck] = useState(false);
+  const openItems = h.openItems || [];
   async function act(op, body = {}) {
     setBusy(true);
     setError('');
@@ -98,10 +100,19 @@ function HandoverCard({ h, mode, onDone }) {
         <dt>{tr('Still to do', 'Gagawin pa')}</dt><dd><strong>{h.pendingAction}</strong></dd>
         <dt>{tr('Due', 'Takdang oras')}</dt><dd className={h.overdue ? 'is-overdue' : ''}>{when(h.dueTime)}{h.overdue ? tr(' · overdue', ' · lampas na') : ''}</dd>
       </dl>
+      {openItems.length > 0 && (
+        <div className="m-handover-open">
+          <strong>{tr(`Open concerns (${openItems.length})`, `Bukas na alalahanin (${openItems.length})`)}</strong>
+          <ul>{openItems.map((o) => <li key={o.id}>{o.categoryLabel}: {o.description} <span className="m-sub">{o.id} · {o.status}</span></li>)}</ul>
+          {mode === 'incoming' && !declining && (
+            <label className="check"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> {tr('I have read the open concerns and take them over', 'Nabasa ko ang mga alalahanin at tatanggapin ko')}</label>
+          )}
+        </div>
+      )}
       {mode === 'incoming' && !declining && (
         <div className="m-grid-2" style={{ marginTop: '.75rem' }}>
           <button type="button" className="m-btn" disabled={busy} onClick={() => setDeclining(true)}>{tr('Decline', 'Tanggihan')}</button>
-          <button type="button" className="m-btn is-dark" disabled={busy} onClick={() => act('accept')}><Icon name="check" size={18} />{tr('Accept case', 'Tanggapin')}</button>
+          <button type="button" className="m-btn is-dark" disabled={busy || (openItems.length > 0 && !ack)} onClick={() => act('accept', openItems.length ? { acknowledgeOpenItems: true } : {})}><Icon name="check" size={18} />{tr('Accept case', 'Tanggapin')}</button>
         </div>
       )}
       {mode === 'incoming' && declining && (

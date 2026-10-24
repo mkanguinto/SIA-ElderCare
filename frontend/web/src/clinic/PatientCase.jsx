@@ -13,7 +13,8 @@ import { CareTeamCard } from '../mobile/handover';
 import { weekDays } from '../mobile/plan';
 import TrendChart from '../components/TrendChart';
 import { VisitCard } from '../components/visits';
-import { CarePlanEditor, CareToday } from '../components/care';
+import { CareToday } from '../components/care';
+import CarePlanManager from './CarePlanManager';
 import { Medications, CareTeam } from '../pages/PatientProfile';
 import { EmrPanel } from '../pages/ClinicQueue';
 
@@ -85,6 +86,8 @@ export default function PatientCase({ user, patientId }) {
         <div className="ad-case-grid">
           <WhyPriority item={item} patient={patient} />
           <CaseReviews patientId={patientId} />
+          <Concerns patientId={patientId} />
+          <CareReports patientId={patientId} />
           <section className="ad-panel">
             <h2>Blood pressure, last 30 days</h2>
             <p className="m-caption">Clinic records</p>
@@ -106,8 +109,8 @@ export default function PatientCase({ user, patientId }) {
       {tab === 'plan' && (
         <div className="ad-case-grid is-plan">
           <div className="ad-span"><Medications patientId={patient.id} canEdit /></div>
-          <section className="ad-panel"><h2>Care plan – caregiver duties</h2><CarePlanEditor patientId={patient.id} /></section>
-          <section className="ad-panel"><h2>Duties today</h2><CareToday patientId={patient.id} compact /></section>
+          <CarePlanManager patientId={patient.id} care={care} />
+          <section className="ad-panel ad-span"><h2>Today's tasks</h2><CareToday patientId={patient.id} compact /></section>
         </div>
       )}
 
@@ -167,6 +170,108 @@ function CaseReviews({ patientId }) {
       {data && !list.length && <p className="m-muted">All check-ins for this patient are reviewed.</p>}
       <div className="ad-stack">{list.slice(0, 3).map((c) => <ReviewCard key={c.id} c={c} onDone={reload} />)}</div>
       {list.length > 3 && <Link to="/clinic/reviews" className="m-link">{list.length - 3} more in Check-in reviews</Link>}
+    </section>
+  );
+}
+
+const CONCERN_TONE = { open: 'critical', acknowledged: 'moderate', resolved: 'ok' };
+
+/** Concerns raised by the caregiver: open until a nurse resolves them with an assessment and the action taken. */
+function Concerns({ patientId }) {
+  const [d, setD] = useState(null);
+  const [act, setAct] = useState(null); // {id, op}
+  const [f, setF] = useState({ note: '', assessment: '', actionTaken: '' });
+  const [error, setError] = useState('');
+  const load = useCallback(() => api(`/api/patients/${encodeURIComponent(patientId)}/concerns`).then(setD).catch((e) => setD({ error: e.message })), [patientId]);
+  useEffect(() => { load(); }, [load]);
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try {
+      await api(`/api/clinic/concerns/${act.id}/${act.op}`, { method: 'POST', body: act.op === 'resolve' ? { assessment: f.assessment, actionTaken: f.actionTaken } : { note: f.note } });
+      setAct(null); setF({ note: '', assessment: '', actionTaken: '' }); load();
+    } catch (err) { setError((err.details || [err.message]).join('. ')); }
+  }
+  const list = d && d.concerns ? d.concerns : [];
+  const open = list.filter((x) => x.status !== 'resolved');
+  return (
+    <section className="ad-panel">
+      <div className="m-between"><h2>Concerns</h2><Chip tone={open.length ? 'critical' : 'ok'} icon={open.length ? 'alert' : 'check'}>{open.length} open</Chip></div>
+      <p className="m-caption">A concern stays open until a nurse resolves it. Reviewing a report, a normal reading or a finished task does not close it.</p>
+      {d && d.error && <p className="m-error">{d.error}</p>}
+      {d && !list.length && <p className="m-muted">No concerns reported.</p>}
+      <ul className="ad-concerns">
+        {list.slice(0, 6).map((x) => (
+          <li key={x.id} className={`tone-${CONCERN_TONE[x.status]}`}>
+            <div className="m-between"><strong>{x.categoryLabel}</strong><Chip tone={CONCERN_TONE[x.status]}>{x.status}</Chip></div>
+            <p>{x.description}</p>
+            <span className="m-sub">{x.id} · {x.reportedBy.name || x.reportedBy.id} ({x.reportedBy.role.replace('_', ' ')}) · {relTime(x.createdAt)}</span>
+            {x.resolved && <span className="m-sub">Resolved by {x.resolved.byName || x.resolved.by}: {x.resolved.assessment} → {x.resolved.actionTaken}</span>}
+            {x.status !== 'resolved' && (!act || act.id !== x.id) && (
+              <div className="ad-actions">
+                {x.status === 'open' && <button type="button" className="m-link" onClick={() => setAct({ id: x.id, op: 'acknowledge' })}>Acknowledge</button>}
+                <button type="button" className="m-link" onClick={() => setAct({ id: x.id, op: 'note' })}>Add a note</button>
+                <button type="button" className="m-link" onClick={() => setAct({ id: x.id, op: 'resolve' })}>Resolve</button>
+              </div>
+            )}
+            {act && act.id === x.id && (
+              <form className="ad-concern-form" onSubmit={submit}>
+                {act.op === 'resolve' ? (
+                  <>
+                    <label className="ad-field"><span>Your assessment</span><textarea rows="2" value={f.assessment} onChange={(e) => setF({ ...f, assessment: e.target.value })} /></label>
+                    <label className="ad-field"><span>Action taken</span><textarea rows="2" value={f.actionTaken} onChange={(e) => setF({ ...f, actionTaken: e.target.value })} /></label>
+                  </>
+                ) : <label className="ad-field"><span>{act.op === 'acknowledge' ? 'Note (optional)' : 'Note'}</span><textarea rows="2" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></label>}
+                {error && <p className="m-error">{error}</p>}
+                <div className="ad-actions"><button className="m-btn is-brand ad-btn-auto">{act.op === 'resolve' ? 'Resolve' : act.op === 'acknowledge' ? 'Acknowledge' : 'Save note'}</button><button type="button" className="m-link" onClick={() => setAct(null)}>Cancel</button></div>
+              </form>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const FLAG = { not_done: 'Not done', not_applicable: 'Not applicable', not_taken: 'Not taken', unknown: 'Unknown', not_measured: 'Not measured', no_device: 'No device',
+  plan_version_differs: 'Different plan version', prescription_changed: 'Prescription changed', comment: 'Comment' };
+
+/** Caregiver reports that need a nurse's look (missing readings, doses not taken, version differences). */
+function CareReports({ patientId }) {
+  const [d, setD] = useState(null);
+  const [open, setOpen] = useState(null);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const load = useCallback(() => api(`/api/patients/${encodeURIComponent(patientId)}/care-reports`).then(setD).catch((e) => setD({ error: e.message })), [patientId]);
+  useEffect(() => { load(); }, [load]);
+  async function review(e, it) {
+    e.preventDefault();
+    setError('');
+    try { await api(`/api/care-reports/${it.type}/${it.id}/review`, { method: 'POST', body: { note } }); setOpen(null); setNote(''); load(); } catch (err) { setError((err.details || [err.message]).join('. ')); }
+  }
+  const items = d && d.items ? d.items : [];
+  return (
+    <section className="ad-panel">
+      <div className="m-between"><h2>Caregiver reports to review</h2><Chip tone={items.length ? 'moderate' : 'ok'} icon={items.length ? 'eye' : 'check'}>{items.length}</Chip></div>
+      <p className="m-caption">What the caregiver reported, not proof of care. Reviewing records what you assessed and did; it does not resolve a concern.</p>
+      {d && d.error && <p className="m-error">{d.error}</p>}
+      {d && !items.length && <p className="m-muted">Nothing waiting.</p>}
+      <ul className="ad-concerns">
+        {items.slice(0, 6).map((it) => (
+          <li key={`${it.type}${it.id}`}>
+            <div className="m-between"><strong>{it.title}</strong><span className="m-pills">{it.flags.map((fl) => <Chip key={fl} tone={fl === 'comment' ? '' : 'moderate'}>{FLAG[fl] || fl}</Chip>)}</span></div>
+            <span className="m-sub">{it.date}{it.slot && !['any', 'log', 'prn'].includes(it.slot) ? ` ${it.slot}` : ''} · reported {relTime(it.reportedAt)}{it.seenPlanVersion ? ` · seen on plan v${it.seenPlanVersion}` : ''}</span>
+            {(it.note || it.reason) && <p>“{it.note || it.reason}”</p>}
+            {open === it.id ? (
+              <form className="ad-concern-form" onSubmit={(e) => review(e, it)}>
+                <label className="ad-field"><span>What you assessed and did</span><textarea rows="2" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+                {error && <p className="m-error">{error}</p>}
+                <div className="ad-actions"><button className="m-btn is-brand ad-btn-auto">Mark reviewed</button><button type="button" className="m-link" onClick={() => setOpen(null)}>Cancel</button></div>
+              </form>
+            ) : <button type="button" className="m-link" onClick={() => { setOpen(it.id); setNote(''); }}>Review</button>}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

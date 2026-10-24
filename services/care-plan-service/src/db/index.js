@@ -24,6 +24,8 @@ async function migrate() {
   if (process.env.SEED_DEMO_DATA === 'true' && fs.existsSync(seedFile)) {
     await pool.query(fs.readFileSync(seedFile, 'utf8'));
   }
+  // After the seed, so seeded and pre-existing plans alike become version 1 (idempotent).
+  await pool.query(fs.readFileSync(path.join(__dirname, 'carryover.sql'), 'utf8'));
   logger.info('database migrated');
 }
 

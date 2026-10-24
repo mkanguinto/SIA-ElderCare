@@ -9,43 +9,43 @@
  * GET /api/care/categories returns this catalogue so clinic staff can build a plan from suggestions
  * instead of typing every task.
  */
+// Suggestions carry no times, days, diets or fluid amounts: those are agreed with the elder and the caregiver
+// and, where clinical, come from a clinical source recorded in the plan. Medicines are not tasks here; the
+// checklist takes them from the prescription records.
 const CATEGORIES = [
   {
     code: 'personal_care',
     name: 'Personal care',
     description: 'Help with bathing, dressing, grooming, toileting and oral care while keeping the person\'s dignity.',
     suggestions: [
-      { title: 'Help with bathing or sponge bath', frequency: 'daily', times: ['08:00'] },
-      { title: 'Help with dressing', frequency: 'daily', times: ['07:30'] },
-      { title: 'Oral care / denture cleaning', frequency: 'daily', times: ['08:00', '20:00'] },
+      { title: 'Help with bathing or sponge bath', frequency: 'daily' },
+      { title: 'Help with dressing', frequency: 'daily' },
+      { title: 'Oral care / denture cleaning', frequency: 'daily' },
       { title: 'Toileting / incontinence care', frequency: 'as_needed' },
-      { title: 'Nail and skin care, check for pressure sores', frequency: 'weekly', daysOfWeek: [6] },
+      { title: 'Nail and skin care, check for pressure sores', frequency: 'weekly' },
     ],
   },
   {
     code: 'physical_medical',
     name: 'Physical and medical care',
-    description: 'Give medicines as prescribed, take vital signs, do prescribed exercises and wound care, and watch for changes.',
+    description: 'Take vital signs, help with prescribed exercises and watch for changes. Medicines come from the prescription records.',
     suggestions: [
-      { title: 'Give morning medicines', frequency: 'daily', times: ['08:00'] },
-      { title: 'Give evening medicines', frequency: 'daily', times: ['20:00'] },
-      { title: 'Check blood pressure and record it (daily check-in)', frequency: 'daily', times: ['07:30'] },
-      { title: 'Assist with walking / range-of-motion exercises', frequency: 'daily', times: ['10:00'] },
+      { title: 'Measure blood pressure as the plan says', frequency: 'daily', kind: 'measurement', measurement: 'bp' },
+      { title: 'Assist with walking / range-of-motion exercises', frequency: 'daily' },
       { title: 'Help moving from bed to chair (transfer)', frequency: 'as_needed' },
-      { title: 'Wound or catheter care as instructed by the nurse', frequency: 'as_needed' },
+      { title: 'Wound or catheter care (only with a clinical order and training)', frequency: 'as_needed', specialised: true },
     ],
   },
   {
     code: 'meals_household',
     name: 'Meals and household',
-    description: 'Plan and prepare meals for the diet, make sure the person drinks enough, and keep the home clean.',
+    description: "Prepare meals and drinks the way the plan describes, help with eating, and keep the home clean.",
     suggestions: [
-      { title: 'Prepare breakfast (low-salt diet)', frequency: 'daily', times: ['07:00'] },
-      { title: 'Prepare lunch', frequency: 'daily', times: ['12:00'] },
-      { title: 'Prepare dinner', frequency: 'daily', times: ['18:00'] },
-      { title: 'Offer water every 2 hours (hydration)', frequency: 'daily', times: ['10:00', '14:00', '16:00'] },
-      { title: 'Laundry and change bed linen', frequency: 'weekly', daysOfWeek: [3, 6] },
-      { title: 'Buy groceries and refill medicines', frequency: 'weekly', daysOfWeek: [6] },
+      { title: "Prepare meals the elder likes, following the plan's diet instructions", frequency: 'daily' },
+      { title: 'Help with eating', frequency: 'daily' },
+      { title: "Offer drinks, following the plan's fluid instructions", frequency: 'daily' },
+      { title: 'Laundry and change bed linen', frequency: 'weekly' },
+      { title: 'Buy groceries and refill medicines', frequency: 'weekly' },
     ],
   },
   {
@@ -63,9 +63,9 @@ const CATEGORIES = [
     name: 'Emotional and social support',
     description: 'Keep the person company, encourage hobbies and contact with family and friends, notice signs of depression.',
     suggestions: [
-      { title: 'Spend time talking / reading together', frequency: 'daily', times: ['15:00'] },
-      { title: 'Video or phone call with family', frequency: 'weekly', daysOfWeek: [0] },
-      { title: 'Walk outside or attend church / senior activities', frequency: 'weekly', daysOfWeek: [0, 3] },
+      { title: 'Spend time talking / reading together', frequency: 'daily' },
+      { title: 'Video or phone call with family', frequency: 'weekly' },
+      { title: 'Walk outside or attend church / senior activities', frequency: 'weekly' },
     ],
   },
   {
@@ -73,9 +73,9 @@ const CATEGORIES = [
     name: 'Home safety',
     description: 'Prevent falls and accidents: clear walkways, lighting, grab bars, safe medicine storage, emergency numbers.',
     suggestions: [
-      { title: 'Check walkways are clear and floors are dry', frequency: 'daily', times: ['07:00'] },
-      { title: 'Check night lights and bathroom grab bars', frequency: 'weekly', daysOfWeek: [1] },
-      { title: 'Store medicines safely and check expiry dates', frequency: 'weekly', daysOfWeek: [1] },
+      { title: 'Check walkways are clear and floors are dry', frequency: 'daily' },
+      { title: 'Check night lights and bathroom grab bars', frequency: 'weekly' },
+      { title: 'Store medicines safely and check expiry dates', frequency: 'weekly' },
       { title: 'Prepare go-bag before typhoon season (medicines for 3+ days, documents, flashlight)', frequency: 'once' },
     ],
   },
@@ -84,8 +84,8 @@ const CATEGORIES = [
     name: 'Communication',
     description: 'Keep family and the health center informed and use the tools that help the person communicate.',
     suggestions: [
-      { title: 'Send daily update to family', frequency: 'daily', times: ['19:00'] },
-      { title: 'Charge phone and hearing aid batteries', frequency: 'daily', times: ['21:00'] },
+      { title: 'Send daily update to family', frequency: 'daily' },
+      { title: 'Charge phone and hearing aid batteries', frequency: 'daily' },
       { title: 'Tell the nurse about new symptoms or medicine side effects', frequency: 'as_needed' },
     ],
   },

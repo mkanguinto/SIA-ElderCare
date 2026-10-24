@@ -4,7 +4,7 @@
  * Care teams, case ownership, nurse handover and duty coverage (Batch 2).
  *
  *   POST /api/clinic/handover                     {patientId, toNurseId, concern, actionTaken, pendingAction, dueTime}   nurse holding the case
- *   POST /api/clinic/handover/:id/accept|decline  {note?}   incoming nurse
+ *   POST /api/clinic/handover/:id/accept|decline  {note?, acknowledgeOpenItems?}   incoming nurse (open concerns must be acknowledged)
  *   POST /api/clinic/handover/:id/cancel          {note?}   outgoing nurse
  *   GET  /api/clinic/my-cases                     elders whose case I hold, with the open queue item and any outgoing handover
  *   GET  /api/clinic/queue/pending-handovers      {incoming, outgoing} pending handovers for me
@@ -24,6 +24,9 @@ const { pool, withTransaction } = require('./db');
 const logger = require('./lib/logger');
 const { requireInternalToken } = require('./lib/internalAuth');
 const { validateHandover, canSubmit, respond, isOverdue } = require('./handover');
+const { handoverAcknowledgement } = require('./concerns');
+// eslint-disable-next-line global-require
+const openConcerns = (db, patientId) => require('./concernRoutes').openConcerns(db, patientId);
 
 const router = express.Router();
 router.use('/api/clinic', requireInternalToken);
@@ -54,6 +57,9 @@ function toHandoverDto(r) {
     respondedBy: r.responded_by,
     responseNote: r.response_note,
     priority: r.priority || null,
+    // Open concerns when the handover was sent; the incoming nurse confirms reading them when accepting.
+    openItems: r.open_items || [],
+    openItemsAcknowledged: r.open_items_acknowledged ?? null,
   };
   h.overdue = isOverdue(h);
   return h;
@@ -94,11 +100,12 @@ router.post('/api/clinic/handover', async (req, res, next) => {
       if (!allowed.ok) return { status: allowed.status, body: { error: allowed.error, message: allowed.message } };
       const { rows: [item] } = await client.query('SELECT id FROM risk_queue WHERE patient_id = $1 AND status = ANY($2) FOR UPDATE', [h.patientId, ACTIVE]);
       const to = care.members.find((m) => m.nurse_id === h.toNurseId);
+      const open = await openConcerns(client, h.patientId);
       const { rows: [row] } = await client.query(
-        `INSERT INTO handover_record (patient_id, queue_item_id, from_nurse, from_nurse_name, to_nurse, to_nurse_name, concern, action_taken, pending_action, due_time)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        `INSERT INTO handover_record (patient_id, queue_item_id, from_nurse, from_nurse_name, to_nurse, to_nurse_name, concern, action_taken, pending_action, due_time, open_items)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [h.patientId, item ? item.id : null, req.user.id, req.user.name || care.row.case_nurse_name, to.nurse_id, to.nurse_name,
-          h.concern, h.actionTaken, h.pendingAction, h.dueTime],
+          h.concern, h.actionTaken, h.pendingAction, h.dueTime, JSON.stringify(open)],
       );
       if (item) await client.query(`UPDATE risk_queue SET handover_status = 'pending', updated_at = now() WHERE id = $1`, [item.id]);
       await followUp(client, item && item.id, 'handover_submitted', `Handover to ${to.nurse_name} pending acceptance. Due ${h.dueTime.toISOString()}`, req.user.id);
@@ -129,6 +136,10 @@ function answer(op) {
         const { rows: [row] } = await client.query('SELECT * FROM handover_record WHERE id = $1 FOR UPDATE', [req.params.id]);
         const r = respond(row && { status: row.status, fromNurse: row.from_nurse, toNurse: row.to_nurse }, op, req.user.id);
         if (!r.ok) return { status: r.status, body: { error: r.error, message: r.message } };
+        if (op === 'accept') {
+          const ack = handoverAcknowledgement(row.open_items, req.body);
+          if (!ack.ok) return { status: 422, body: { error: 'acknowledge_open_items', message: ack.message, openItems: row.open_items } };
+        }
         const care = await loadCare(client, row.patient_id, true);
         if (r.transfersCase) {
           // The case can only have moved through this handover, but never transfer a case the outgoing nurse no longer holds.
@@ -140,14 +151,24 @@ function answer(op) {
           );
         }
         const { rows: [updated] } = await client.query(
-          'UPDATE handover_record SET status = $2, responded_at = now(), responded_by = $3, response_note = $4 WHERE id = $1 RETURNING *',
-          [row.id, r.status, req.user.id, note ? note.trim() : null],
+          'UPDATE handover_record SET status = $2, responded_at = now(), responded_by = $3, response_note = $4, open_items_acknowledged = $5 WHERE id = $1 RETURNING *',
+          [row.id, r.status, req.user.id, note ? note.trim() : null, op === 'accept' && (row.open_items || []).length ? true : null],
         );
         const { rows: items } = await client.query(
           `UPDATE risk_queue SET handover_status = $2, assigned_to = CASE WHEN $3 THEN $4 ELSE assigned_to END, updated_at = now()
             WHERE patient_id = $1 AND status = ANY($5) RETURNING id`,
           [row.patient_id, r.transfersCase ? 'accepted' : 'none', r.transfersCase, row.to_nurse, ACTIVE],
         );
+        if (r.transfersCase) {
+          // Each open concern's history shows who took it over (the concern itself stays open).
+          for (const it of row.open_items || []) {
+            await client.query(
+              `INSERT INTO concern_events (concern_id, event, actor_id, actor_name, actor_role, details)
+               SELECT $1, 'handed_over', $2, $3, 'clinic_staff', $4 WHERE EXISTS (SELECT 1 FROM care_concerns WHERE id = $1 AND status <> 'resolved')`,
+              [it.id, req.user.id, row.to_nurse_name, JSON.stringify({ from: row.from_nurse_name, to: row.to_nurse_name, handoverId: row.id })],
+            );
+          }
+        }
         const words = { accepted: `Handover accepted by ${row.to_nurse_name}: case moved from ${row.from_nurse_name}`, declined: `Handover declined by ${row.to_nurse_name}: ${note}`, cancelled: `Handover cancelled by ${row.from_nurse_name}` };
         for (const it of items) await followUp(client, it.id, `handover_${r.status}`, words[r.status], req.user.id);
         await careLog(client, req, `handover_${r.status}`, { patientId: row.patient_id, details: { handoverId: row.id, from: row.from_nurse, to: row.to_nurse } });

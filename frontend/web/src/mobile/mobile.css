@@ -978,3 +978,46 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .ad-clinic .ad-page.is-form > :is(form.m-stack, .m-stack) > :is(fieldset, .m-banner, .m-cta, .m-error, .m-note, .m-seg, .m-grid-2, .m-card, p, h2, button, .m-footer-actions, .m-draft) { grid-column: 1 / -1; }
 .ad-clinic .ad-page.is-form .m-cta { max-width: 26rem; }
 @media (max-width: 64rem) { .ad-clinic .ad-page.is-form > :is(form.m-stack, .m-stack) { grid-template-columns: 1fr; } }
+
+/* Care plan v3: caregiver Today's Care Tasks */
+.m-choice3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.m-choice3 .m-btn { min-height: 2.75rem; padding: 0 .4rem; justify-content: center; font-size: .875rem; white-space: normal; line-height: 1.2; }
+.m-choice3 .m-btn[aria-pressed='true'] { background: var(--bg-cta); border-color: var(--bg-cta); color: #fff; }
+.m-concern-btn { width: 100%; justify-content: center; margin-top: .75rem; border: 2px solid var(--accent-critical); color: var(--text-critical); background: var(--bg-critical); }
+.m-plan-version { margin-top: .5rem; }
+.m-handover-open { margin-top: .75rem; padding: .75rem 1rem; border-radius: 1rem; background: var(--bg-moderate); color: var(--text-moderate); }
+.m-handover-open ul { margin: .4rem 0 .5rem 1.1rem; padding: 0; display: grid; gap: .3rem; font-size: .9rem; }
+.m-handover-open .m-sub { display: block; font-size: .8rem; }
+.m-handover-open .check { display: flex; gap: .5rem; align-items: flex-start; font-weight: 700; }
+
+/* Care plan v3: nurse desktop */
+.ad-plan .m-banner { margin-top: .75rem; }
+.ad-plan-start { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; padding: 1rem 1.25rem; border-radius: 1rem; background: var(--bg-app); }
+.ad-plan-summary { margin: 1rem 0; }
+.ad-plan-text { margin-top: .75rem; line-height: 1.5; }
+.ad-instructions { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .5rem; }
+.ad-instructions li { padding: .6rem .8rem; border-radius: .75rem; background: var(--bg-app); }
+.ad-instructions .m-sub { display: block; font-size: .85rem; color: var(--text-secondary); margin-top: .2rem; }
+.ad-draft { margin-top: 1rem; border-top: 1px solid var(--ad-line); padding-top: .5rem; }
+.ad-draft textarea, .ad-concern-form textarea { min-height: 4.5rem; width: 100%; border: 1px solid var(--ad-line); border-radius: .75rem; padding: .6rem .8rem; font: inherit; }
+.ad-form-grid.is-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ad-instruction-edit { padding: .75rem 1rem; border-radius: 1rem; border: 1px solid var(--ad-line); margin-top: .75rem; }
+.ad-source { margin-top: .25rem; }
+.ad-source .ad-field span { font-size: .8125rem; color: var(--text-secondary); }
+.ad-checks { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: .75rem 0; }
+.ad-app .check { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; }
+.ad-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: .75rem; }
+.ad-actions .ad-select { flex: 1 1 14rem; max-width: 22rem; }
+.ad-verify, .ad-activate { margin-top: 1.25rem; padding-top: .75rem; border-top: 1px solid var(--ad-line); }
+.ad-verify ul, .ad-activate ul { margin: .4rem 0 0 1.1rem; }
+.ad-history { margin-top: 1.25rem; }
+.ad-history summary { cursor: pointer; font-weight: 700; color: var(--text-brand); }
+.ad-log { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: .35rem; font-size: .9rem; }
+.ad-log li > span:first-child { display: inline-block; min-width: 7rem; color: var(--text-secondary); }
+.ad-concerns { list-style: none; padding: 0; margin: .75rem 0 0; display: grid; gap: .75rem; }
+.ad-concerns li { padding: .85rem 1rem; border-radius: 1rem; border: 1px solid var(--ad-line); }
+.ad-concerns li.tone-critical { border-color: var(--accent-critical); }
+.ad-concerns p { margin: .35rem 0; }
+.ad-concerns .m-sub { display: block; font-size: .85rem; color: var(--text-secondary); }
+.ad-concern-form { display: grid; gap: .5rem; margin-top: .5rem; }
+@media (max-width: 64rem) { .ad-form-grid.is-2 { grid-template-columns: 1fr; } }

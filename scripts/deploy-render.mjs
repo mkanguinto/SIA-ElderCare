@@ -121,7 +121,8 @@ function envFor(key, url) {
     };
     case 'clinic': return { ...common, PORT: '4003', SERVICE_NAME: 'clinic-risk-service', ...db('clinic'), ...mq, SEED_DEMO_DATA: 'true', LEGACY_ADAPTER_URL: url.adapter, VISIT_TZ_OFFSET: '+08:00',
       ALERT_SERVICE_URL: url.alert, ...pass('CLINIC_HOTLINE', 'CLINIC_HOTLINE_NAME', 'CLINIC_HOURS') };
-    case 'care': return { ...common, PORT: '4006', SERVICE_NAME: 'care-plan-service', ...db('care'), SEED_DEMO_DATA: 'true', CARE_TZ_OFFSET: '+08:00' };
+    case 'care': return { ...common, PORT: '4006', SERVICE_NAME: 'care-plan-service', ...db('care'), SEED_DEMO_DATA: 'true', CARE_TZ_OFFSET: '+08:00',
+      CLINIC_SERVICE_URL: url.clinic, CHECKIN_SERVICE_URL: url.checkin };
     case 'adapter': return { ...common, PORT: '4004', SERVICE_NAME: 'legacy-emr-adapter', LEGACY_EMR_URL: `${url.mockEmr}/emr`, ...pass('LEGACY_EMR_USERNAME', 'LEGACY_EMR_PASSWORD') };
     case 'mockEmr': return { PORT: '4005', NODE_ENV: 'production', PUBLIC_URL: `${url.mockEmr}/emr` };
     case 'nodeRed': return {

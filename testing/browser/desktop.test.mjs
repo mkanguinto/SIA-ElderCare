@@ -32,7 +32,7 @@ export default async function run({ shots } = {}) {
     await page.goto('/clinic/patients/P-1001');
     check(await page.waitFor('Overview & Clinical Data') && await page.waitFor('Blood pressure, last 30 days') && await page.waitFor('Recent check-ins'), 'patient case: overview tab (why this priority, blood pressure, recent check-ins)');
     await page.click('Care Plan & Medications', '.ad-tabs');
-    check(await page.waitFor('Prescribed medicines') && await page.waitFor('Duties today'), 'patient case: care plan & medications tab');
+    check(await page.waitFor('Prescribed medicines') && await page.waitFor("Today's tasks") && await page.waitFor('Versions and change history'), 'patient case: care plan & medications tab (medicines, plan versions, today)');
     if (shots) await page.screenshot(`${shots}/desktop-patient.png`);
     const radius = await page.evaluate("getComputedStyle(document.querySelector('.panel')).borderRadius");
     check(parseFloat(radius) >= 16, `desktop-only panels take the phone look (radius ${radius})`);

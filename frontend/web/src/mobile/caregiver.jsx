@@ -383,7 +383,7 @@ function Duties({ user }) {
   const [elders] = useElders(user);
   return (
     <>
-      <TopBar title={tr('Care Duties', 'Mga gawain')} back={BASE} />
+      <TopBar title={tr("Today's Care Tasks", 'Mga gawain ngayon')} back={BASE} />
       {!elders ? <Loader /> : <DutiesScreen patients={elders} editable />}
     </>
   );

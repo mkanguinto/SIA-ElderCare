@@ -7,7 +7,7 @@ const { detectAnomalies } = require('./anomaly');
 const outbox = require('./outbox');
 const logger = require('./lib/logger');
 const { requireInternalToken } = require('./lib/internalAuth');
-const { validatePatient, validateMedication } = require('./patientValidation');
+const { validatePatient, validateMedication, validateStop, validateRxVerification } = require('./patientValidation');
 const { parsePagination, pageInfo } = require('./lib/pagination');
 
 const router = express.Router();
@@ -48,6 +48,21 @@ function toMedicationDto(r) {
     startDate: r.start_date,
     endDate: r.end_date,
     active: r.active,
+    strength: r.strength || null,
+    dose: r.dose || null,
+    route: r.route || null,
+    foodInstructions: r.food_instructions || null,
+    missedDoseInstructions: r.missed_dose_instructions || null,
+    missedDoseSource: r.missed_dose_source || null,
+    source: r.source || null,           // null: recorded before sources were kept ("source not recorded")
+    verification: r.verification || null,
+    supersedesId: r.supersedes_id || null,
+    supersededById: r.superseded_by_id || null,
+    changeReason: r.change_reason || null,
+    stopped: r.stopped_at ? { at: r.stopped_at, by: r.stopped_by, reason: r.stop_reason, source: r.stop_source } : null,
+    stoppedAt: r.stopped_at || null,
+    createdBy: r.created_by || null,
+    createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
@@ -273,12 +288,7 @@ router.post('/api/patients', async (req, res, next) => {
 
       const meds = [];
       for (const m of p.medications) {
-        const { rows: [mr] } = await client.query(
-          `INSERT INTO patient_medications (patient_id, name, dosage, frequency, times, instructions, prescribed_by, start_date, end_date, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,coalesce($8::date, current_date),$9,$10) RETURNING *`,
-          [row.id, m.name, m.dosage, m.frequency, m.times || [], m.instructions || null, m.prescribedBy || null, m.startDate || null, m.endDate || null, req.user.id],
-        );
-        meds.push(toMedicationDto(mr));
+        meds.push(toMedicationDto(await insertPrescription(client, row.id, m, req)));
       }
       return { patient: toPatientDto(row), medications: meds };
     });
@@ -319,46 +329,118 @@ router.get('/api/patients/:id/medications', async (req, res, next) => {
   }
 });
 
-// POST /api/patients/:id/medications   (clinic staff) - add a prescription
+/* Prescriptions are recorded from their source and changed only by a new record (migration 0004). */
+const manilaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
+const addDay = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const verificationOf = (v, req) => (v ? { ...v, recordedBy: req.user.id, recordedByName: req.user.name || null, recordedAt: new Date().toISOString() } : null);
+
+async function insertPrescription(db, patientId, m, req, supersedesId = null) {
+  const { rows: [row] } = await db.query(
+    `INSERT INTO patient_medications (patient_id, name, dosage, strength, dose, route, frequency, times, food_instructions, instructions, prescribed_by,
+                                      start_date, end_date, source, verification, missed_dose_instructions, missed_dose_source, supersedes_id, change_reason, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,coalesce($12::date, current_date),$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+    [patientId, m.name, m.dosage, m.strength || null, m.dose || null, m.route || null, m.frequency, m.times || [], m.foodInstructions || null,
+      m.instructions || null, m.prescribedBy, m.startDate || null, m.endDate || null, JSON.stringify(m.source), m.verification ? JSON.stringify(verificationOf(m.verification, req)) : null,
+      m.missedDoseInstructions || null, m.missedDoseSource ? JSON.stringify(m.missedDoseSource) : null, supersedesId, m.changeReason || null, req.user.id],
+  );
+  return row;
+}
+
+// POST /api/patients/:id/medications   (clinic staff) - record a prescription from its source
 router.post('/api/patients/:id/medications', async (req, res, next) => {
   try {
     if (!requireRole(req, res, ['clinic_staff'])) return undefined;
-    const r = validateMedication(req.body);
+    const r = validateMedication(req.body, '', { today: manilaToday() });
     if (!r.ok) return res.status(422).json({ error: 'validation_failed', details: r.errors });
-    const m = r.value;
     const { rows: pr } = await pool.query('SELECT id FROM patients WHERE id = $1', [req.params.id]);
     if (!pr.length) return res.status(404).json({ error: 'not_found', message: 'Patient not found' });
-    const { rows: [row] } = await pool.query(
-      `INSERT INTO patient_medications (patient_id, name, dosage, frequency, times, instructions, prescribed_by, start_date, end_date, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,coalesce($8::date, current_date),$9,$10) RETURNING *`,
-      [req.params.id, m.name, m.dosage, m.frequency, m.times || [], m.instructions || null, m.prescribedBy || req.user.id, m.startDate || null, m.endDate || null, req.user.id],
-    );
+    const row = await insertPrescription(pool, req.params.id, r.value, req);
     return res.status(201).json(toMedicationDto(row));
   } catch (err) {
     return next(err);
   }
 });
 
-// PATCH /api/patients/:id/medications/:medId   (clinic staff) - change dose/times or stop (active=false)
+async function loadPrescription(req, res) {
+  if (!/^\d+$/.test(req.params.medId)) { res.status(400).json({ error: 'bad_request', message: 'Invalid medication id' }); return null; }
+  const { rows: [m] } = await pool.query('SELECT * FROM patient_medications WHERE id = $1 AND patient_id = $2', [req.params.medId, req.params.id]);
+  if (!m) { res.status(404).json({ error: 'not_found', message: 'Medication not found for this patient' }); return null; }
+  return m;
+}
+
+// PATCH /api/patients/:id/medications/:medId   (clinic staff) - only records a missing verification.
+// Dose, times and route change through a revision; stopping has its own route. Nothing is edited in place.
 router.patch('/api/patients/:id/medications/:medId', async (req, res, next) => {
   try {
     if (!requireRole(req, res, ['clinic_staff'])) return undefined;
-    if (!/^\d+$/.test(req.params.medId)) return res.status(400).json({ error: 'bad_request', message: 'Invalid medication id' });
-    const r = validateMedication(req.body, '', { partial: true });
-    if (!r.ok) return res.status(422).json({ error: 'validation_failed', details: r.errors });
-    const cols = { name: 'name', dosage: 'dosage', frequency: 'frequency', times: 'times', instructions: 'instructions', prescribedBy: 'prescribed_by', startDate: 'start_date', endDate: 'end_date', active: 'active' };
-    const sets = [];
-    const vals = [req.params.medId, req.params.id];
-    for (const [k, v] of Object.entries(r.value)) {
-      vals.push(v);
-      sets.push(`${cols[k]} = $${vals.length}`);
+    const b = req.body || {};
+    const other = Object.keys(b).filter((k) => k !== 'verification');
+    if (other.length) {
+      return res.status(409).json({ error: 'not_editable', message: 'A prescription is not changed in place. Record a revision (POST .../revisions) or stop it (POST .../stop).', fields: other });
     }
-    const { rows } = await pool.query(
-      `UPDATE patient_medications SET ${sets.join(', ')}, updated_at = now() WHERE id = $1 AND patient_id = $2 RETURNING *`, vals,
-    );
-    if (!rows.length) return res.status(404).json({ error: 'not_found', message: 'Medication not found for this patient' });
-    return res.json(toMedicationDto(rows[0]));
+    const m = await loadPrescription(req, res);
+    if (!m) return undefined;
+    if (m.verification) return res.status(409).json({ error: 'already_verified', message: 'This prescription already has a recorded verification' });
+    const errors = [];
+    const v = validateRxVerification(b.verification, 'verification', errors, manilaToday());
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    const { rows: [row] } = await pool.query('UPDATE patient_medications SET verification = $2, updated_at = now() WHERE id = $1 RETURNING *', [m.id, JSON.stringify(verificationOf(v, req))]);
+    return res.json(toMedicationDto(row));
   } catch (err) {
+    if (err.code === '23514') return res.status(409).json({ error: 'not_editable', message: err.message });
+    return next(err);
+  }
+});
+
+// POST /api/patients/:id/medications/:medId/stop   (clinic staff) {reason, source} - the stop the prescriber ordered
+router.post('/api/patients/:id/medications/:medId/stop', async (req, res, next) => {
+  try {
+    if (!requireRole(req, res, ['clinic_staff'])) return undefined;
+    const r = validateStop(req.body, manilaToday());
+    if (!r.ok) return res.status(422).json({ error: 'validation_failed', details: r.errors });
+    const m = await loadPrescription(req, res);
+    if (!m) return undefined;
+    if (!m.active) return res.status(409).json({ error: 'not_active', message: 'This prescription is already stopped or superseded' });
+    const { rows: [row] } = await pool.query(
+      `UPDATE patient_medications SET active = FALSE, stopped_at = now(), stopped_by = $2, stop_reason = $3, stop_source = $4,
+              end_date = least(coalesce(end_date, current_date), current_date), updated_at = now() WHERE id = $1 RETURNING *`,
+      [m.id, req.user.id, r.value.reason, JSON.stringify(r.value.source)],
+    );
+    return res.json(toMedicationDto(row));
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// POST /api/patients/:id/medications/:medId/revisions   (clinic staff) - a changed prescription from its source.
+// The new record supersedes the old one from its start date; the old one ends the day before and stays as it was.
+router.post('/api/patients/:id/medications/:medId/revisions', async (req, res, next) => {
+  try {
+    if (!requireRole(req, res, ['clinic_staff'])) return undefined;
+    const today = manilaToday();
+    const r = validateMedication(req.body, '', { today });
+    const errors = r.ok ? [] : [...r.errors];
+    if (r.ok && !r.value.changeReason) errors.push('changeReason is required: what changed and why');
+    if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+    const m = await loadPrescription(req, res);
+    if (!m) return undefined;
+    if (!m.active) return res.status(409).json({ error: 'not_active', message: 'Only a prescription in use can be revised' });
+    const start = r.value.startDate || today;
+    const oldStart = typeof m.start_date === 'string' ? m.start_date : new Date(m.start_date).toISOString().slice(0, 10);
+    if (start < oldStart) return res.status(422).json({ error: 'validation_failed', details: [`startDate cannot be before the current prescription started (${oldStart})`] });
+    const created = await withTransaction(async (client) => {
+      const { rows: [locked] } = await client.query('SELECT active FROM patient_medications WHERE id = $1 FOR UPDATE', [m.id]);
+      if (!locked.active) throw Object.assign(new Error('superseded meanwhile'), { status: 409 });
+      const row = await insertPrescription(client, req.params.id, { ...r.value, startDate: start }, req, m.id);
+      await client.query(
+        `UPDATE patient_medications SET active = FALSE, superseded_by_id = $2, end_date = least(coalesce(end_date, $3::date), $3::date), updated_at = now() WHERE id = $1`,
+        [m.id, row.id, addDay(start, -1)],
+      );
+      return row;
+    });
+    return res.status(201).json(toMedicationDto(created));
+  } catch (err) {
+    if (err.status === 409) return res.status(409).json({ error: 'conflict', message: 'This prescription was changed meanwhile. Reload and try again.' });
     return next(err);
   }
 });

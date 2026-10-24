@@ -17,7 +17,7 @@ export default async function run({ shots } = {}) {
     await page.click('Notes');
     check(await page.waitFor('Last 7 days'), 'profile tabs switch (Notes)');
     check(await on('/m/caregiver/medicines', 'Patient', 'Morning'), 'medicines: patient picker and doses by time of day');
-    check(await on('/m/caregiver/duties', 'Care Duties', 'Date', 'duties done'), 'care duties: patient, date and progress');
+    check(await on('/m/caregiver/duties', "Today's Care Tasks", 'Date', 'tasks done', 'Report a concern', 'Care plan version'), "today's care tasks: patient, date, progress, plan version and Report a concern");
     check(await on('/m/caregiver/check-in?patient=P-1001', 'Step 1 of 3', 'Notes (Optional)'), 'check-in step 1 has a notes field for the nurse');
     check(await on('/m/caregiver/profile', 'Assigned Patients', 'App Preferences', 'Large Text Mode', 'Log out'), 'caregiver profile');
 

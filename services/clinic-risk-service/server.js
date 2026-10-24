@@ -35,6 +35,7 @@ app.get('/health', async (req, res) => {
 app.use(events.adminRouter(express, require('./src/lib/internalAuth').requireInternalToken));
 app.use(require('./src/contactRoutes'));
 app.use(require('./src/careTeamRoutes'));
+app.use(require('./src/concernRoutes').router);
 app.use(routes);
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
 // eslint-disable-next-line no-unused-vars

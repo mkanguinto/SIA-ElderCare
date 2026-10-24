@@ -86,7 +86,7 @@ ok((await call('GET', '/api/patients/P-1002/medications', fam)).s === 403, 'fami
 ok((await call('POST', '/api/patients/P-1001/medications', cg, { name: 'X', dosage: '1', frequency: 'daily' })).s === 403, 'caregiver cannot prescribe (403)');
 
 // Patient onboarding (fixed test identity: first run creates it, later runs hit the duplicate check)
-const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000', conditions: ['hypertension'], medications: [{ name: 'Amlodipine', dosage: '5 mg', frequency: 'Once daily', times: ['08:00'] }] };
+const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000', conditions: ['hypertension'], medications: [{ name: 'Amlodipine', dosage: '5 mg', frequency: 'Once daily', times: ['08:00'], source: { type: 'physician_order', prescriber: 'Dr. Test Prescriber' } }] };
 ok((await call('POST', '/api/patients', nurse, { fullName: 'X' })).s === 422, 'onboarding validation (422)');
 r = await call('POST', '/api/patients', nurse, newPatient);
 ok(r.s === 201 || r.s === 409, `onboarding creates a patient or detects the duplicate (${r.s} ${r.j.patient ? r.j.patient.id : r.j.patientId})`);
@@ -247,10 +247,16 @@ ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', cg, newTask)).s =
 ok((await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, { ...newTask, frequency: 'weekly' })).s === 422, 'weekly task without days rejected (422)');
 r = await call('POST', '/api/patients/P-1001/care-plan/tasks', nurse, newTask);
 const addedId = r.j && r.j.id;
+const addedToDraft = Boolean(r.j && r.j.draft);
 ok(r.s === 201 && r.j.category === 'emotional_social', 'clinic staff add a duty (201)');
 r = await call('PATCH', `/api/care/tasks/${addedId}`, nurse, { times: ['15:00', '19:00'] });
 ok(r.s === 200 && r.j.times.length === 2, 'clinic staff change a duty (PATCH 200)');
-ok((await call('DELETE', `/api/care/tasks/${addedId}`, nurse)).s === 204 && (await call('POST', `/api/care/tasks/${addedId}/completions`, cg, { slot: '15:00' })).s === 409, 'retired duty can no longer be ticked off (409)');
+ok(addedToDraft, 'a new duty goes into a draft of the plan, not the plan in use');
+ok((await call('DELETE', `/api/care/tasks/${addedId}`, nurse)).s === 204 && (await call('POST', `/api/care/tasks/${addedId}/completions`, cg, { slot: '15:00' })).s === 409, 'a draft duty cannot be ticked off (409)');
+{ // leave the demo plan as it was: drop the draft this test started
+  const d = (await call('GET', '/api/patients/P-1001/care-plan', nurse)).j.draft;
+  ok(d && (await call('POST', `/api/care-plan/versions/${d.id}/discard`, nurse, { reason: 'Smoke test draft' })).s === 200, 'the smoke test draft is discarded (kept in the history)');
+}
 r = await call('GET', '/api/patients/P-1001/care-plan/history?page=1&pageSize=5', fam);
 ok(r.s === 200 && typeof r.j.adherence.scheduled === 'number' && r.j.adherence.categories.length && r.j.pagination.pageSize === 5 && r.j.completions.length >= 1,
   `family sees adherence: ${r.j.adherence && r.j.adherence.rate}% of ${r.j.adherence && r.j.adherence.scheduled} scheduled duties this week`);

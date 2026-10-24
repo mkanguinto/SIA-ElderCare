@@ -29,6 +29,8 @@
  * | GET/POST | /api/patients/:id/clinic-contact  | family, caregiver (own; POST), clinic (GET) | Clinic Risk Queue |
  * | GET    | /api/clinic/contact-requests, POST /:id/seen|reply|close | clinic         | Clinic Risk Queue      |
  * | GET    | /api/clinic/contact-info            | any signed-in user                  | Clinic Risk Queue      |
+ * | GET/POST | /api/patients/:id/concerns        | caregiver (own), clinic             | Clinic Risk Queue      |
+ * | GET/POST | /api/clinic/concerns[/:id/acknowledge|note|resolve] | clinic (care team) | Clinic Risk Queue |
  * | GET    | /api/patients/:id/people            | caregiver, family (own), clinic     | gateway + Clinic Risk  |
  * | GET    | /api/clinic/queue/history           | clinic, admin                       | Clinic Risk Queue      |
  * | POST   | /api/clinic/queue/:itemId/visits    | clinic                              | Clinic Risk Queue      |
@@ -53,6 +55,12 @@
  * | POST   | /api/patients/:id/care-plan/tasks   | clinic                              | Care Plan              |
  * | PATCH/DELETE | /api/care/tasks/:taskId       | clinic                              | Care Plan              |
  * | POST   | /api/care/tasks/:taskId/completions | caregiver (service checks the task's patient) | Care Plan    |
+ * | GET/POST | /api/patients/:id/care-plan/versions, /drafts | clinic (care team, checked by the service) | Care Plan |
+ * | GET/PATCH/POST | /api/care-plan/versions/:vid[/verification|activate|discard] | clinic (care team); GET also own caregiver | Care Plan |
+ * | POST   | /api/patients/:id/medication-reports | caregiver (own)                    | Care Plan              |
+ * | GET    | /api/patients/:id/medication-reports | caregiver, family (own), clinic    | Care Plan              |
+ * | GET/POST | /api/patients/:id/care-reports, /api/care-reports/attention, /:type/:id/review | clinic | Care Plan |
+ * | POST   | /api/patients/:id/medications/:medId/stop|revisions | clinic             | Daily Check-In Logger  |
  */
 const express = require('express');
 const { authenticate } = require('../middleware/authMiddleware');
@@ -111,6 +119,8 @@ router.get(
 );
 router.post('/patients/:id/medications', authorize(ROLES.CLINIC), forwardTo('checkin'));
 router.patch('/patients/:id/medications/:medId', authorize(ROLES.CLINIC), forwardTo('checkin'));
+// A prescription changes only by a new record from its source, or is stopped with the order that stopped it.
+router.post('/patients/:id/medications/:medId/:op(stop|revisions)', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 // A patient's scheduled / recent visits, readable by their caregiver and family too
 router.get(
@@ -149,6 +159,11 @@ router.post('/patients/:id/clinic-contact', authorize(ROLES.CAREGIVER, ROLES.FAM
 router.get('/patients/:id/clinic-contact', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('clinic'));
 router.get('/clinic/contact-requests', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.post('/clinic/contact-requests/:id/:op(seen|reply|close)', authorize(ROLES.CLINIC), forwardTo('clinic'));
+// Concerns: the caregiver (or a nurse) reports one; only a nurse on the care team acknowledges, notes and resolves it.
+router.post('/patients/:id/concerns', authorize(ROLES.CAREGIVER, ROLES.CLINIC), requirePatientAccess('id'), forwardTo('clinic'));
+router.get('/patients/:id/concerns', authorize(ROLES.CAREGIVER, ROLES.CLINIC), requirePatientAccess('id'), forwardTo('clinic'));
+router.get('/clinic/concerns', authorize(ROLES.CLINIC), forwardTo('clinic'));
+router.post('/clinic/concerns/:id/:op(acknowledge|note|resolve)', authorize(ROLES.CLINIC), forwardTo('clinic'));
 
 /* ---------------------------- Care Plan (caregiver duties) ---------------------------- */
 const ANY_ROLE = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC, ROLES.ADMIN];
@@ -162,6 +177,19 @@ router.patch('/care/tasks/:taskId', authorize(ROLES.CLINIC), forwardTo('care'));
 router.delete('/care/tasks/:taskId', authorize(ROLES.CLINIC), forwardTo('care'));
 // The task id does not name the patient: the care service checks the task's patient against X-User-Patients.
 router.post('/care/tasks/:taskId/completions', authorize(ROLES.CAREGIVER), forwardTo('care'));
+// Plan versions: nurses only (the care service also checks the nurse is on the elder's care team). A caregiver
+// may open the version their checklist shows; the service refuses drafts and other elders.
+router.get('/patients/:id/care-plan/versions', authorize(ROLES.CLINIC), forwardTo('care'));
+router.post('/patients/:id/care-plan/drafts', authorize(ROLES.CLINIC), forwardTo('care'));
+router.get('/care-plan/versions/:vid', authorize(ROLES.CLINIC, ROLES.CAREGIVER), forwardTo('care'));
+router.patch('/care-plan/versions/:vid', authorize(ROLES.CLINIC), forwardTo('care'));
+router.post('/care-plan/versions/:vid/:op(verification|activate|discard)', authorize(ROLES.CLINIC), forwardTo('care'));
+// Caregiver-reported medicine doses, and nurse review of caregiver reports (review is not concern resolution).
+router.post('/patients/:id/medication-reports', authorize(ROLES.CAREGIVER), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/medication-reports', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('care'));
+router.get('/patients/:id/care-reports', authorize(ROLES.CLINIC), forwardTo('care'));
+router.get('/care-reports/attention', authorize(ROLES.CLINIC), forwardTo('care'));
+router.post('/care-reports/:type(task|medication)/:id/review', authorize(ROLES.CLINIC), forwardTo('care'));
 
 router.get(
   '/patients/:id',

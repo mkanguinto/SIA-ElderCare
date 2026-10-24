@@ -443,12 +443,32 @@ function FamilyAlerts({ user, patientId }) {
   );
 }
 
+/** The family's view of the care plan in use: goals, preferences, who is responsible and how to reach the clinic. */
+function PlanSummary({ patientId }) {
+  const tr = useT();
+  const [s, setS] = useState(null);
+  useEffect(() => { api(`/api/patients/${encodeURIComponent(patientId)}/care-plan`).then((r) => setS(r.summary || null)).catch(() => setS(null)); }, [patientId]);
+  if (!s) return null;
+  return (
+    <section className="m-card">
+      <div className="m-between"><h2 className="m-card-title" style={{ marginBottom: 0 }}>{tr('Care plan', 'Care plan')}</h2><Chip tone="info">{tr(`Version ${s.version}`, `Bersyon ${s.version}`)}</Chip></div>
+      {s.goals && <p style={{ marginTop: '.4rem' }}><strong>{tr('Goals', 'Layunin')}:</strong> {s.goals}</p>}
+      {s.preferences && <p className="m-muted" style={{ marginTop: '.3rem' }}>{s.preferences}</p>}
+      <p className="m-caption" style={{ marginTop: '.4rem' }}>{[s.responsibleNurse && tr(`Nurse: ${s.responsibleNurse}`, `Nars: ${s.responsibleNurse}`), s.reviewDate && tr(`next review ${s.reviewDate}`, `susunod na pagsusuri ${s.reviewDate}`)].filter(Boolean).join(' · ')}</p>
+      {s.contact && (s.contact.monitoringHours || s.contact.emergency) && (
+        <p className="m-caption">{s.contact.monitoringHours ? tr(`Clinic hours: ${s.contact.monitoringHours}. `, `Oras ng klinika: ${s.contact.monitoringHours}. `) : ''}{s.contact.emergency || ''}</p>
+      )}
+    </section>
+  );
+}
+
 function FamilyDuties({ patientId }) {
   const tr = useT();
   return (
     <>
       <TopBar title={tr('Caregiver duties', 'Gawain ng tagapag-alaga')} back={BASE} />
       <p className="m-muted" style={{ marginBottom: '1rem' }}>{tr('What the caregiver has done today from the care plan the health center set up. View only.', 'Ang nagawa ng tagapag-alaga ngayon mula sa care plan ng health center.')}</p>
+      <PlanSummary patientId={patientId} />
       <DutiesScreen patients={[{ id: patientId, fullName: '' }]} editable={false} />
     </>
   );
