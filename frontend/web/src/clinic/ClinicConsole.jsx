@@ -45,15 +45,16 @@ export default function ClinicConsole({ user, path }) {
   const parts = path.replace(/\/+$/, '').split('/').filter(Boolean).slice(1); // after "clinic"
   let page;
   let width = 'is-wide';
+  // Every page uses the full width beside the sidebar; forms lay their fields out in two columns.
   if (!parts.length) page = <RiskQueue user={user} />;
-  else if (parts[0] === 'patients' && parts[1] === 'new') { page = <AddPatient />; width = ''; }
-  else if (parts[0] === 'patients' && parts[2] === 'schedule') { page = <ScheduleVisit patientId={parts[1]} />; width = ''; }
-  else if (parts[0] === 'patients' && parts[2] === 'handover') { page = <HandoverForm user={user} patientId={parts[1]} />; width = ''; }
+  else if (parts[0] === 'patients' && parts[1] === 'new') { page = <AddPatient />; width = 'is-wide is-form'; }
+  else if (parts[0] === 'patients' && parts[2] === 'schedule') { page = <ScheduleVisit patientId={parts[1]} />; width = 'is-wide is-form'; }
+  else if (parts[0] === 'patients' && parts[2] === 'handover') { page = <HandoverForm user={user} patientId={parts[1]} />; width = 'is-wide is-form'; }
   else if (parts[0] === 'patients' && parts[1]) page = <PatientCase key={parts[1]} user={user} patientId={parts[1]} />;
-  else if (parts[0] === 'patients') { page = <Patients />; width = ''; }
+  else if (parts[0] === 'patients') page = <Patients />;
   else if (parts[0] === 'reviews') page = <Reviews desktop />;
-  else if (parts[0] === 'messages') { page = <ClinicMessages user={user} />; width = ''; }
-  else if (parts[0] === 'digest') { page = <Digest />; width = ''; }
+  else if (parts[0] === 'messages') page = <ClinicMessages user={user} />;
+  else if (parts[0] === 'digest') page = <Digest />;
   else if (parts[0] === 'visits') page = <ClinicVisits user={user} />;
   else if (parts[0] === 'history') page = <CaseHistory />;
   else if (parts[0] === 'alert-rules') page = <AlertRules user={user} />;

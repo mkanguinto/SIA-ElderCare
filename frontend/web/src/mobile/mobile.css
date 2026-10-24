@@ -780,7 +780,7 @@
 .ad-strong { font-weight: 700; color: var(--text-primary); }
 
 /* Forms */
-.ad-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0 1.25rem; max-width: 58rem; }
+.ad-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0 1.25rem; }
 .ad-form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; margin-top: 1rem; }
 .ad-form-row .ad-field { flex: 1 1 12rem; }
 .ad-form-row .ad-field.is-narrow { flex: 0 1 9rem; }
@@ -965,3 +965,16 @@
 body:has(.ad-app.is-nurse) { background: #fff; }
 body:has(.ad-app.is-admin) { background: #15362c; }
 .ad-table.is-boxed td:first-child { white-space: nowrap; }
+
+/* Desktop: phone screens shown in the console fill the width. Lists become card grids; forms get two columns
+   inside a panel, with notes, choices and the main button across the whole width. */
+.ad-clinic .ad-page.is-wide .m-stack:has(> .m-list-row), .ad-clinic .ad-page.is-wide .m-stack:has(> .m-card) {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr)); gap: 1rem; align-items: start; }
+.ad-clinic .ad-page.is-wide .m-stack > .m-list-row { margin: 0; height: 100%; }
+.ad-clinic .ad-page.is-wide .m-search { max-width: 34rem; }
+.ad-clinic .ad-page.is-wide .m-hero { max-width: none; }
+.ad-clinic .ad-page.is-form > :is(form.m-stack, .m-stack) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.5rem; align-items: start;
+  background: #fff; border: 1px solid var(--ad-line); border-radius: 1.5rem; padding: 1.5rem; box-shadow: var(--ad-shadow); }
+.ad-clinic .ad-page.is-form > :is(form.m-stack, .m-stack) > :is(fieldset, .m-banner, .m-cta, .m-error, .m-note, .m-seg, .m-grid-2, .m-card, p, h2, button, .m-footer-actions, .m-draft) { grid-column: 1 / -1; }
+.ad-clinic .ad-page.is-form .m-cta { max-width: 26rem; }
+@media (max-width: 64rem) { .ad-clinic .ad-page.is-form > :is(form.m-stack, .m-stack) { grid-template-columns: 1fr; } }
