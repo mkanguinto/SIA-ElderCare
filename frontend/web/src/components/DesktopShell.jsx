@@ -6,9 +6,9 @@ import { requestSignOut } from '../api';
 import { Link } from '../router';
 import { initials } from '../format';
 import Icon from '../mobile/icons';
-import logo from '../assets/figma/eldercare-logo.png';
+import logo from '../assets/eldercare-mark.png';
 
-/** The heart mark of the ElderCare logo (the Figma crop of the full logo image). */
+/** The ElderCare heart mark (carers inside a heart on a light disc). */
 export function Logo() {
   return <span className="ad-logo" aria-hidden="true"><img src={logo} alt="" /></span>;
 }
