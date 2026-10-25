@@ -61,7 +61,7 @@ async function issueSecret(req, account, purpose) {
   });
   // No links (see the header): the person opens the app and types the code.
   const body = purpose === 'activation'
-    ? `ElderCare: your activation code is ${secret} (valid 24 hours). Open the ElderCare app, tap Activate my account and use the username ${account.username} . Do not share this code.`
+    ? `ElderCare: your activation code is ${secret} (valid 24 hours). Open the ElderCare app, tap Activate my account, then enter the username ${account.username} and this code. Do not share it.`
     : `ElderCare: your password reset code is ${secret} (valid 1 hour). Open the ElderCare app, tap Sign in, then Forgot password. If you did not ask for this, ignore this SMS.`;
   const sms = await sendAccountSms({ to: account.phone, body, purpose, requestId: req.id });
   await store.updateToken(token.id, { delivery: sms.delivery, deliveryNote: sms.note, providerRef: sms.ref, deliveryUpdatedAt: new Date() });

@@ -277,8 +277,18 @@ To show it in the defense:
 
 ## Presentation walkthrough (clean start, about 15 minutes)
 
-The cloud (https://eldercare-web.onrender.com) has the accounts but **no patients**, so the story is built live in
+The cloud (https://eldercare-web-2knr.onrender.com) has the accounts but **no patients**, so the story is built live in
 the order it happens in real life. Password for every demo account: `ElderCare@2026`.
+
+**Demo-day checklist**
+- The night before: clear test data (`node scripts/reset-patient-data.mjs --yes`), check the TextBee webhook points
+  at the current gateway, and decide which allow-listed numbers receive the codes (one number can receive both).
+- Keep the SMS phone charging with the TextBee app open and battery saver off; the Accounts page shows when it was
+  last online and warns after 30 minutes of silence.
+- **Backup:** if the cloud is down or slow, run the same app locally (`docker compose up -d`, then
+  `cd frontend/web && npx vite --host 0.0.0.0 --port 3000`). Phones on the same Wi-Fi open
+  `http://<laptop IP>:3000`. Local Docker has the demo elders unless you clear them.
+- Close ElderCare tabs after rehearsals: the free plan has 750 hours a month for all services together.
 
 **Before the presentation (10 minutes ahead)**
 1. Open the web app and sign in once so the free Render services wake up ("Starting the servers…" ≈ 1 minute).
@@ -334,7 +344,7 @@ the order it happens in real life. Password for every demo account: `ElderCare@2
 
 **8 · Integration extras (if time allows)**
 - **Check weather risk now** on the risk queue (OpenWeatherMap × the elder's ZIP code).
-- Node-RED DLQ dashboard `https://eldercare-node-red.onrender.com/dlq` (user `ops`).
+- Node-RED DLQ dashboard `https://eldercare-node-red-oolu.onrender.com/dlq` (user `ops`).
 - Security in Postman: family → clinic queue = 403, tampered token = 401. Resilience (local Docker only):
   `docker compose stop alert-service`, a check-in is still accepted and the alert arrives after
   `docker compose start alert-service`.

@@ -43,7 +43,13 @@ function smsText(s, name) {
   switch (s.delivery) {
     case 'simulated': return `The ${what} was NOT sent: SMS is simulated (${s.note || 'dry-run'}). ${name} will not receive it.`;
     case 'failed': return `The ${what} was NOT sent: ${s.note || 'the SMS failed'}. Fix the problem, then send a new one.`;
-    case 'queued': return `The ${what} for ${s.sentTo} is waiting for the clinic's SMS phone to send it. Not delivered yet.${until}`;
+    case 'queued': {
+      // TextBee hands each text to the Android phone running its app; an offline or sleeping phone holds it.
+      const mins = s.sentAt ? Math.round((Date.now() - new Date(s.sentAt)) / 60000) : 0;
+      return `The ${what} for ${s.sentTo} is waiting for the clinic's SMS phone to send it. Not delivered yet.${mins >= 2
+        ? ` It has waited ${mins} minutes: the SMS phone is probably offline or asleep. Open the TextBee app on it (charging, battery saver off), then use Resend if it still does not go.`
+        : ''}${until}`;
+    }
     case 'sent': return `The ${what} left the clinic's SMS phone for ${s.sentTo}${s.deliveryUpdatedAt ? ` at ${when(s.deliveryUpdatedAt)}` : ''}. No delivery report yet, so ask ${name} whether it arrived.${until}`;
     // The network's report can say delivered even when a filter dropped the text: only the person using the code proves it arrived.
     case 'delivered': return `The SMS phone reports the ${what} delivered to ${s.sentTo}${s.deliveryUpdatedAt ? ` (${when(s.deliveryUpdatedAt)})` : ''}. It is confirmed only when ${name} uses it.${until}`;
@@ -135,13 +141,17 @@ function SmsCheck() {
   const check = useCallback(() => { setC(null); api('/api/admin/sms-check').then(setC).catch((e) => setC({ ready: false, problems: [e.message] })); }, []);
   useEffect(() => { check(); }, [check]);
   const d = c && c.gateway && c.gateway.device;
-  const tone = !c ? 'info' : c.ready ? 'ok' : 'high';
+  // The phone reports in while the TextBee app runs; a long silence means texts will wait in the queue.
+  const silentMin = d && d.lastSeenAt ? Math.round((Date.now() - new Date(d.lastSeenAt)) / 60000) : null;
+  const asleep = c && c.ready && silentMin !== null && silentMin > 30;
+  const tone = !c ? 'info' : c.ready && !asleep ? 'ok' : c.ready ? 'moderate' : 'high';
   return (
     <section className={`m-banner tone-${tone} ad-sms`} aria-live="polite">
       <Icon name={c && c.ready ? 'checkCircle' : 'alert'} />
       <div className="m-grow">
         <strong>{!c ? 'Checking SMS…' : c.ready ? 'SMS is live: codes and links are really sent' : 'SMS is NOT ready: codes and links may not reach anyone'}</strong>
         {c && c.problems && c.problems.map((p) => <p key={p}>{p}</p>)}
+        {asleep && <p><strong>The SMS phone has not been online for {silentMin >= 90 ? `${Math.round(silentMin / 60)} hours` : `${silentMin} minutes`}.</strong> New codes will wait until it is: open the TextBee app on it (keep it charging, battery saver off) before creating accounts.</p>}
         {c && c.mode && (
           <p className="ad-sms-detail">
             {c.mode.reason}{c.mode.live && c.mode.allowlistSize ? ' (other numbers are simulated, not sent)' : ''}

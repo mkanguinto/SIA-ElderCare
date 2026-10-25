@@ -12,6 +12,7 @@
  *   - Request IDs + structured access logs
  */
 const config = require('./src/config'); // loads .env first and fails fast on missing secrets
+const net = require('net');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -33,6 +34,18 @@ const app = express();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1); // behind a cloud load balancer (Section 14)
+// Behind Cloudflare and Render's proxies, the load balancer's own address arrives for every visitor, so the rate
+// limits would be shared by everyone and the audit log would record the proxy. When CLIENT_IP_HEADER is set (only
+// where the edge sets that header and clients cannot reach the gateway around it), req.ip is the visitor's address.
+if (config.clientIpHeaders.length) {
+  app.use((req, res, next) => {
+    for (const h of config.clientIpHeaders) {
+      const v = String(req.get(h) || '').split(',')[0].trim();
+      if (net.isIP(v)) { Object.defineProperty(req, 'ip', { value: v, configurable: true, enumerable: true }); break; }
+    }
+    next();
+  });
+}
 
 app.use(requestContext);
 app.use(helmet());

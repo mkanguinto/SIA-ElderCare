@@ -98,6 +98,9 @@ const config = {
 
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 5000),
 
+  // Headers an edge proxy sets to the visitor's own address (e.g. "cf-connecting-ip,true-client-ip" behind
+  // Cloudflare on Render). Empty = use the address of the connecting load balancer (trust proxy 1).
+  clientIpHeaders: (process.env.CLIENT_IP_HEADER || '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
   rateLimit: {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
     max: Number(process.env.RATE_LIMIT_MAX || 300),

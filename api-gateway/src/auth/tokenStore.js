@@ -127,6 +127,7 @@ class TokenStore {
     s.previousJti = s.currentJti;
     s.currentJti = newJti;
     s.rotatedAt = now();
+    s.rotatedAtMs = Date.now();
     s.exp = exp;
     this.save();
   }

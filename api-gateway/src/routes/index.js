@@ -126,6 +126,9 @@ router.patch('/patients/:id/medications/:medId', authorize(ROLES.CLINIC), forwar
 // A prescription changes only by a new record from its source, or is stopped with the order that stopped it.
 router.post('/patients/:id/medications/:medId/:op(stop|revisions)', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
+// Where the clinic is with the elder's latest case (open / closed, when, by whom): caregiver, family, clinic
+router.get('/patients/:id/case', authorize(...PATIENT_DATA), requirePatientAccess('id'), forwardTo('clinic'));
+
 // A patient's scheduled / recent visits, readable by their caregiver and family too
 router.get(
   '/patients/:id/visits',

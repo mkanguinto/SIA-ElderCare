@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { currentUser, hasNotice, requestSignOut, onSessionChange } from './api';
+import { currentUser, hasNotice, requestSignOut, onSessionChange, onUserUpdate, refreshLinks } from './api';
 import { matchRoute, navigate, usePath } from './router';
 import ClinicConsole from './clinic/ClinicConsole';
 import { PrefsProvider } from './mobile/kit';
@@ -52,6 +52,18 @@ function App() {
 
   // One place reacts to every identity change (sign-in, sign-out, account switch, expired session):
   // all page state is dropped because the layout and the page are keyed by the user ID below.
+  useEffect(() => onUserUpdate(setUser), []);
+  // Caregivers and family see a newly linked elder without signing in again: fresh links when the app opens and
+  // whenever it comes back on screen (at most once a minute).
+  const scoped = user && ['caregiver', 'family_member'].includes(user.role);
+  useEffect(() => {
+    if (!scoped) return undefined;
+    let last = 0;
+    const check = () => { if (document.visibilityState === 'visible' && Date.now() - last > 60000) { last = Date.now(); refreshLinks(); } };
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
+  }, [scoped]);
   useEffect(() => onSessionChange((next) => {
     setUser(next);
     // Signed out for a reason (another device, session ended): go to Sign in, which explains it.

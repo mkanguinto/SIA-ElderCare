@@ -375,6 +375,31 @@ router.post('/api/clinic/queue/:itemId/visits', async (req, res, next) => {
 //   upcoming: status 'scheduled', soonest first (includes visits up to 12 hours overdue)
 //   recent:   status 'completed' with completed_at in the last RECENT_VISIT_DAYS days (default 30) - this is
 //             exactly what populates the clinic's "Recent visits" list
+// GET /api/patients/:id/case   (caregiver / family of this elder, clinic) - where the clinic is with the elder's
+// latest case: open, being reviewed, visit booked, or closed (when and by which nurse). No clinical notes.
+router.get('/api/patients/:id/case', async (req, res, next) => {
+  try {
+    const patientId = String(req.params.id);
+    if (req.user && PATIENT_SCOPED.includes(req.user.role) && !req.user.patients.includes(patientId)) {
+      return res.status(403).json({ error: 'forbidden', message: 'You are not assigned to this patient' });
+    }
+    const { rows: [r] } = await pool.query(
+      `SELECT q.status, q.created_at, q.updated_at, q.resolved_at, q.resolved_by,
+              (SELECT m.nurse_name FROM care_team_members m WHERE m.nurse_id = q.resolved_by ORDER BY m.added_at DESC LIMIT 1) AS resolved_by_name,
+              (SELECT v.completed_at FROM scheduled_visits v WHERE v.queue_item_id = q.id AND v.status = 'completed' ORDER BY v.completed_at DESC LIMIT 1) AS visit_completed_at
+         FROM risk_queue q WHERE q.patient_id = $1 ORDER BY q.created_at DESC LIMIT 1`, [patientId],
+    );
+    if (!r) return res.json({ patientId, case: null });
+    const closed = ['resolved', 'dismissed'].includes(r.status);
+    return res.json({ patientId, case: {
+      status: r.status, closed, openedAt: r.created_at, closedAt: closed ? r.resolved_at || r.updated_at : null,
+      closedByName: closed ? r.resolved_by_name || null : null, visitCompletedAt: r.visit_completed_at || null,
+    } });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // Caregivers / family members (via GET /api/patients/:id/visits) only see their own patients' visits.
 router.get('/api/clinic/visits', async (req, res, next) => {
   try {

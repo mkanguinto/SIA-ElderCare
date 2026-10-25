@@ -1096,3 +1096,5 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .m-intro-dots span.is-on { width: 1.5rem; background: var(--bg-primary); }
 .m-intro-actions { display: flex; gap: .75rem; }
 .m-intro-actions > * { flex: 1; }
+/* The clinic closed the case after a flagged reading: the same card, calm colours. */
+.m-attention.is-followed-up { background: var(--bg-primary-soft); color: var(--text-brand); }

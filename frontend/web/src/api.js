@@ -34,6 +34,14 @@ function save(next) {
   // Notify only when the signed-in identity changes (sign-in, sign-out, account switch) -
   // a silent token refresh for the same user must not reset the app.
   if ((before && before.id) !== (after && after.id)) listeners.forEach((fn) => fn(after));
+  // Same person, new elder links (a refreshed token after the admin or a nurse linked an elder): update quietly.
+  else if (after && before && JSON.stringify(before.patients) !== JSON.stringify(after.patients)) updateListeners.forEach((fn) => fn(after));
+}
+const updateListeners = new Set();
+/** Called when the signed-in user's elder links change (no sign-in needed to see a newly linked elder). */
+export function onUserUpdate(fn) {
+  updateListeners.add(fn);
+  return () => updateListeners.delete(fn);
 }
 
 function decode(token) {
@@ -231,6 +239,9 @@ export async function switchAccount(username, password) {
 
 let refreshing = null;
 /** @returns {Promise<true|string>} true, or why it failed ('session_locked', 'session_replaced', ...) */
+/** Fetches a fresh token, which carries the user's current elder links (see onUserUpdate). */
+export function refreshLinks() { return session && !session.locked ? refresh() : Promise.resolve(false); }
+
 function refresh() {
   if (!session || !session.refreshToken) return Promise.resolve('session_ended');
   if (!refreshing) {

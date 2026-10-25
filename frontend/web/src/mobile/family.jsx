@@ -34,7 +34,8 @@ function usePatientData(patientId, days) {
       api(`/api/patients/${patientId}/history?days=${days}&limit=200`),
       api(`/api/patients/${patientId}/medications`).catch(() => ({ medications: [] })),
       api(`/api/patients/${patientId}/visits?view=upcoming`).catch(() => ({ visits: [] })),
-    ]).then(([h, m, v]) => live && setData({ patient: h.patient, checkins: h.checkins, trends: h.trends, meds: m.medications, visits: v.visits }))
+      api(`/api/patients/${patientId}/case`).catch(() => ({ case: null })),
+    ]).then(([h, m, v, c]) => live && setData({ patient: h.patient, checkins: h.checkins, trends: h.trends, meds: m.medications, visits: v.visits, case: c.case }))
       .catch((e) => live && setData({ error: e.message }));
     load();
     const t = setInterval(load, 30000);
@@ -121,6 +122,8 @@ function Today({ user, patientId }) {
   const flagged = today && !['none', 'low'].includes(today.severity) ? today : null;
   const alert = flagged && (alerts || []).find((a) => a.metadata && a.metadata.checkinId === flagged.id);
   const h = flagged ? flagOf(flagged, alert) : null;
+  // The clinic closed the case after this reading: say so instead of "needs assessment".
+  const followedUp = flagged && data.case && data.case.closed && new Date(data.case.closedAt) >= new Date(flagged.recordedAt) ? data.case : null;
   const base = p.baseline || {};
   const newAlerts = (alerts || []).filter((a) => isToday(a.createdAt)).length;
   const sender = latest && people && (people.caregivers.find((c) => c.id === latest.caregiverId) || {}).name;
@@ -144,7 +147,24 @@ function Today({ user, patientId }) {
             : tr('No check-ins yet', 'Wala pang check-in')}</span></div>
       </section>
 
-      {flagged && (
+      {followedUp && (
+        <section className="m-attention is-followed-up" style={{ marginTop: '.75rem' }}>
+          <div className="m-between"><span>{tr('FOLLOWED UP', 'NA-FOLLOW UP NA')}</span><span className="m-pill-white">{tr('Reported', 'Naiulat')} {clock(flagged.recordedAt)}</span></div>
+          <h2>{reported(h, lang)}</h2>
+          <Value h={h} />
+          <p style={{ fontWeight: 700 }}>
+            {followedUp.visitCompletedAt
+              ? tr(`A nurse visited ${her[0] === 'his' ? 'him' : 'her'} at ${clock(followedUp.visitCompletedAt)}.`, `Binisita ng nars noong ${clock(followedUp.visitCompletedAt)}.`)
+              : tr('The clinic has followed this up.', 'Na-follow up na ito ng klinika.')}{' '}
+            {tr(`Case closed${followedUp.closedByName ? ` by ${followedUp.closedByName}` : ''} at ${isToday(followedUp.closedAt) ? clock(followedUp.closedAt) : `${manilaDay(followedUp.closedAt)} ${clock(followedUp.closedAt)}`}.`,
+              `Isinara${followedUp.closedByName ? ` ni ${followedUp.closedByName}` : ''} noong ${clock(followedUp.closedAt)}.`)}
+          </p>
+          <p className="m-caption" style={{ color: 'inherit', marginTop: '.6rem' }}>
+            {tr('Questions?', 'May tanong?')} <Link to={`${BASE}/contact`} style={{ fontWeight: 700 }}>{tr('Message the clinic', 'Magmensahe sa klinika')}</Link>
+          </p>
+        </section>
+      )}
+      {flagged && !followedUp && (
         <section className="m-attention" style={{ marginTop: '.75rem' }}>
           <div className="m-between"><span>{tr('NEEDS ATTENTION', 'KAILANGANG BANTAYAN')}</span><span className="m-pill-white">{tr('Reported', 'Naiulat')} {clock(flagged.recordedAt)}</span></div>
           <h2>{reported(h, lang)}</h2>
