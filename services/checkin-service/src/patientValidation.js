@@ -254,4 +254,27 @@ function validatePatient(b, now = new Date()) {
   return errors.length ? { ok: false, errors } : { ok: true, value: v };
 }
 
-module.exports = { validatePatient, validateMedication, validateStop, validateRxVerification, isRealDate, RX_SOURCES, ROUTES, VERIFY_METHODS };
+/** The clinical part of a patient's profile, recorded by a nurse: conditions and limited mobility. */
+function validateHealth(b) {
+  const errors = [];
+  const v = {};
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return { ok: false, errors: ['body must be an object'] };
+  const unknown = Object.keys(b).filter((k) => !['conditions', 'mobilityRestricted'].includes(k));
+  if (unknown.length) errors.push(`unknown field(s): ${unknown.join(', ')}`);
+  if (b.conditions !== undefined) {
+    if (!Array.isArray(b.conditions) || b.conditions.length > 15) errors.push('conditions must be a list of up to 15 conditions');
+    else {
+      const slugs = b.conditions.map((c) => str(c).toLowerCase().replace(/[\s-]+/g, '_'));
+      if (slugs.some((c) => !/^[a-z][a-z0-9_]{1,39}$/.test(c))) errors.push('Each condition must be 2-40 letters, e.g. "hypertension" or "heart_disease"');
+      else v.conditions = [...new Set(slugs)];
+    }
+  }
+  if (b.mobilityRestricted !== undefined) {
+    if (typeof b.mobilityRestricted !== 'boolean') errors.push('mobilityRestricted must be true or false');
+    else v.mobilityRestricted = b.mobilityRestricted;
+  }
+  if (!errors.length && !Object.keys(v).length) errors.push('Give conditions and/or mobilityRestricted');
+  return errors.length ? { ok: false, errors } : { ok: true, value: v };
+}
+
+module.exports = { validateHealth, validatePatient, validateMedication, validateStop, validateRxVerification, isRealDate, RX_SOURCES, ROUTES, VERIFY_METHODS };

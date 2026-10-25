@@ -26,7 +26,7 @@ ok(admin && ana && ben && carla, 'nurse and admin sign-ins');
 // ---------------------------------------------------------------- test elder on team A, linked to the caregiver
 let pid = ((await call('GET', '/api/patients?pageSize=200', ana)).j.patients || []).find((p) => p.fullName === 'Care Plan Test Elder')?.id;
 if (!pid) {
-  const r = await call('POST', '/api/patients', ana, { fullName: 'Care Plan Test Elder', birthDate: '1944-04-04', sex: 'F', addressLine: 'Brgy 3, Manila', zipCode: '1000', conditions: [] });
+  const r = await call('POST', '/api/patients', admin, { fullName: 'Care Plan Test Elder', birthDate: '1944-04-04', sex: 'F', addressLine: 'Brgy 3, Manila', zipCode: '1000' });
   pid = r.j && r.j.patient && r.j.patient.id;
 }
 ok(Boolean(pid), `test elder ${pid}`);

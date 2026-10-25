@@ -14,6 +14,7 @@ import { weekDays } from '../mobile/plan';
 import TrendChart from '../components/TrendChart';
 import { VisitCard } from '../components/visits';
 import { CareToday } from '../components/care';
+import { HealthCard } from '../components/health';
 import CarePlanManager from './CarePlanManager';
 import { Medications, CareTeam } from '../pages/PatientProfile';
 import { EmrPanel } from '../pages/ClinicQueue';
@@ -85,6 +86,7 @@ export default function PatientCase({ user, patientId }) {
       {tab === 'overview' && (
         <div className="ad-case-grid">
           <WhyPriority item={item} patient={patient} />
+          <HealthCard patient={patient} canEdit onSaved={() => reload()} />
           <CaseReviews patientId={patientId} />
           <Concerns patientId={patientId} />
           <CareReports patientId={patientId} />

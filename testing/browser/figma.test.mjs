@@ -21,6 +21,18 @@ export default async function run({ shots } = {}) {
     check(await on('/m/caregiver/check-in?patient=P-1001', 'Step 1 of 3', 'Notes (Optional)'), 'check-in step 1 has a notes field for the nurse');
     check(await on('/m/caregiver/profile', 'Assigned Patients', 'App Preferences', 'Large Text Mode', 'Log out'), 'caregiver profile');
 
+    // First-time intro (caregiver): four short cards, then the home screen; reopened from Me.
+    await page.login('caregiver.maria', { intro: true });
+    await page.evaluate("Object.keys(localStorage).filter((k) => k.startsWith('eldercare.intro.')).forEach((k) => localStorage.removeItem(k))");
+    check(await on('/m/caregiver', 'Step 1 of 4', 'What ElderCare does') && await page.evaluate("!document.querySelector('.m-nav')"), 'first visit: the intro starts (step 1 of 4, no bottom menu)');
+    for (let k = 0; k < 3; k += 1) await page.click('Next');
+    check(await page.waitFor('If something is wrong') && await page.waitFor('911'), 'intro step 4: what to do when something is wrong (emergency 911)');
+    await page.click('Start');
+    check(await page.waitFor('Quick Actions'), 'Start opens the caregiver home');
+    await page.goto('/m/caregiver');
+    check(await page.waitFor('Quick Actions') && !(await page.text()).includes('Step 1 of 4'), 'the intro is shown only once');
+    check(await on('/m/caregiver/profile', 'How ElderCare works'), 'the intro can be reopened from Me');
+
     await page.login('family.jose');
     check(await on('/m/family', 'Lola Remedios Dela Cruz', 'Medicines Today', 'Latest vitals'), 'family dashboard');
     const home = await page.text();

@@ -12,7 +12,6 @@ const PAGES = [
   ['/clinic/history', 'Case history', 'case history'],
   ['/clinic/digest', 'Daily digest', 'daily digest'],
   ['/clinic/alert-rules', 'Alert rules', 'alert rules'],
-  ['/clinic/patients/new', 'Add patient', 'add patient'],
 ];
 
 export default async function run({ shots } = {}) {
@@ -46,7 +45,7 @@ export default async function run({ shots } = {}) {
     await page.goto('/admin/care-teams');
     check(await page.waitFor('Team Roster & Elders') && await page.waitFor('Add Nurse'), 'admin: care teams roster tab');
     await page.click('Link & Assignments', '.ad-tabs');
-    check(await page.waitFor('Link another elder'), 'admin: care teams link & assignments tab');
+    check(await page.waitFor('Add a new elder') && await page.waitFor('Register elder') && await page.waitFor('Link an existing elder'), 'admin: link & assignments tab registers a new elder and links existing ones');
     await page.click('Create New Team');
     check(await page.waitFor({ expr: "!!document.querySelector('.ad-drawer [role=dialog], .ad-drawer')" }) && await page.waitFor('New care team'), 'admin: Create New Team opens the drawer');
     await page.goto('/clinic');

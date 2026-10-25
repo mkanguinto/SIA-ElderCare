@@ -22,9 +22,9 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 | Check | Result |
 |---|---|
 | Unit tests | 167 / 167 passing (7 packages) |
-| End-to-end smoke test | 165 / 165 passing (all batches) |
+| End-to-end smoke test | 169 / 169 passing (all batches) |
 | Care plan end-to-end | 71 / 71 passing (`npm run test:care-plan`) |
-| Browser tests (headless Chrome) | 68 / 68 passing (5 files: phone screens, nurse console, handover, sessions, contact) |
+| Browser tests (headless Chrome) | 72 / 72 passing (5 files: phone screens and first-time intro, nurse and admin consoles, handover, sessions, contact) |
 | Postman collection (Postman CLI) | 95 requests, 157 assertions, 0 failures |
 | SoapUI test cases (replayed) | 4 / 4 passing |
 | Database isolation | every service reaches only its own database (4 × 4 login checks) |
@@ -183,6 +183,8 @@ Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gat
 * **Care plan versions.** A nurse on the elder's care team writes a **draft** (goals, preferences, assistance needs, allergies, clinical instructions, caregiver responsibilities, contacts, tasks); caregivers keep following the plan in use until the draft is **activated**. Diet, fluids, swallowing, skin / wound care, after-hours and emergency instructions need a clinical source and the **partner clinic's approval**: the clinician is not an app user, so the nurse records who approved it, how (in person, by phone, written order, referral document or other), the reference and the date. An elder must first be linked to a care team by the admin.
 * **Prescriptions** are recorded from their source (prescriber, facility, reference) and never changed in place: a change is a new record that supersedes the old one, a stop needs a reason. Dose times are chosen from dropdowns (half-hour steps, AM / PM, *Other time*); **+ Add another time** adds a dose and a time already chosen cannot be picked twice. *How often* opens one time row per dose.
 * **Task editing** opens the form in place of the task. **"Other (type it)"** ends every descriptive dropdown (route, sources, verification methods, help needed, SMS contact relation, measuring devices, why a reading is empty); the server accepts *other* only with the typed words.
+* **Who registers an elder.** The **admin** registers elders (*Care teams → + Add New Elder*): identity, address, ZIP code, care team, monitoring plan, case nurse, caregiver account and SMS contact - no health information (`POST /api/patients` is admin-only and refuses conditions, mobility, usual readings and medicines). The **nurse** records the clinical part on the patient's *Overview* (*Health conditions*, `PATCH /api/patients/:id/health`), the prescriptions and the care plan.
+* **First-time intro.** On their first visit, caregivers and family see four short cards (what ElderCare does, the daily check-in / today at a glance, tasks / alerts, what to do when something is wrong / contacting the clinic), with Skip; *Me → How ElderCare works* shows them again.
 * **Family verification.** A family account is linked to an elder only when a nurse records how the relationship was confirmed (the elder in person or by phone, ID and a document, or other); it is written to the account audit log.
 * **Nurse phone view.** On a phone (or *Settings → Phone view* in the console) the patient screen has **Overview / Care plan & medicines / Care team** tabs with the same panels as the computer.
 
@@ -460,9 +462,9 @@ Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 | Layer | Tool | Asset |
 |---|---|---|
 | Unit | `node --test` | `*/test/*.test.js` – 60 tests: vitals + patient validation, anomaly rules, heat index, triage thresholds, visit validation, TextBee client + webhook signature, SMS parsing, EMR mapping, gateway auth/RBAC |
-| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 165 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
+| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 169 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
 | Care plan end-to-end | Node script | `testing/care-plan-e2e.mjs` (`npm run test:care-plan`) – 71 checks: versions, verification, prescriptions, checklist, reports, concerns, roles |
-| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – 68 checks: phone screens, nurse console, handover, sessions and drafts, contact the clinic |
+| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – 72 checks: phone screens and the first-time intro, nurse console, handover, sessions and drafts, contact the clinic |
 | Accounts / sessions | `node --test` + smoke + Postman | `api-gateway/test/accounts.test.js`, `accountRules.test.js`; smoke "Accounts and sessions"; Postman folder 12 |
 | Weather demo / failure | fake OpenWeatherMap | `testing/mocks/fake-openweathermap.js` – heatwave + typhoon on demand, no API key |
 | Functional + security | Postman | `testing/postman/ElderCare_Connect.postman_collection.json` (folders 0–4) |

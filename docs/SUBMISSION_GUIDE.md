@@ -283,24 +283,31 @@ the order it happens in real life. Password for every demo account: `ElderCare@2
 **Before the presentation (10 minutes ahead)**
 1. Open the web app and sign in once so the free Render services wake up ("Starting the servers…" ≈ 1 minute).
 2. Open the windows you will switch between (separate browsers or private windows, since each one is one session):
-   computer – `admin.harold`, `nurse.ana`; phone (or a narrow window) – `nurse.ben`. Sign in `caregiver.maria` and
-   `family.jose` **after step 2**: a caregiver or family member sees a newly linked elder from their next sign-in.
+   computer – `admin.harold`, `nurse.ana`; phone (or a narrow window) – `nurse.ben`. Sign in the caregiver and the
+   family member **after step 3**: they see a newly linked elder from their next sign-in. With the demo accounts
+   (`caregiver.maria`, `family.jose`) you can skip account creation in step 1.
 3. If you rehearsed and want an empty start again: `node scripts/reset-patient-data.mjs --yes`.
 
 **1 · Admin sets up (computer, `admin.harold`)**
 - *Integration monitor* / *Service health*: every service is up; *Dead-letter queue*: empty.
-- *Accounts*: the staff, caregiver and family accounts; show the SMS check (real SMS only to allow-listed numbers;
-  simulated messages are labelled NOT sent).
-- *Care teams*: the teams and their nurses. (Come back here in step 3.)
+- *Accounts*: the SMS check at the top must say **Live** and the TextBee phone **online** (open the TextBee app on
+  the SMS phone if "last online" is old). Real texts go only to numbers on `SMS_RECIPIENT_ALLOWLIST`.
+- **Create the caregiver account** (role, name, username, mobile number). The person receives an SMS with an
+  8-character code; the page follows it (*waiting for the SMS phone* → *sent* → *delivered*). If it stays
+  *waiting*, the SMS phone is offline: open TextBee on it, then **Resend code**.
+- On the caregiver's phone: *Sign in → Activate my account* → username + code → choose a password. Do the same for
+  a family account if you show the family side.
 
-**2 · Nurse registers the elder (computer, `nurse.ana`)**
-- *Patients* → **+ Add patient**: name, birth date, barangay, ZIP code (drives the weather check), conditions,
-  "limited mobility", caregiver `caregiver.maria`, family `family.jose` with **How did you confirm they are family?**,
-  and an SMS contact. The elder gets the next number (P-1001 on a clean start).
+**2 · Admin registers the elder (*Care teams → + Add New Elder*)**
+- Name, birth date, sex, barangay, city, ZIP code (drives the weather check), care team (*RHU Manila - Team A*),
+  monitoring plan, case nurse (*Ana Cruz*), caregiver account, SMS contact. **Register elder** shows the new
+  number (P-1001 on a clean start). The admin enters no health information.
 
-**3 · Admin links the elder to a care team (`admin.harold`)**
-- *Care teams* → the new elder: team, monitoring plan and first case nurse (Ana). Without this no nurse can write
-  the care plan (the app says so).
+**3 · Nurse completes the clinical profile (`nurse.ana`, *Patients* → the elder)**
+- *Overview → Health conditions → Record*: e.g. high blood pressure, limited mobility (they feed the risk score).
+- *Care team* tab → link the family account with **How did you confirm they are family?**
+- The caregiver and family see the elder from their next sign-in. On their first visit a four-step intro explains
+  what ElderCare does and what they do in it (Skip is always there; *Me → How ElderCare works* shows it again).
 
 **4 · Nurse writes the care plan (`nurse.ana`, patient → *Care Plan & Medicines*)**
 - **Add medicine** from the prescription: strength, dose, route, *How often* = Twice a day → two time dropdowns
