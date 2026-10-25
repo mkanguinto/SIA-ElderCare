@@ -26,15 +26,74 @@ function ageOn(birth, now) {
   return a;
 }
 
-/** One prescribed medication. `prefix` is used in error messages (e.g. "medications[0].") */
-function validateMedication(m, prefix = '', { partial = false } = {}) {
+// Where a prescription comes from. A nurse documents it; the system never makes one up.
+const RX_SOURCES = ['physician_order', 'partner_clinic', 'hospital_discharge', 'prescription_document', 'other'];
+const ROUTES = ['oral', 'sublingual', 'inhaled', 'topical', 'eye', 'ear', 'nasal', 'injection', 'patch', 'other'];
+const VERIFY_METHODS = ['in_person', 'phone', 'written_order', 'prescription_document', 'other'];
+
+/** "Other" in a list: the nurse's own words are required (2-80 characters). */
+function otherText(v, field, errors) {
+  const t = str(v);
+  if (t.length < 2 || t.length > 80) { errors.push(`${field} is required when "other" is chosen (2-80 characters)`); return undefined; }
+  return t;
+}
+
+/** {type, prescriber, facility, reference, date} - who ordered it, and from which document or contact. */
+function validateRxSource(src, field, errors, today) {
+  if (!src || typeof src !== 'object' || Array.isArray(src)) { errors.push(`${field} is required: who prescribed or ordered it`); return undefined; }
+  const out = {};
+  if (!RX_SOURCES.includes(src.type)) errors.push(`${field}.type must be one of: ${RX_SOURCES.join(', ')}`);
+  else out.type = src.type;
+  if (out.type === 'other') out.typeOther = otherText(src.typeOther, `${field}.typeOther`, errors);
+  const prescriber = str(src.prescriber);
+  if (prescriber.length < 3 || prescriber.length > 120) errors.push(`${field}.prescriber is required (3-120 characters)`);
+  else out.prescriber = prescriber;
+  for (const k of ['facility', 'reference']) {
+    const v = str(src[k]);
+    if (v.length > 160) errors.push(`${field}.${k} must be at most 160 characters`);
+    else if (v) out[k] = v;
+  }
+  if (src.date !== undefined && src.date !== null && src.date !== '') {
+    if (!isRealDate(String(src.date))) errors.push(`${field}.date must be YYYY-MM-DD`);
+    else if (today && String(src.date) > today) errors.push(`${field}.date cannot be in the future`);
+    else out.date = String(src.date);
+  }
+  if (['prescription_document', 'hospital_discharge'].includes(out.type) && !out.reference) errors.push(`${field}.reference is required for a ${out.type.replace('_', ' ')}`);
+  return out;
+}
+
+/** How the nurse checked the record against its source. */
+function validateRxVerification(v, field, errors, today) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) { errors.push(`${field} must be an object`); return undefined; }
+  const out = {};
+  if (!VERIFY_METHODS.includes(v.method)) errors.push(`${field}.method must be one of: ${VERIFY_METHODS.join(', ')}`);
+  else out.method = v.method;
+  if (out.method === 'other') out.methodOther = otherText(v.methodOther, `${field}.methodOther`, errors);
+  if (!isRealDate(String(v.verifiedOn || ''))) errors.push(`${field}.verifiedOn must be YYYY-MM-DD`);
+  else if (today && String(v.verifiedOn) > today) errors.push(`${field}.verifiedOn cannot be in the future`);
+  else out.verifiedOn = String(v.verifiedOn);
+  const withWhom = str(v.verifiedWith);
+  if (withWhom.length > 120) errors.push(`${field}.verifiedWith must be at most 120 characters`);
+  else if (withWhom) out.verifiedWith = withWhom;
+  return out;
+}
+
+/**
+ * One prescription as the nurse records it from its source. `prefix` is used in error messages
+ * (e.g. "medications[0]."). No time, dose or frequency is filled in for the nurse.
+ */
+function validateMedication(m, prefix = '', { today = null } = {}) {
   const errors = [];
   const value = {};
   if (!m || typeof m !== 'object' || Array.isArray(m)) return { ok: false, errors: [`${prefix || 'medication '}must be an object`] };
+  const allowed = ['name', 'strength', 'dose', 'dosage', 'route', 'routeOther', 'frequency', 'times', 'foodInstructions', 'instructions', 'prescribedBy', 'startDate', 'endDate',
+    'source', 'verification', 'missedDoseInstructions', 'missedDoseSource', 'changeReason'];
+  const unknown = Object.keys(m).filter((k) => !allowed.includes(k));
+  if (unknown.length) errors.push(`${prefix}unknown field(s): ${unknown.join(', ')}`);
 
   const text = (key, min, max, required) => {
     if (m[key] === undefined || m[key] === null || m[key] === '') {
-      if (required && !partial) errors.push(`${prefix}${key} is required`);
+      if (required) errors.push(`${prefix}${key} is required`);
       return;
     }
     const v = str(m[key]);
@@ -42,10 +101,20 @@ function validateMedication(m, prefix = '', { partial = false } = {}) {
     else value[key] = v;
   };
   text('name', 2, 80, true);
-  text('dosage', 1, 40, true);
-  text('frequency', 2, 60, true);
+  text('strength', 1, 40, !m.dosage);   // e.g. "500 mg tablet"
+  text('dose', 1, 40, false);           // e.g. "1 tablet"
+  text('dosage', 1, 40, false);         // older single field (strength and dose together)
+  text('frequency', 2, 60, true);       // as written on the prescription, e.g. "twice a day"
+  text('foodInstructions', 2, 200, false);
   text('instructions', 0, 300, false);
   text('prescribedBy', 2, 80, false);
+  text('changeReason', 3, 300, false);
+  if (m.route !== undefined && m.route !== null && m.route !== '') {
+    if (!ROUTES.includes(m.route)) errors.push(`${prefix}route must be one of: ${ROUTES.join(', ')}`);
+    // "other": the route as written on the prescription is kept in its place.
+    else value.route = m.route === 'other' ? otherText(m.routeOther, `${prefix}routeOther`, errors) : m.route;
+  }
+  if (!value.dosage) value.dosage = [value.strength, value.dose].filter(Boolean).join(', ') || undefined;
 
   if (m.times !== undefined) {
     if (!Array.isArray(m.times) || m.times.length > 6 || m.times.some((t) => !TIME_RE.test(String(t)))) {
@@ -58,12 +127,26 @@ function validateMedication(m, prefix = '', { partial = false } = {}) {
     else value[key] = String(m[key]);
   }
   if (value.startDate && value.endDate && value.endDate < value.startDate) errors.push(`${prefix}endDate cannot be before startDate`);
-  if (m.active !== undefined) {
-    if (typeof m.active !== 'boolean') errors.push(`${prefix}active must be true or false`);
-    else value.active = m.active;
-  }
-  if (partial && !Object.keys(value).length && !errors.length) errors.push('Nothing to update');
-  return errors.length ? { ok: false, errors } : { ok: true, value };
+
+  value.source = validateRxSource(m.source, `${prefix}source`, errors, today);
+  if (value.source && value.source.prescriber && !value.prescribedBy) value.prescribedBy = value.source.prescriber;
+  if (m.verification !== undefined && m.verification !== null) value.verification = validateRxVerification(m.verification, `${prefix}verification`, errors, today);
+  // What to do after a missed or refused dose is clinical advice: only with its own clinical source.
+  if (m.missedDoseInstructions !== undefined && m.missedDoseInstructions !== null && m.missedDoseInstructions !== '') {
+    text('missedDoseInstructions', 5, 500, false);
+    value.missedDoseSource = validateRxSource(m.missedDoseSource, `${prefix}missedDoseSource`, errors, today);
+  } else if (m.missedDoseSource) errors.push(`${prefix}missedDoseSource is only given with missedDoseInstructions`);
+
+  return errors.length ? { ok: false, errors } : { ok: true, value: JSON.parse(JSON.stringify(value)) };
+}
+
+/** Stopping a prescription: the reason and who ordered the stop. */
+function validateStop(b, today) {
+  const errors = [];
+  const reason = str(b && b.reason);
+  if (reason.length < 3 || reason.length > 300) errors.push('reason is required (3-300 characters)');
+  const source = validateRxSource(b && b.source, 'source', errors, today);
+  return errors.length ? { ok: false, errors } : { ok: true, value: { reason, source } };
 }
 
 /** New-patient onboarding payload. */
@@ -171,4 +254,4 @@ function validatePatient(b, now = new Date()) {
   return errors.length ? { ok: false, errors } : { ok: true, value: v };
 }
 
-module.exports = { validatePatient, validateMedication, isRealDate };
+module.exports = { validatePatient, validateMedication, validateStop, validateRxVerification, isRealDate, RX_SOURCES, ROUTES, VERIFY_METHODS };

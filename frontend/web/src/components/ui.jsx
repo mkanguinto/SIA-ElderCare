@@ -82,3 +82,31 @@ export function PageHeader({ title, subtitle, children }) {
     </header>
   );
 }
+
+/**
+ * A dropdown that ends with "Other (type it)". Choosing it opens a text box for the person's own words, so nobody
+ * has to pick a wrong answer because theirs is not listed. options: [[value, label]]; `other` / `onOther` hold the
+ * typed text (sent as "<field>Other" next to the value "other").
+ */
+export function SelectOther({ value, onChange, other, onOther, options, placeholder, label, otherPlaceholder = 'Type it here', otherLabel = 'Other (type it)', ...rest }) {
+  return (
+    <>
+      <select value={value || ''} onChange={(e) => onChange(e.target.value)} {...rest}>
+        {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {options.filter(([k]) => k !== 'other').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        <option value="other">{otherLabel}</option>
+      </select>
+      {value === 'other' && (
+        <input className="select-other-input" value={other || ''} onChange={(e) => onOther(e.target.value)} placeholder={otherPlaceholder} maxLength={80}
+          aria-label={`${label || 'Other'}: type it`} />
+      )}
+    </>
+  );
+}
+
+/** How a nurse confirmed that someone is the elder's family (family verification, recorded with the link). */
+export const FAMILY_VERIFY = [['elder_in_person', 'The elder confirmed it in person'], ['elder_by_phone', 'The elder confirmed it by phone'], ['id_and_document', 'ID and a document checked']];
+export const familyVerificationBody = (v) => ({ method: v.method, ...(v.method === 'other' ? { methodOther: (v.methodOther || '').trim() } : {}) });
+
+/** The label of a listed value, or the typed words when it is "other". */
+export const listLabel = (labels, value, otherText) => (value === 'other' ? otherText || 'Other' : labels[value] || value);

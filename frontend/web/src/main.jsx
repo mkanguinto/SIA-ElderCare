@@ -1,72 +1,87 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { currentUser, logout, onSessionChange } from './api';
+import { currentUser, hasNotice, requestSignOut, onSessionChange } from './api';
 import { matchRoute, navigate, usePath } from './router';
-import { ToastProvider } from './toast';
-import Shell from './components/Shell';
-import Login from './pages/Login';
-import CaregiverCheckIn from './pages/CaregiverCheckIn';
-import FamilyDashboard from './pages/FamilyDashboard';
-import ClinicQueue from './pages/ClinicQueue';
-import PatientProfile from './pages/PatientProfile';
-import AddPatient from './pages/AddPatient';
-import ClinicVisits from './pages/ClinicVisits';
-import CaseHistory from './pages/CaseHistory';
-import AdminView from './pages/AdminView';
-import CareDuties from './pages/CareDuties';
-import AlertRules from './pages/AlertRules';
+import ClinicConsole from './clinic/ClinicConsole';
+import { PrefsProvider } from './mobile/kit';
+import { Landing, RolePicker, SignIn, NoAccount } from './mobile/Onboarding';
+import { Activate, ResetPassword } from './mobile/Account';
+import SessionLock from './components/SessionLock';
+import CaregiverApp from './mobile/caregiver';
+import FamilyApp from './mobile/family';
+import NurseApp from './mobile/nurse';
+import AdminConsole from './admin/AdminConsole';
+import ServerWake from './components/ServerWake';
 import './styles.css';
 
-export const HOME = { caregiver: '/caregiver', family_member: '/family', clinic_staff: '/clinic', system_admin: '/admin' };
-const CLINIC = ['clinic_staff', 'system_admin'];
-const ROUTES = {
-  '/caregiver': { roles: ['caregiver'], page: CaregiverCheckIn, title: 'Daily check-in' },
-  '/caregiver/duties': { roles: ['caregiver'], page: CareDuties, title: 'Care duties' },
-  '/clinic/alert-rules': { roles: CLINIC, page: AlertRules, title: 'Alert rules' },
-  '/family': { roles: ['family_member'], page: FamilyDashboard, title: 'Family dashboard' },
-  '/clinic': { roles: CLINIC, page: ClinicQueue, title: 'Risk queue' },
-  '/clinic/visits': { roles: CLINIC, page: ClinicVisits, title: 'Visits' },
-  '/clinic/history': { roles: CLINIC, page: CaseHistory, title: 'Case history' },
-  '/clinic/patients/new': { roles: CLINIC, page: AddPatient, title: 'Add patient' },
-  '/clinic/patients/:id': { roles: CLINIC, page: PatientProfile, title: 'Patient profile' },
-  '/admin': { roles: ['system_admin'], page: AdminView, title: 'System status' },
+// Caregivers and families use only the phone app (on a computer it is shown in a phone-sized frame).
+// Nurses get the phone app on small screens and the clinic console on a computer - the same screens and
+// design in a web layout (each links to the other). Admins use the admin console, built the same way.
+const isPhone = () => window.matchMedia('(max-width: 820px)').matches;
+export const HOME = {
+  caregiver: '/m/caregiver',
+  family_member: '/m/family',
+  clinic_staff: '/clinic',
+  system_admin: '/admin',
 };
+const homeFor = (role) => (role === 'clinic_staff' && isPhone() ? '/m/nurse' : HOME[role] || '/');
+
+const PUBLIC = { '/': Landing, '/start': RolePicker, '/signin': SignIn, '/no-account': NoAccount, '/activate': Activate, '/reset-password': ResetPassword };
+// Every entry renders full-screen and handles its own sub-paths. The clinic console shows patient
+// records: nurses only (the admin's alert-rule settings are in the admin console).
+const ROUTES = {
+  '/m/caregiver': { roles: ['caregiver'], app: CaregiverApp, layout: 'mobile', title: 'Caregiver' },
+  '/m/family': { roles: ['family_member'], app: FamilyApp, layout: 'mobile', title: 'Family' },
+  '/m/nurse': { roles: ['clinic_staff'], app: NurseApp, layout: 'mobile', title: 'Nurse' },
+  '/clinic': { roles: ['clinic_staff'], app: ClinicConsole, layout: 'desktop', title: 'Clinic' },
+  '/admin': { roles: ['system_admin'], app: AdminConsole, layout: 'admin', title: 'Admin' },
+};
+const MOBILE_PREFIXES = Object.keys(ROUTES).filter((k) => ROUTES[k].app);
+
+function resolve(path) {
+  const clean = path.replace(/\/+$/, '') || '/';
+  const prefix = MOBILE_PREFIXES.find((p) => clean === p || clean.startsWith(`${p}/`));
+  if (prefix) return { route: ROUTES[prefix], params: {} };
+  const match = matchRoute(Object.keys(ROUTES), clean);
+  return match ? { route: ROUTES[match.pattern], params: match.params } : { route: null, params: {} };
+}
 
 function App() {
   const [user, setUser] = useState(currentUser());
   const path = usePath();
 
   // One place reacts to every identity change (sign-in, sign-out, account switch, expired session):
-  // all page state is dropped because Shell and the page are keyed by the user ID below.
+  // all page state is dropped because the layout and the page are keyed by the user ID below.
   useEffect(() => onSessionChange((next) => {
     setUser(next);
-    navigate(next ? HOME[next.role] || '/login' : '/login', { replace: true });
+    // Signed out for a reason (another device, session ended): go to Sign in, which explains it.
+    navigate(next ? homeFor(next.role) : hasNotice() ? '/signin' : '/', { replace: true });
   }), []);
 
-  const match = matchRoute(Object.keys(ROUTES), path);
-  const route = match && ROUTES[match.pattern];
+  const { route, params } = resolve(path);
   const allowed = Boolean(user && route && route.roles.includes(user.role));
+  const Public = PUBLIC[path.replace(/\/+$/, '') || '/'];
 
   useEffect(() => {
-    if (!user && path !== '/login') navigate('/login', { replace: true });
-    else if (user && !allowed) navigate(HOME[user.role] || '/login', { replace: true });
-  }, [user, path, allowed]);
+    if (!user && !Public) navigate(path === '/login' || hasNotice() ? '/signin' : '/', { replace: true });
+    else if (user && !allowed) navigate(homeFor(user.role), { replace: true });
+  }, [user, path, allowed, Public]);
 
   useEffect(() => {
-    document.title = route && allowed ? `${route.title} – ElderCare Connect` : 'ElderCare Connect';
+    document.title = route && allowed ? `${route.title} – ElderCare` : 'ElderCare';
   }, [route, allowed]);
 
-  if (!user) return <Login />;
+  if (!user) return Public ? <PrefsProvider><Public /></PrefsProvider> : null;
   if (!allowed) return null;
 
-  const Page = route.page;
-  return (
-    <ToastProvider key={user.id}>
-      <Shell key={user.id} user={user} onSignOut={logout}>
-        <Page key={path} user={user} params={match.params} />
-      </Shell>
-    </ToastProvider>
-  );
+  const AppScreen = route.app;
+  return <SessionLock user={user}><PrefsProvider key={user.id}><AppScreen user={user} path={path} /></PrefsProvider></SessionLock>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<><App /><ServerWake /></>);
+
+// Installable app + offline shell + reminder taps (public/sw.js). Production builds only, so the dev server
+// never serves stale cached code.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

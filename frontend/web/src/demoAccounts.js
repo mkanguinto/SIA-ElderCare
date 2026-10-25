@@ -4,5 +4,6 @@ export const DEMO = [
   { username: 'caregiver.maria', name: 'Maria Santos', role: 'Caregiver', does: 'Logs daily vitals for Lola Remedios and Lolo Ernesto' },
   { username: 'family.jose', name: 'Jose Reyes', role: 'Family member', does: "Follows Lola Remedios's health and alerts" },
   { username: 'nurse.ana', name: 'Ana Cruz, RN', role: 'Clinic nurse', does: 'Works the barangay health center risk queue' },
+  { username: 'nurse.ben', name: 'Ben Lim, RN', role: 'Clinic nurse', does: 'Second nurse on Team A: receives handovers' },
   { username: 'admin.harold', name: 'Harold Bermudez', role: 'Administrator', does: 'Monitors services, integrations and accounts' },
 ];

@@ -5,7 +5,7 @@
  *
  * The API Gateway validates the end-user JWT once. It then forwards the request with:
  *   X-Internal-Token : shared secret proving the call came from the gateway / a peer service
- *   X-User-Id, X-User-Role, X-User-Patients : the already-validated identity
+ *   X-User-Id, X-User-Name (URI-encoded), X-User-Role, X-User-Patients : the already-validated identity
  *
  * Microservices must NOT be reachable from the public internet; this header check is
  * defense-in-depth in case a service port is accidentally exposed.
@@ -29,8 +29,11 @@ function requireInternalToken(req, res, next) {
   // Rehydrate the gateway-validated user context (absent on pure service-to-service events).
   const role = req.get('x-user-role');
   if (role) {
+    let name = null;
+    try { name = req.get('x-user-name') ? decodeURIComponent(req.get('x-user-name')) : null; } catch { /* malformed: leave empty */ }
     req.user = {
       id: req.get('x-user-id'),
+      name,
       role,
       patients: (req.get('x-user-patients') || '').split(',').filter(Boolean),
     };

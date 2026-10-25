@@ -16,7 +16,20 @@ npm run smoke
 # with the Batch 3 checks (signed TextBee webhooks, DLQ dashboard):
 TEXTBEE_WEBHOOK_SECRET=<gateway value> DASHBOARD_PASSWORD=<value> NODE_RED_URL=http://localhost:1880 npm run smoke
 ```
-95 checks across all batches. Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
+160 checks across all batches. The account checks read the activation code through `GET /internal/test/account-sms`, which exists only with `ACCOUNT_SMS_CAPTURE=true` (the local Docker default; never in the cloud) and needs `INTERNAL_SERVICE_TOKEN` (taken from `.env`). Without `TEXTBEE_WEBHOOK_SECRET` the SMS router checks are skipped.
+Check-ins created by the test are sent with `dataOrigin: "demo"` and archived at the end, so they never sit in a nurse's review list.
+
+## Browser tests (headless Chrome)
+```bash
+npm run test:browser            # every testing/browser/*.test.mjs
+SHOTS=out node testing/browser/run.mjs handover   # one test, with screenshots
+```
+Needs the stack and the web app running (`WEB_URL`, default `http://127.0.0.1:3000`; `GATEWAY_URL`, default `http://localhost:8080`) and Chrome
+(`CHROME_PATH` if it is not in the default place). No npm dependencies: `cdp.mjs` drives Chrome over the DevTools protocol.
+- `handover.test.mjs` – Ana hands P-1001 to Ben in the phone UI; Ben sees it under Pending handover, taps Accept case, and it moves from Ana's My cases to Ben's. The case is handed back afterwards.
+- `contact.test.mjs` – family opens Contact the clinic (no pop-up), sends a message, gets a CR- reference and an honest SMS-notice line; the nurse sees it in Messages, marks it seen and replies; the family sees who saw it and the reply.
+- `desktop.test.mjs` – every clinic-console page loads in the sidebar layout, queue rows open the desktop patient page (phone patient screen + clinic records), desktop-only panels use the phone look, admin alert rules are in the admin console and the admin cannot open the clinic console.
+- `session.test.mjs` – a caregiver's unsent check-in: the timeout warning counts down (Stay signed in), the app locks, the password unlocks it with the entry still there; signing in on another device ends the session, the entry is kept and comes back after signing in again; another user signing in on the tab never sees it.
 
 ## Postman – functional, security and integration
 1. Postman → Import → `postman/ElderCare_Connect.postman_collection.json` and `postman/ElderCare_Connect.local.postman_environment.json`.
@@ -42,9 +55,13 @@ v2 folders:
   `textbeeSecret` to the gateway's `TEXTBEE_WEBHOOK_SECRET` to sign them (pre-request script, HMAC-SHA256);
   left empty, the requests go unsigned and the tests expect `401`.
 - **9. Batch 4** – care plan: categories, plan, checklist, tick off / upsert / skip rules, clinic add / edit / retire, adherence.
+- **10. Batch 5.1** – check-in status: received → awaiting review → reviewed → action recorded, missing readings (never 0), historical and archived demo lists.
+- **11. Batch 2 (handover)** – submit → still pending → wrong nurse cannot accept → accept → case in the new nurse's My cases, chain logged, admin limits; ends by handing the case back.
+- **12. Batch 3a (accounts)** – admin creates a caregiver → cannot sign in yet → activation code (read through the test-only SMS capture) → weak password 422 → activate → sign in → code single use; single session, nurse phone + desktop, lock / unlock, admin cannot read patient data, audit log; a number off the allow-list is reported as simulated (NOT sent); SMS check; one person's nurse and admin accounts linked by a staff ID (wrong name 422, second account with the same role 409), audit log filtered by staff ID.
+  Pass the internal token so the activation steps run: `--env-var internalToken=<INTERNAL_SERVICE_TOKEN>` (without it they are skipped).
 
 Postman CLI: `postman collection run postman/ElderCare_Connect.postman_collection.json -e postman/ElderCare_Connect.local.postman_environment.json --env-var textbeeSecret=<secret>`
-(last run on the v2 stack: 95 requests, 157 assertions, 0 failures).
+(last run: 155 requests, 262 assertions, 0 failures).
 
 ## SoapUI – legacy SOAP integration
 1. Make sure the mock EMR (`:4005`) and the adapter (`:4004`) are running (both are published by docker compose).

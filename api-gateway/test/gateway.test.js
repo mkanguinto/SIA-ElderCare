@@ -140,7 +140,7 @@ test('admin can list users without password hashes; nurse cannot', async () => {
   const admin = await login('admin.harold');
   const r = await call('GET', '/api/admin/users', { token: admin.access_token });
   assert.strictEqual(r.status, 200);
-  assert.strictEqual(r.body.total, 4);
+  assert.strictEqual(r.body.total, 6); // caregiver, family, three nurses (care team handover), admin
   assert.ok(r.body.users.every((u) => !('passwordHash' in u)));
   const nurse = await login('nurse.ana');
   assert.strictEqual((await call('GET', '/api/admin/users', { token: nurse.access_token })).status, 403);
@@ -180,6 +180,36 @@ test('new v1.1 routes enforce roles', async () => {
   assert.strictEqual((await call('POST', '/api/clinic/queue/x/visits', { token: nurse.access_token, body: {} })).status, 200);
 });
 
+test('care team and handover routes: nurses hand over, only the admin manages teams, admin never sees handover content', async () => {
+  const nurse = (await login('nurse.ana')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  const cg = (await login('caregiver.maria')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const nurseOnly = [['POST', '/api/clinic/handover'], ['POST', '/api/clinic/handover/abc/accept'], ['POST', '/api/clinic/handover/abc/decline'],
+    ['POST', '/api/clinic/handover/abc/cancel'], ['GET', '/api/clinic/my-cases'], ['GET', '/api/clinic/queue/pending-handovers'],
+    ['GET', '/api/clinic/patients/P-1001/care'], ['PUT', '/api/clinic/duty/me']];
+  for (const [method, path] of nurseOnly) {
+    const body = method === 'GET' ? undefined : {};
+    assert.strictEqual((await call(method, path, { token: nurse, body })).status, 200, `${method} ${path} as nurse`);
+    for (const [who, t] of [['admin', admin], ['caregiver', cg], ['family', fam]]) {
+      assert.strictEqual((await call(method, path, { token: t, body })).status, 403, `${method} ${path} as ${who}`);
+    }
+  }
+  const adminOnly = [['POST', '/api/clinic/care-teams'], ['POST', '/api/clinic/care-teams/CT-A/members'], ['DELETE', '/api/clinic/care-teams/CT-A/members/U-CS-002'],
+    ['PUT', '/api/clinic/patients/P-1001/care'], ['GET', '/api/clinic/care-log']];
+  for (const [method, path] of adminOnly) {
+    const body = method === 'GET' ? undefined : {};
+    assert.strictEqual((await call(method, path, { token: admin, body })).status, 200, `${method} ${path} as admin`);
+    assert.strictEqual((await call(method, path, { token: nurse, body })).status, 403, `${method} ${path} as nurse`);
+  }
+  for (const path of ['/api/clinic/care-teams', '/api/clinic/duty']) {
+    assert.strictEqual((await call('GET', path, { token: nurse })).status, 200);
+    assert.strictEqual((await call('GET', path, { token: admin })).status, 200);
+    assert.strictEqual((await call('GET', path, { token: cg })).status, 403);
+  }
+  assert.strictEqual((await call('POST', '/api/clinic/handover/abc/approve', { token: nurse, body: {} })).status, 404);
+});
+
 test('alert rules: clinic staff can read, only admins can change; pagination params are forwarded', async () => {
   const nurse = (await login('nurse.ana')).access_token;
   const admin = (await login('admin.harold')).access_token;
@@ -214,4 +244,33 @@ test('care plan routes: patient scope at the gateway, clinic-only plan changes, 
   assert.strictEqual((await call('POST', '/api/patients/P-1001/care-plan/tasks', { token: nurse, body: {} })).status, 200);
   assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: nurse, body: {} })).status, 403);
   assert.strictEqual((await call('POST', '/api/care/tasks/x/completions', { token: cg, body: {} })).status, 200);
+});
+
+test('contact the clinic: family and caregiver of the elder send, nurses answer, the admin is not involved', async () => {
+  const cg = (await login('caregiver.maria')).access_token;
+  const fam = (await login('family.jose')).access_token;
+  const nurse = (await login('nurse.ana')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  assert.strictEqual((await call('GET', '/api/clinic/contact-info', { token: fam })).status, 200);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: fam, body: {} })).body.path, '/api/patients/P-1001/clinic-contact');
+  assert.strictEqual((await call('POST', '/api/patients/P-1002/clinic-contact', { token: fam, body: {} })).status, 403, 'not their elder');
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: cg, body: {} })).status, 200);
+  assert.strictEqual((await call('POST', '/api/patients/P-1001/clinic-contact', { token: nurse, body: {} })).status, 403, 'nurses do not send these');
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/clinic-contact', { token: nurse })).status, 200);
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/clinic-contact', { token: admin })).status, 403, 'admin: no patient data');
+  assert.strictEqual((await call('GET', '/api/clinic/contact-requests', { token: nurse })).status, 200);
+  assert.strictEqual((await call('GET', '/api/clinic/contact-requests', { token: fam })).status, 403);
+  assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: nurse, body: {} })).status, 200);
+  assert.strictEqual((await call('POST', '/api/clinic/contact-requests/CR-000001/reply', { token: admin, body: {} })).status, 403);
+});
+
+test('who looks after an elder: caregiver and family of that elder, and nurses; admin no', async () => {
+  const fam = (await login('family.jose')).access_token;
+  const admin = (await login('admin.harold')).access_token;
+  const r = await call('GET', '/api/patients/P-1001/people', { token: fam });
+  assert.strictEqual(r.status, 200);
+  assert.ok(r.body.caregivers.some((c) => c.name), 'caregiver names');
+  assert.ok(!JSON.stringify(r.body).includes('passwordHash'));
+  assert.strictEqual((await call('GET', '/api/patients/P-1002/people', { token: fam })).status, 403);
+  assert.strictEqual((await call('GET', '/api/patients/P-1001/people', { token: admin })).status, 403);
 });

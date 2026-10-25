@@ -30,13 +30,14 @@ const MIN_INTERVAL_MS = () => Number(process.env.SMS_MIN_INTERVAL_MS || 1000); /
 const TERMINAL = ['sent', 'delivered', 'simulated', 'skipped'];
 
 /** Real (non-simulated) texts sent today, Asia/Manila calendar day. */
+/** Real texts today (Manila day): alert SMS and account SMS share SMS_DAILY_LIMIT. */
 async function sentToday() {
+  const today = "(date_trunc('day', now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')";
   const { rows: [r] } = await pool.query(
-    `SELECT count(*)::int AS n FROM notification_log
-      WHERE channel = 'sms' AND status IN ('sent','delivered')
-        AND updated_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')`,
+    `SELECT (SELECT count(*) FROM notification_log WHERE channel = 'sms' AND status IN ('sent','delivered') AND updated_at >= ${today})
+          + (SELECT count(*) FROM account_sms_log WHERE status IN ('queued','sent','delivered','unknown') AND created_at >= ${today}) AS n`,
   );
-  return r.n;
+  return Number(r.n);
 }
 
 async function updateLog(id, fields) {
@@ -145,4 +146,4 @@ async function start(bus) {
   });
 }
 
-module.exports = { start, handleSmsRequested, claim, RETRY_DELAYS };
+module.exports = { start, handleSmsRequested, claim, RETRY_DELAYS, sentToday, DAILY_LIMIT };

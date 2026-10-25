@@ -55,6 +55,20 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U clinic_admin -d clinic_db"], interval: 5s, retries: 10 }
     networks: [internal]
 
+  # Gateway accounts, account codes and the account audit log (Batch 3a)
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: auth_admin                     # bootstrap only, never given to a service
+      POSTGRES_PASSWORD: "${AUTH_DB_ADMIN_PASSWORD:-auth_admin_pass}"
+      APP_DB_USER: auth_svc                         # the only login the gateway has
+      APP_DB_PASSWORD: "${AUTH_DB_PASSWORD:-auth_pass}"
+    volumes: ["auth-data:/var/lib/postgresql/data", "./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro"]
+    ports: ["5437:5432"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U auth_admin -d auth_db"], interval: 5s, retries: 10 }
+    networks: [internal]
+
   care-db:
     image: postgres:16-alpine
     environment:
@@ -93,6 +107,10 @@ services:
       PORT: 8080
       NODE_ENV: production
       SERVICE_NAME: api-gateway
+      AUTH_DATABASE_URL: "postgres://auth_svc:${AUTH_DB_PASSWORD:-auth_pass}@auth-db:5432/auth_db"
+      PUBLIC_WEB_URL: "${PUBLIC_WEB_URL:-http://localhost:3000}"
+      # Local testing only: lets the smoke test / Postman read activation codes (never set in the cloud)
+      ACCOUNT_SMS_CAPTURE: "${ACCOUNT_SMS_CAPTURE:-true}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
       JWT_ALGORITHM: HS256
       JWT_SECRET: "${JWT_SECRET:?set JWT_SECRET in .env}"
@@ -116,13 +134,19 @@ services:
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
       CARE_SERVICE_URL: http://care-plan-service:4006
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
+      RATE_LIMIT_AUTH_MAX: "${RATE_LIMIT_AUTH_MAX:-20}"   # failed sign-ins per IP per 15 min
       # TextBee webhooks: gateway verifies X-Signature, Node-RED routes them by content (alert = direct)
       NODE_RED_URL: http://node-red:1880
       TEXTBEE_WEBHOOK_TARGET: "${TEXTBEE_WEBHOOK_TARGET:-node-red}"
       TEXTBEE_WEBHOOK_SECRET: "${TEXTBEE_WEBHOOK_SECRET:-}"
       TEXTBEE_VALIDATE_WEBHOOK: "${TEXTBEE_VALIDATE_WEBHOOK:-true}"
     volumes: ["gateway-state:/app/state"]
-    depends_on: [checkin-service, alert-service, clinic-risk-service, care-plan-service]
+    depends_on:
+      auth-db: { condition: service_healthy }
+      checkin-service: { condition: service_started }
+      alert-service: { condition: service_started }
+      clinic-risk-service: { condition: service_started }
+      care-plan-service: { condition: service_started }
     networks: [internal, public]
 
   checkin-service:
@@ -183,11 +207,16 @@ services:
     environment:
       PORT: 4003
       SERVICE_NAME: clinic-risk-service
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       DATABASE_URL: "postgres://clinic_svc:${CLINIC_DB_PASSWORD:-clinic_pass}@clinic-db:5432/clinic_db"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
       EVENT_TRANSPORT: rabbitmq
       AMQP_URL: "amqp://${RABBITMQ_USER:-eldercare}:${RABBITMQ_PASSWORD:-eldercare_pass}@rabbitmq:5672/eldercare"
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
+      ALERT_SERVICE_URL: http://alert-service:4002
+      CLINIC_HOTLINE: "${CLINIC_HOTLINE:-}"                 # the clinic's phone: shown to families, gets an SMS notice per contact
+      CLINIC_HOTLINE_NAME: "${CLINIC_HOTLINE_NAME:-RHU Manila health center}"
+      CLINIC_HOURS: "${CLINIC_HOURS:-Mon-Fri 8 AM - 5 PM}"
       ENV_RISK_TTL_HOURS: "${ENV_RISK_TTL_HOURS:-24}"
       RECENT_VISIT_DAYS: "${RECENT_VISIT_DAYS:-30}"
       VISIT_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"
@@ -206,6 +235,9 @@ services:
       SEED_DEMO_DATA: "${SEED_DEMO_DATA:-true}"
       INTERNAL_SERVICE_TOKEN: "${INTERNAL_SERVICE_TOKEN}"
       CARE_TZ_OFFSET: "${VISIT_TZ_OFFSET:-+08:00}"
+      # Care-team check for plan changes, and the prescription records for the medicine checklist.
+      CLINIC_SERVICE_URL: http://clinic-risk-service:4003
+      CHECKIN_SERVICE_URL: http://checkin-service:4001
     depends_on:
       care-db: { condition: service_healthy }
 
@@ -261,6 +293,7 @@ volumes:
   alert-data: {}
   clinic-data: {}
   care-data: {}
+  auth-data: {}
   rabbitmq-data: {}
   gateway-state: {}
   node-red-data: {}

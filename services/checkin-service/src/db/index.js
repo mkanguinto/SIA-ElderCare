@@ -8,6 +8,7 @@ const { Pool, types } = require('pg');
 // local midnight, which shifts birthdays/visit dates by a day when serialised as UTC (e.g. in Manila, UTC+8).
 types.setTypeParser(1082, (v) => v);
 const logger = require('../lib/logger');
+const { runMigrations } = require('../lib/migrations');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -24,6 +25,8 @@ async function migrate() {
   if (process.env.SEED_DEMO_DATA === 'true' && fs.existsSync(seedFile)) {
     await pool.query(fs.readFileSync(seedFile, 'utf8'));
   }
+  // Versioned migrations run after the seed so their backfills also cover freshly seeded demo rows.
+  await runMigrations(pool, path.join(__dirname, 'migrations'), logger);
   logger.info('database migrated');
 }
 

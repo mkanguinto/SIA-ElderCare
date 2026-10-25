@@ -8,6 +8,7 @@ const { Pool, types } = require('pg');
 // local midnight, which shifts birthdays/visit dates by a day when serialised as UTC (e.g. in Manila, UTC+8).
 types.setTypeParser(1082, (v) => v);
 const logger = require('../lib/logger');
+const { runMigrations } = require('../lib/migrations');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -20,6 +21,8 @@ pool.on('error', (err) => logger.error('pg pool error', err));
 
 async function migrate() {
   await pool.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  await runMigrations(pool, path.join(__dirname, 'migrations'), logger);
+  // Demo data runs after the migrations because it fills the care-team tables they create.
   const seedFile = path.join(__dirname, 'seed.sql');
   if (process.env.SEED_DEMO_DATA === 'true' && fs.existsSync(seedFile)) {
     await pool.query(fs.readFileSync(seedFile, 'utf8'));

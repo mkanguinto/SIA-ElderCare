@@ -553,6 +553,16 @@ h3.first { margin-top: 0; }
 .duty-overdue .duty-time, .duty-missed .duty-time { color: var(--critical); }
 .duty-skip { margin-top: 8px; }
 .duty-skip .field { margin-bottom: 8px; }
+.duty-side.btn-row { display: flex; align-items: center; gap: 4px; }
+/* Editing a task opens its form in place of the row. */
+.duty-list .duty.is-editing { display: block; padding: 4px 16px 8px; margin: 8px 0; border: 1.5px solid var(--line); border-radius: 16px; background: var(--surface-2, #f6f8f7); }
+.duty.is-editing .inline-form { margin-top: 0; padding-top: 0; border-top: 0; }
+/* Times: one dropdown per dose time, "+ Add another time" for the next. */
+.times-picker { border: 0; padding: 0; margin: 0 0 16px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.times-picker legend { font-weight: 700; font-size: 0.95rem; padding: 0; margin-bottom: 6px; }
+.times-row { display: flex; gap: 8px; align-items: center; }
+.times-row select { flex: 1; min-width: 0; }
+.times-add { justify-self: start; }
 .duty-pill-done { background: var(--ok-soft); color: var(--ok); }
 .duty-pill-skipped { background: var(--moderate-soft); color: var(--moderate); }
 .duty-pill-pending { background: var(--surface-2); color: var(--ink-2); }
@@ -577,3 +587,17 @@ h3.first { margin-top: 0; }
   .adherence li { grid-template-columns: 1fr 48px; }
   .adherence-track { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Free-hosting wake-up notice (components/ServerWake.jsx) */
+.server-wake { position: fixed; z-index: 100; left: 50%; transform: translateX(-50%); bottom: 6.5rem; width: min(28rem, calc(100% - 2rem));
+  display: flex; gap: .75rem; align-items: flex-start; padding: .875rem 1rem; border-radius: 1rem; background: #fbf0d9; color: #85570a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15); font-size: .9375rem; line-height: 1.4; }
+.server-wake-spin { flex: none; width: 1.1rem; height: 1.1rem; margin-top: .15rem; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: server-wake-spin .8s linear infinite; }
+@keyframes server-wake-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .server-wake-spin { animation: none; } }
+
+/* "Other (type it)" under a dropdown. */
+.select-other-input { margin-top: 8px; width: 100%; }
+.times-row input[type="time"] { flex: 1; min-width: 0; }
+.times-picker > span.muted { font-weight: 400; }
+.form-grid { align-items: start; }
