@@ -27,9 +27,16 @@ function ageOn(birth, now) {
 }
 
 // Where a prescription comes from. A nurse documents it; the system never makes one up.
-const RX_SOURCES = ['physician_order', 'partner_clinic', 'hospital_discharge', 'prescription_document'];
+const RX_SOURCES = ['physician_order', 'partner_clinic', 'hospital_discharge', 'prescription_document', 'other'];
 const ROUTES = ['oral', 'sublingual', 'inhaled', 'topical', 'eye', 'ear', 'nasal', 'injection', 'patch', 'other'];
-const VERIFY_METHODS = ['in_person', 'phone', 'written_order', 'prescription_document'];
+const VERIFY_METHODS = ['in_person', 'phone', 'written_order', 'prescription_document', 'other'];
+
+/** "Other" in a list: the nurse's own words are required (2-80 characters). */
+function otherText(v, field, errors) {
+  const t = str(v);
+  if (t.length < 2 || t.length > 80) { errors.push(`${field} is required when "other" is chosen (2-80 characters)`); return undefined; }
+  return t;
+}
 
 /** {type, prescriber, facility, reference, date} - who ordered it, and from which document or contact. */
 function validateRxSource(src, field, errors, today) {
@@ -37,6 +44,7 @@ function validateRxSource(src, field, errors, today) {
   const out = {};
   if (!RX_SOURCES.includes(src.type)) errors.push(`${field}.type must be one of: ${RX_SOURCES.join(', ')}`);
   else out.type = src.type;
+  if (out.type === 'other') out.typeOther = otherText(src.typeOther, `${field}.typeOther`, errors);
   const prescriber = str(src.prescriber);
   if (prescriber.length < 3 || prescriber.length > 120) errors.push(`${field}.prescriber is required (3-120 characters)`);
   else out.prescriber = prescriber;
@@ -60,6 +68,7 @@ function validateRxVerification(v, field, errors, today) {
   const out = {};
   if (!VERIFY_METHODS.includes(v.method)) errors.push(`${field}.method must be one of: ${VERIFY_METHODS.join(', ')}`);
   else out.method = v.method;
+  if (out.method === 'other') out.methodOther = otherText(v.methodOther, `${field}.methodOther`, errors);
   if (!isRealDate(String(v.verifiedOn || ''))) errors.push(`${field}.verifiedOn must be YYYY-MM-DD`);
   else if (today && String(v.verifiedOn) > today) errors.push(`${field}.verifiedOn cannot be in the future`);
   else out.verifiedOn = String(v.verifiedOn);
@@ -77,7 +86,7 @@ function validateMedication(m, prefix = '', { today = null } = {}) {
   const errors = [];
   const value = {};
   if (!m || typeof m !== 'object' || Array.isArray(m)) return { ok: false, errors: [`${prefix || 'medication '}must be an object`] };
-  const allowed = ['name', 'strength', 'dose', 'dosage', 'route', 'frequency', 'times', 'foodInstructions', 'instructions', 'prescribedBy', 'startDate', 'endDate',
+  const allowed = ['name', 'strength', 'dose', 'dosage', 'route', 'routeOther', 'frequency', 'times', 'foodInstructions', 'instructions', 'prescribedBy', 'startDate', 'endDate',
     'source', 'verification', 'missedDoseInstructions', 'missedDoseSource', 'changeReason'];
   const unknown = Object.keys(m).filter((k) => !allowed.includes(k));
   if (unknown.length) errors.push(`${prefix}unknown field(s): ${unknown.join(', ')}`);
@@ -102,7 +111,8 @@ function validateMedication(m, prefix = '', { today = null } = {}) {
   text('changeReason', 3, 300, false);
   if (m.route !== undefined && m.route !== null && m.route !== '') {
     if (!ROUTES.includes(m.route)) errors.push(`${prefix}route must be one of: ${ROUTES.join(', ')}`);
-    else value.route = m.route;
+    // "other": the route as written on the prescription is kept in its place.
+    else value.route = m.route === 'other' ? otherText(m.routeOther, `${prefix}routeOther`, errors) : m.route;
   }
   if (!value.dosage) value.dosage = [value.strength, value.dose].filter(Boolean).join(', ') || undefined;
 

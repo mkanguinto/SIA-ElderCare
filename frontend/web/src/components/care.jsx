@@ -1,8 +1,8 @@
 // Care plan (Batch 4) building blocks shared by the caregiver, family and clinic screens.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../toast';
-import { Empty, Loading, ErrorNote } from './ui';
+import { Empty, Loading, ErrorNote, SelectOther, listLabel } from './ui';
 import { DUTY_CATEGORY_LABEL, DUTY_STATUS_LABEL, FREQUENCY_LABEL, WEEKDAY_SHORT, dutySchedule, relTime, dateTime } from '../format';
 
 const slotLabel = (slot) => (slot === 'any' ? 'Any time' : slot);
@@ -162,14 +162,55 @@ export function CareToday({ patientId, editable = false, date, compact = false }
   );
 }
 
-// No default time: times are agreed with the elder and the caregiver and typed in by the nurse.
-const EMPTY_TASK = { category: 'physical_medical', title: '', instructions: '', frequency: 'daily', times: '', daysOfWeek: [], dueDate: '', kind: 'task', measurement: '', specialised: false, sourceType: '', sourceWho: '', sourceRef: '' };
+// Times are chosen from the list in half-hour steps, shown with AM / PM; stored as 24-hour "HH:MM".
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+const timeLabel = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+export const cleanTimes = (times) => [...new Set(times.filter((t) => /^\d\d:\d\d$/.test(t)))].sort();
+
+/**
+ * One dropdown per time, "+ Add another time" for the next one. A time already chosen in another row cannot
+ * be chosen again. `value` is an array of "HH:MM" ('' = not chosen yet).
+ */
+export function TimesPicker({ label, value, onChange, emptyLabel = 'Choose a time', hint }) {
+  const rows = value.length ? value : [''];
+  const setAt = (i, t) => onChange(rows.map((x, j) => (j === i ? t : x)));
+  return (
+    <fieldset className="field times-picker">
+      <legend>{label}</legend>
+      {hint && <span className="muted small">{hint}</span>}
+      {rows.map((t, i) => {
+        const taken = new Set(rows.filter((_, j) => j !== i));
+        // "Other time": any minute (e.g. 07:15), typed in a time box; "other" while it is still empty.
+        const custom = t === 'other' || (t && !TIME_OPTIONS.includes(t));
+        return (
+          <div key={i} className="times-row">
+            <select value={custom ? 'other' : t} onChange={(e) => setAt(i, e.target.value)} aria-label={`${label}, time ${i + 1}`}>
+              <option value="">{i === 0 ? emptyLabel : 'Choose a time'}</option>
+              {TIME_OPTIONS.map((o) => <option key={o} value={o} disabled={taken.has(o)}>{timeLabel(o)}{taken.has(o) ? ' (already chosen)' : ''}</option>)}
+              <option value="other">Other time…</option>
+            </select>
+            {custom && <input type="time" value={t === 'other' ? '' : t} onChange={(e) => setAt(i, e.target.value || 'other')} aria-label={`${label}, time ${i + 1}: other time`}
+              className={taken.has(t) ? 'is-invalid' : ''} />}
+            {i > 0 && <button type="button" className="btn btn-quiet btn-sm" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label={`Remove time ${i + 1}`}>Remove</button>}
+          </div>
+        );
+      })}
+      {rows.some((t, i) => t && t !== 'other' && rows.indexOf(t) !== i) && <span className="small text-critical" role="alert">The same time is chosen twice.</span>}
+      {rows[rows.length - 1] && rows[rows.length - 1] !== 'other' && rows.length < 6 && (
+        <button type="button" className="btn btn-secondary btn-sm times-add" onClick={() => onChange([...rows, ''])}>+ Add another time</button>
+      )}
+    </fieldset>
+  );
+}
+
+// No default time: times are agreed with the elder and the caregiver and chosen by the nurse.
+const EMPTY_TASK = { category: 'physical_medical', title: '', instructions: '', frequency: 'daily', times: [], daysOfWeek: [], dueDate: '', kind: 'task', measurement: '', specialised: false, sourceType: '', sourceTypeOther: '', sourceWho: '', sourceRef: '' };
 const MEASUREMENT_LABEL = { bp: 'Blood pressure', heart_rate: 'Heart rate', temperature: 'Temperature', spo2: 'Oxygen (SpO2)', blood_glucose: 'Blood sugar' };
 const SOURCE_LABEL = { physician_order: "Physician's order", partner_clinic: 'Partner clinic', hospital_discharge: 'Hospital discharge', clinic_protocol: 'Clinic protocol' };
 
 function toBody(f) {
   const body = { category: f.category, title: f.title.trim(), frequency: f.frequency, instructions: f.instructions.trim() || null };
-  const times = f.times.split(/[,\s]+/).filter(Boolean);
+  const times = cleanTimes(f.times);
   if (['daily', 'weekly'].includes(f.frequency)) body.times = times;
   if (f.frequency === 'weekly') body.daysOfWeek = f.daysOfWeek;
   if (f.frequency === 'once') body.dueDate = f.dueDate;
@@ -177,7 +218,7 @@ function toBody(f) {
   body.measurement = f.kind === 'measurement' ? f.measurement || null : null;
   body.specialised = Boolean(f.specialised);
   body.source = f.specialised || f.sourceType
-    ? { type: f.sourceType || undefined, ...(f.sourceWho ? { clinician: f.sourceWho.trim() } : {}), ...(f.sourceRef ? { reference: f.sourceRef.trim() } : {}) }
+    ? { type: f.sourceType || undefined, ...(f.sourceType === 'other' ? { typeOther: f.sourceTypeOther.trim() } : {}), ...(f.sourceWho ? { clinician: f.sourceWho.trim() } : {}), ...(f.sourceRef ? { reference: f.sourceRef.trim() } : {}) }
     : null;
   return body;
 }
@@ -195,6 +236,9 @@ export function CarePlanEditor({ patientId, versionId = null, readOnly = !versio
   const [goals, setGoals] = useState(null);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState([]);
+  const formRef = useRef(null);
+  // The form opens where the nurse clicked (under the task, or below the list for a new one): bring it into view.
+  useEffect(() => { if (formRef.current) formRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [form && form.id, Boolean(form)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = () => (versionId
     ? api(`/api/care-plan/versions/${versionId}`).then((v) => ({ plan: { goals: v.content.goals, notes: v.content.notes }, tasks: v.tasks }))
@@ -249,6 +293,68 @@ export function CarePlanEditor({ patientId, versionId = null, readOnly = !versio
   if (error) return <ErrorNote error={error} onRetry={load} />;
   if (!plan) return <Loading label="Loading care plan" />;
   const suggestions = (catalog || []).find((c) => form && c.code === form.category);
+  const taskForm = form && (
+    <form ref={formRef} className="inline-form duty-form" onSubmit={saveTask} noValidate>
+      <h3 className="duty-subhead">{form.id ? 'Edit duty' : 'New duty'}</h3>
+      {problems.length > 0 && <div className="note note-error" role="alert"><ul>{problems.map((p) => <li key={p}>{p}</li>)}</ul></div>}
+      <div className="form-grid">
+        <label className="field"><span>Category</span>
+          <select value={form.category} onChange={set('category')}>
+            {Object.entries(DUTY_CATEGORY_LABEL).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>How often</span>
+          <select value={form.frequency} onChange={set('frequency')}>
+            {Object.entries(FREQUENCY_LABEL).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          </select>
+        </label>
+      </div>
+      {!form.id && suggestions && (
+        <div className="chips-row" aria-label="Suggestions">
+          {suggestions.suggestions.map((s) => (
+            <button key={s.title} type="button" className="chip chip-btn" onClick={() => setForm({ ...form, title: s.title, frequency: s.frequency, kind: s.kind || 'task', measurement: s.measurement || '', specialised: Boolean(s.specialised) })}>{s.title}</button>
+          ))}
+        </div>
+      )}
+      <label className="field"><span>Duty</span><input value={form.title} onChange={set('title')} maxLength={160} required /></label>
+      <label className="field"><span>Instructions (optional)</span><input value={form.instructions} onChange={set('instructions')} maxLength={1000} /></label>
+      <div className="form-grid">
+        <label className="field"><span>Type</span>
+          <select value={form.kind} onChange={set('kind')}><option value="task">Task (done / not done)</option><option value="measurement">Reading (value, not measured, no device)</option></select></label>
+        {form.kind === 'measurement' && (
+          <label className="field"><span>Reading</span>
+            <select value={form.measurement} onChange={set('measurement')}><option value="">Choose</option>{Object.entries(MEASUREMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+        )}
+      </div>
+      <label className="check"><input type="checkbox" checked={form.specialised} onChange={(e) => setForm({ ...form, specialised: e.target.checked })} /> Specialised care (e.g. wound care, a therapeutic diet): needs a clinical source</label>
+      {form.specialised && (
+        <div className="form-grid">
+          <label className="field"><span>Source</span><SelectOther label="Source" value={form.sourceType} onChange={(sourceType) => setForm({ ...form, sourceType })} other={form.sourceTypeOther} onOther={(sourceTypeOther) => setForm({ ...form, sourceTypeOther })} options={Object.entries(SOURCE_LABEL)} placeholder="Choose" /></label>
+          <label className="field"><span>Clinician or facility</span><input value={form.sourceWho} onChange={set('sourceWho')} maxLength={120} placeholder="Dr. L. Reyes" /></label>
+          <label className="field"><span>Reference (order, protocol)</span><input value={form.sourceRef} onChange={set('sourceRef')} maxLength={160} /></label>
+        </div>
+      )}
+      {['daily', 'weekly'].includes(form.frequency) && (
+        <TimesPicker label={`Times${form.frequency === 'weekly' ? ' (optional)' : ''}`} value={form.times} onChange={(times) => setForm({ ...form, times })} />
+      )}
+      {form.frequency === 'weekly' && (
+        <fieldset className="checks">
+          <legend>Days</legend>
+          {WEEKDAY_SHORT.map((d, i) => (
+            <label key={d} className={`check ${form.daysOfWeek.includes(i) ? 'is-on' : ''}`}>
+              <input type="checkbox" checked={form.daysOfWeek.includes(i)} onChange={(e) => setForm({ ...form, daysOfWeek: e.target.checked ? [...form.daysOfWeek, i] : form.daysOfWeek.filter((x) => x !== i) })} />
+              {d}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {form.frequency === 'once' && <label className="field"><span>Due date</span><input type="date" value={form.dueDate} onChange={set('dueDate')} /></label>}
+      <div className="btn-row form-actions">
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : form.id ? 'Save changes' : 'Add task'}</button>
+        <button type="button" className="btn btn-quiet" onClick={() => setForm(null)}>Cancel</button>
+      </div>
+    </form>
+  );
 
   return (
     <>
@@ -268,86 +374,27 @@ export function CarePlanEditor({ patientId, versionId = null, readOnly = !versio
 
       {plan.tasks.filter((t) => t.active).length === 0 && <Empty title="No tasks yet">{readOnly ? 'Start a draft of the plan to add tasks.' : 'Add the tasks agreed with the elder and the caregiver. Medicines come from the prescription records.'}</Empty>}
       <ul className="duty-list">
-        {plan.tasks.filter((t) => t.active).map((t) => (
+        {plan.tasks.filter((t) => t.active).map((t) => (form && form.id === t.id ? (
+          <li key={t.id} className="duty is-editing">{taskForm}</li>
+        ) : (
           <li key={t.id} className="duty">
             <div className="duty-main">
               <strong>{t.title}</strong>
               <span className="muted small">{DUTY_CATEGORY_LABEL[t.category]} · {dutySchedule(t)}{t.kind === 'measurement' ? ` · reading: ${MEASUREMENT_LABEL[t.measurement] || t.measurement}` : ''}</span>
               {t.instructions && <span className="small">{t.instructions}</span>}
-              {t.specialised && <span className="small">Specialised · source: {t.source ? [SOURCE_LABEL[t.source.type] || t.source.type, t.source.clinician, t.source.reference].filter(Boolean).join(', ') : 'missing'}</span>}
+              {t.specialised && <span className="small">Specialised · source: {t.source ? [listLabel(SOURCE_LABEL, t.source.type, t.source.typeOther), t.source.clinician, t.source.reference].filter(Boolean).join(', ') : 'missing'}</span>}
             </div>
             {!readOnly && <div className="duty-side btn-row">
-              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setForm({ id: t.id, category: t.category, title: t.title, instructions: t.instructions || '', frequency: t.frequency, times: t.times.join(', '), daysOfWeek: t.daysOfWeek, dueDate: t.dueDate || '',
-                kind: t.kind || 'task', measurement: t.measurement || '', specialised: Boolean(t.specialised), sourceType: (t.source && t.source.type) || '', sourceWho: (t.source && t.source.clinician) || '', sourceRef: (t.source && t.source.reference) || '' })}>Edit</button>
+              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setForm({ id: t.id, category: t.category, title: t.title, instructions: t.instructions || '', frequency: t.frequency, times: [...t.times], daysOfWeek: t.daysOfWeek, dueDate: t.dueDate || '',
+                kind: t.kind || 'task', measurement: t.measurement || '', specialised: Boolean(t.specialised), sourceType: (t.source && t.source.type) || '', sourceTypeOther: (t.source && t.source.typeOther) || '', sourceWho: (t.source && t.source.clinician) || '', sourceRef: (t.source && t.source.reference) || '' })}>Edit</button>
               <button type="button" className="btn btn-quiet btn-sm" onClick={() => retire(t)}>Remove</button>
             </div>}
           </li>
-        ))}
+        )))}
       </ul>
 
       {!form && !readOnly && <button type="button" className="btn btn-secondary" onClick={() => { setForm(EMPTY_TASK); setProblems([]); }}>Add a task</button>}
-      {form && (
-        <form className="inline-form" onSubmit={saveTask} noValidate>
-          <h3 className="duty-subhead">{form.id ? 'Edit duty' : 'New duty'}</h3>
-          {problems.length > 0 && <div className="note note-error" role="alert"><ul>{problems.map((p) => <li key={p}>{p}</li>)}</ul></div>}
-          <div className="form-grid">
-            <label className="field"><span>Category</span>
-              <select value={form.category} onChange={set('category')}>
-                {Object.entries(DUTY_CATEGORY_LABEL).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </select>
-            </label>
-            <label className="field"><span>How often</span>
-              <select value={form.frequency} onChange={set('frequency')}>
-                {Object.entries(FREQUENCY_LABEL).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </select>
-            </label>
-          </div>
-          {!form.id && suggestions && (
-            <div className="chips-row" aria-label="Suggestions">
-              {suggestions.suggestions.map((s) => (
-                <button key={s.title} type="button" className="chip chip-btn" onClick={() => setForm({ ...form, title: s.title, frequency: s.frequency, kind: s.kind || 'task', measurement: s.measurement || '', specialised: Boolean(s.specialised) })}>{s.title}</button>
-              ))}
-            </div>
-          )}
-          <label className="field"><span>Duty</span><input value={form.title} onChange={set('title')} maxLength={160} required /></label>
-          <label className="field"><span>Instructions (optional)</span><input value={form.instructions} onChange={set('instructions')} maxLength={1000} /></label>
-          <div className="form-grid">
-            <label className="field"><span>Type</span>
-              <select value={form.kind} onChange={set('kind')}><option value="task">Task (done / not done)</option><option value="measurement">Reading (value, not measured, no device)</option></select></label>
-            {form.kind === 'measurement' && (
-              <label className="field"><span>Reading</span>
-                <select value={form.measurement} onChange={set('measurement')}><option value="">Choose</option>{Object.entries(MEASUREMENT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-            )}
-          </div>
-          <label className="check"><input type="checkbox" checked={form.specialised} onChange={(e) => setForm({ ...form, specialised: e.target.checked })} /> Specialised care (e.g. wound care, a therapeutic diet): needs a clinical source</label>
-          {form.specialised && (
-            <div className="form-grid">
-              <label className="field"><span>Source</span><select value={form.sourceType} onChange={set('sourceType')}><option value="">Choose</option>{Object.entries(SOURCE_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-              <label className="field"><span>Clinician or facility</span><input value={form.sourceWho} onChange={set('sourceWho')} maxLength={120} placeholder="Dr. L. Reyes" /></label>
-              <label className="field"><span>Reference (order, protocol)</span><input value={form.sourceRef} onChange={set('sourceRef')} maxLength={160} /></label>
-            </div>
-          )}
-          {['daily', 'weekly'].includes(form.frequency) && (
-            <label className="field"><span>Times (24-hour, comma separated){form.frequency === 'weekly' ? ' – optional' : ''}</span><input value={form.times} onChange={set('times')} placeholder="08:00, 20:00" /></label>
-          )}
-          {form.frequency === 'weekly' && (
-            <fieldset className="checks">
-              <legend>Days</legend>
-              {WEEKDAY_SHORT.map((d, i) => (
-                <label key={d} className={`check ${form.daysOfWeek.includes(i) ? 'is-on' : ''}`}>
-                  <input type="checkbox" checked={form.daysOfWeek.includes(i)} onChange={(e) => setForm({ ...form, daysOfWeek: e.target.checked ? [...form.daysOfWeek, i] : form.daysOfWeek.filter((x) => x !== i) })} />
-                  {d}
-                </label>
-              ))}
-            </fieldset>
-          )}
-          {form.frequency === 'once' && <label className="field"><span>Due date</span><input type="date" value={form.dueDate} onChange={set('dueDate')} /></label>}
-          <div className="btn-row form-actions">
-            <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : form.id ? 'Save changes' : 'Add task'}</button>
-            <button type="button" className="btn btn-quiet" onClick={() => setForm(null)}>Cancel</button>
-          </div>
-        </form>
-      )}
+      {form && !form.id && taskForm}
     </>
   );
 }

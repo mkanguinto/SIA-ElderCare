@@ -29,8 +29,8 @@ export default async function run({ shots } = {}) {
   try {
     // Outgoing nurse fills in the handover form
     await page.login('nurse.ana');
-    await page.goto(`/m/nurse/patients/${PATIENT}`);
-    check(await page.waitFor('Hand over this case'), 'Ana (case nurse) sees "Hand over this case" on the patient screen');
+    await page.goto(`/m/nurse/patients/${PATIENT}?tab=team`);
+    check(await page.waitFor('Hand over this case'), 'Ana (case nurse) sees "Hand over this case" on the patient\'s Care team tab');
     await page.click('Hand over this case');
     check(await page.waitFor('Hand over to'), 'handover form opens');
     await page.click('Ben Lim, RN');

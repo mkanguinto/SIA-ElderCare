@@ -7,6 +7,7 @@ import { relTime } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, manilaDay } from '../mobile/kit';
 import { CarePlanEditor } from '../components/care';
+import { SelectOther, listLabel } from '../components/ui';
 
 const AREAS = { eating: 'Eating', meal_preparation: 'Meal preparation', fluids: 'Drinking', hygiene: 'Bathing / hygiene', oral_care: 'Oral care', dressing: 'Dressing',
   toileting: 'Toileting', mobility: 'Walking / mobility', transfers: 'Transfers (bed, chair)', communication: 'Communication', other: 'Other' };
@@ -19,7 +20,7 @@ const ACTION = { draft_created: 'Draft started', draft_updated: 'Draft edited', 
   verified: 'Verified by a clinician', activated: 'Activated', superseded: 'Superseded', discarded: 'Draft discarded' };
 const blankSource = { type: '', clinician: '', facility: '', reference: '', date: '' };
 const clean = (o) => JSON.parse(JSON.stringify(o, (k, v) => (v === '' ? undefined : v)));
-const sourceText = (s) => (s ? [SOURCES[s.type] || s.type, s.clinician, s.facility, s.reference, s.date].filter(Boolean).join(' · ') : 'no source');
+const sourceText = (s) => (s ? [listLabel(SOURCES, s.type, s.typeOther), s.clinician, s.facility, s.reference, s.date].filter(Boolean).join(' · ') : 'no source');
 
 export default function CarePlanManager({ patientId, care }) {
   const [plan, setPlan] = useState(null);
@@ -77,7 +78,7 @@ function ActiveSummary({ v }) {
       <dl className="ad-facts">
         <div><dt>Effective</dt><dd>{v.effectiveDate || '—'}</dd><span className="m-sub">review by {v.reviewDate || '—'}</span></div>
         <div><dt>Responsible nurse</dt><dd>{v.responsibleNurseName || '—'}</dd><span className="m-sub">activated {v.activatedAt ? relTime(v.activatedAt) : '—'}</span></div>
-        <div><dt>Verified by</dt><dd>{v.verification ? v.verification.clinicianName : v.legacy ? 'Not verified' : '—'}</dd>{v.verification && <span className="m-sub">{v.verification.clinicianRole} · {METHODS[v.verification.method]} · {v.verification.verifiedOn}</span>}</div>
+        <div><dt>Verified by</dt><dd>{v.verification ? v.verification.clinicianName : v.legacy ? 'Not verified' : '—'}</dd>{v.verification && <span className="m-sub">{v.verification.clinicianRole} · {listLabel(METHODS, v.verification.method, v.verification.methodOther)} · {v.verification.verifiedOn}</span>}</div>
         <div><dt>Allergies</dt><dd>{!c.allergies ? 'Not recorded' : c.allergies.status === 'listed' ? c.allergies.items.map((i) => i.substance).join(', ') : c.allergies.status === 'none_known' ? 'None known' : 'Not assessed'}</dd></div>
       </dl>
       {(c.goals || c.preferences) && <p className="ad-plan-text"><strong>Goals:</strong> {c.goals || '—'}{c.preferences ? <><br /><strong>Preferences:</strong> {c.preferences}</> : null}</p>}
@@ -142,8 +143,8 @@ function DraftEditor({ draft, care, run, patientId, reload }) {
       <h3 className="ad-label">Assistance needs</h3>
       {f.assistanceNeeds.map((n, i) => (
         <div key={i} className="ad-form-row">
-          <label className="ad-field"><span>Area</span><select value={n.area} onChange={(e) => list('assistanceNeeds', i, { area: e.target.value })}><option value="">Choose</option>{Object.entries(AREAS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          <label className="ad-field"><span>Help needed</span><select value={n.level} onChange={(e) => list('assistanceNeeds', i, { level: e.target.value })}><option value="">Choose</option>{Object.entries(LEVELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label className="ad-field"><span>Area</span><SelectOther label="Area" value={n.area} onChange={(area) => list('assistanceNeeds', i, { area })} other={n.areaOther} onOther={(areaOther) => list('assistanceNeeds', i, { areaOther })} options={Object.entries(AREAS)} placeholder="Choose" /></label>
+          <label className="ad-field"><span>Help needed</span><SelectOther label="Help needed" value={n.level} onChange={(level) => list('assistanceNeeds', i, { level })} other={n.levelOther} onOther={(levelOther) => list('assistanceNeeds', i, { levelOther })} options={Object.entries(LEVELS)} placeholder="Choose" /></label>
           <label className="ad-field"><span>Details</span><input value={n.details || ''} onChange={(e) => list('assistanceNeeds', i, { details: e.target.value })} maxLength={500} /></label>
           <button type="button" className="m-link" onClick={() => setF({ ...f, assistanceNeeds: f.assistanceNeeds.filter((_, j) => j !== i) })}>Remove</button>
         </div>
@@ -226,7 +227,7 @@ function SourceFields({ value, onChange, clinicalOnly }) {
   const set = (k) => (e) => onChange({ ...s, [k]: e.target.value });
   return (
     <div className="ad-form-row ad-source">
-      <label className="ad-field is-narrow"><span>Source</span><select value={s.type} onChange={set('type')}><option value="">Choose</option>{Object.entries(SOURCES).filter(([k]) => !clinicalOnly || k !== 'nurse_assessment').map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      <label className="ad-field is-narrow"><span>Source</span><SelectOther label="Source" value={s.type} onChange={(type) => onChange({ ...s, type })} other={s.typeOther} onOther={(typeOther) => onChange({ ...s, typeOther })} options={Object.entries(SOURCES).filter(([k]) => !clinicalOnly || k !== 'nurse_assessment')} placeholder="Choose" /></label>
       <label className="ad-field"><span>Clinician</span><input value={s.clinician} onChange={set('clinician')} /></label>
       <label className="ad-field"><span>Facility</span><input value={s.facility} onChange={set('facility')} /></label>
       <label className="ad-field"><span>Reference</span><input value={s.reference} onChange={set('reference')} placeholder="Order no., protocol" /></label>
@@ -245,14 +246,14 @@ function Verify({ draft, run }) {
       <h3 className="ad-label">Partner-clinic approval</h3>
       <ul className="ad-instructions">{items.map((it, i) => <li key={i}><strong>{KINDS[it.kind] || (it.kind === 'afterHours' ? 'After hours' : it.kind === 'emergency' ? 'Emergency' : it.kind)}:</strong> {it.text}</li>)}</ul>
       {draft.verification ? (
-        <p className="m-banner tone-ok"><Icon name="checkCircle" />Verified by {draft.verification.clinicianName} ({draft.verification.clinicianRole}), {METHODS[draft.verification.method]}, {draft.verification.verifiedOn}. Changing one of these instructions clears it.</p>
+        <p className="m-banner tone-ok"><Icon name="checkCircle" />Verified by {draft.verification.clinicianName} ({draft.verification.clinicianRole}), {listLabel(METHODS, draft.verification.method, draft.verification.methodOther)}, {draft.verification.verifiedOn}. Changing one of these instructions clears it.</p>
       ) : (
         <>
           <div className="ad-form-grid">
             <label className="ad-field"><span>Clinician</span><input value={v.clinicianName} onChange={set('clinicianName')} placeholder="Dr. L. Reyes" /></label>
             <label className="ad-field"><span>Role</span><input value={v.clinicianRole} onChange={set('clinicianRole')} placeholder="Physician, partner-clinic nurse" /></label>
             <label className="ad-field"><span>Facility</span><input value={v.facility} onChange={set('facility')} /></label>
-            <label className="ad-field"><span>How</span><select value={v.method} onChange={set('method')}><option value="">Choose</option>{Object.entries(METHODS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+            <label className="ad-field"><span>How</span><SelectOther label="How" value={v.method} onChange={(method) => setV({ ...v, method })} other={v.methodOther} onOther={(methodOther) => setV({ ...v, methodOther })} options={Object.entries(METHODS)} placeholder="Choose" /></label>
             <label className="ad-field"><span>Reference</span><input value={v.reference} onChange={set('reference')} /></label>
             <label className="ad-field"><span>Verified on</span><input type="date" value={v.verifiedOn} onChange={set('verifiedOn')} /></label>
           </div>

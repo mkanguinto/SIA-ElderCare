@@ -22,12 +22,18 @@ const ENV_SOURCES = ['device_location', 'patient_address'];
 // Which device each reading came from (health safeguard: readings from wrist cuffs or forehead thermometers
 // are less reliable, and a nurse should know when a reading came from a different device than usual).
 const DEVICES = {
-  bp: ['upper_arm_digital', 'wrist_digital', 'manual_aneroid', 'bluetooth_monitor'],
-  thermometer: ['digital_oral', 'digital_axillary', 'infrared_forehead', 'infrared_ear'],
-  oximeter: ['fingertip'],
+  bp: ['upper_arm_digital', 'wrist_digital', 'manual_aneroid', 'bluetooth_monitor', 'other'],
+  thermometer: ['digital_oral', 'digital_axillary', 'infrared_forehead', 'infrared_ear', 'other'],
+  oximeter: ['fingertip', 'other'],
+};
+// "other" (a device or a reason not in the list) comes with the caregiver's words under "<key>Other", e.g. bpOther.
+const otherWords = (obj, k, field, errors) => {
+  const t = typeof obj[`${k}Other`] === 'string' ? obj[`${k}Other`].trim() : '';
+  if (t.length < 2 || t.length > 80) { errors.push(`${field}.${k}Other is required when "other" is chosen (2-80 characters)`); return undefined; }
+  return t;
 };
 // Why a vital sign has no value. A missing reading is never sent or stored as 0.
-const MISSING_REASONS = ['not_measured', 'no_device', 'unknown'];
+const MISSING_REASONS = ['not_measured', 'no_device', 'unknown', 'other'];
 const MISSING_KEYS = { bp: ['systolic', 'diastolic'], heartRate: ['heartRate'], temperatureC: ['temperatureC'], spo2: ['spo2'], bloodGlucose: ['bloodGlucose'] };
 
 /** Idempotency keys used only by the automated test suites (Postman, smoke test, SMS tests). */
@@ -125,9 +131,13 @@ function validateCheckin(body, now = new Date()) {
     else {
       measurementDevice = {};
       for (const [k, v] of Object.entries(d)) {
+        if (k.endsWith('Other') && DEVICES[k.slice(0, -5)]) continue;
         if (!DEVICES[k]) errors.push(`measurementDevice.${k} is not a known device type (bp, thermometer, oximeter)`);
         else if (!DEVICES[k].includes(v)) errors.push(`measurementDevice.${k} must be one of: ${DEVICES[k].join(', ')}`);
-        else measurementDevice[k] = v;
+        else {
+          measurementDevice[k] = v;
+          if (v === 'other') measurementDevice[`${k}Other`] = otherWords(d, k, 'measurementDevice', errors);
+        }
       }
       if (!Object.keys(measurementDevice).length) measurementDevice = null;
     }
@@ -140,10 +150,14 @@ function validateCheckin(body, now = new Date()) {
     else {
       vitalsMissing = {};
       for (const [k, reason] of Object.entries(m)) {
+        if (k.endsWith('Other') && MISSING_KEYS[k.slice(0, -5)]) continue;
         if (!MISSING_KEYS[k]) errors.push(`vitalsMissing.${k} is not a vital sign (${Object.keys(MISSING_KEYS).join(', ')})`);
         else if (!MISSING_REASONS.includes(reason)) errors.push(`vitalsMissing.${k} must be one of: ${MISSING_REASONS.join(', ')}`);
         else if (MISSING_KEYS[k].some((f) => vitals[f] !== undefined)) errors.push(`vitalsMissing.${k} cannot be given together with a value`);
-        else vitalsMissing[k] = reason;
+        else {
+          vitalsMissing[k] = reason;
+          if (reason === 'other') vitalsMissing[`${k}Other`] = otherWords(m, k, 'vitalsMissing', errors);
+        }
       }
       if (!Object.keys(vitalsMissing).length) vitalsMissing = null;
     }

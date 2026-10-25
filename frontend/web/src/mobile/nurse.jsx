@@ -11,6 +11,11 @@ import { StatusChip } from './status';
 import { vitalsSummary } from './data';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ClinicMessages, MessagesBanner } from './contact';
+import { ToastProvider } from '../toast';
+import { CareToday } from '../components/care';
+import CarePlanManager from '../clinic/CarePlanManager';
+import { Concerns, CareReports } from '../clinic/PatientCase';
+import { Medications, CareTeam } from '../pages/PatientProfile';
 import { DutyToggle, PendingHandovers, MyCases, CareTeamCard, HandoverForm, usePendingHandovers, useMyCases } from './handover';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Loader, useT, useMobileToast,
@@ -48,10 +53,12 @@ export default function NurseApp({ user, path }) {
   else if (sub === '/profile') screen = <Profile user={user} back={BASE} desktopTo="/clinic" />;
   else screen = <Queue user={user} />;
   return (
-    <MobileFrame plain={!nav}>
-      {screen}
-      {nav && <BottomNav items={NAV(tr)} />}
-    </MobileFrame>
+    <ToastProvider>
+      <MobileFrame plain={!nav}>
+        {screen}
+        {nav && <BottomNav items={NAV(tr)} />}
+      </MobileFrame>
+    </ToastProvider>
   );
 }
 
@@ -175,6 +182,9 @@ export function PatientDetail({ user, patientId }) {
   const [week, setWeek] = useState(null);
   const [busy, setBusy] = useState(false);
   const [care, setCare] = useState(null);
+  // Same three sections as the patient case on the computer (Overview / Care plan & medicines / Care team).
+  const [tab, setTabState] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'overview');
+  const setTab = (t) => { setTabState(t); window.history.replaceState(null, '', t === 'overview' ? window.location.pathname : `${window.location.pathname}?tab=${t}`); };
   const loadCare = useCallback(() => api(`/api/clinic/patients/${encodeURIComponent(patientId)}/care`).then(setCare)
     .catch((e) => setCare(e.status === 404 ? null : { error: e.message })), [patientId]);
   const loadItem = useCallback(() => api(`/api/clinic/queue?patientId=${encodeURIComponent(patientId)}`).then((r) => setItem(r.items[0] || null)).catch(() => setItem(null)), [patientId]);
@@ -229,7 +239,28 @@ export function PatientDetail({ user, patientId }) {
         </div>
       </section>
 
-      {item && (
+      <div className="m-seg m-case-tabs" role="tablist" aria-label={tr('Patient case', 'Kaso ng pasyente')}>
+        {[['overview', tr('Overview', 'Buod')], ['plan', tr('Care plan & medicines', 'Plano at gamot')], ['team', tr('Care team', 'Care team')]].map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} aria-pressed={tab === k} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {tab === 'plan' && (
+        <div className="m-desk">
+          <Medications patientId={patientId} canEdit />
+          <CarePlanManager patientId={patientId} care={care} />
+          <section className="ad-panel"><h2>{tr("Today's tasks", 'Mga gawain ngayon')}</h2><CareToday patientId={patientId} compact /></section>
+        </div>
+      )}
+
+      {tab === 'team' && (
+        <>
+          <CareTeamCard user={user} patientId={patientId} care={care} />
+          <div className="m-desk"><CareTeam patientId={patientId} canEdit /></div>
+        </>
+      )}
+
+      {tab === 'overview' && item && (
         <section className="m-card">
           <h2 className="m-card-title">{tr(`Why priority ${item.priority.slice(1)} (score ${score})`, `Bakit priority ${item.priority.slice(1)} (score ${score})`)}</h2>
           {breakdown(item, patient).map(([en, fil, pts, color]) => (
@@ -245,9 +276,9 @@ export function PatientDetail({ user, patientId }) {
         </section>
       )}
 
-      <CareTeamCard user={user} patientId={patientId} care={care} />
-
+      {tab === 'overview' && <>
       <PatientReviews patientId={patientId} />
+      <div className="m-desk"><Concerns patientId={patientId} /><CareReports patientId={patientId} /></div>
 
       {week && (
         <section className="m-card">
@@ -279,8 +310,9 @@ export function PatientDetail({ user, patientId }) {
           </ul>
         )}
       </section>
+      </>}
 
-      {item && (
+      {item && tab === 'overview' && (
         <div className="m-footer-actions">
           <div className="m-grid-2">
             {heldByOther
@@ -632,7 +664,8 @@ export function ReviewCard({ c, onDone, showPatient = false }) {
   useKeepDraft(`review:${c.id}`, { mode, text }, Boolean(mode && text.trim()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const devices = c.measurementDevice ? Object.values(c.measurementDevice).map((d) => DEVICE_WORD[d] || d).join(', ') : null;
+  const md = c.measurementDevice;
+  const devices = md ? Object.keys(md).filter((k) => !k.endsWith('Other')).map((k) => (md[k] === 'other' ? md[`${k}Other`] || 'other device' : DEVICE_WORD[md[k]] || md[k])).join(', ') : null;
 
   async function submit(e) {
     e.preventDefault();

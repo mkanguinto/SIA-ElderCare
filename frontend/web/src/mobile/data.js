@@ -201,7 +201,7 @@ const MISSING_WORD = Object.fromEntries(MISSING_REASONS.map(([k, en, fil]) => [k
 export function vitalsSummary(c, tr, { glucose = true } = {}) {
   const v = c.vitals || {};
   const m = c.vitalsMissing || {};
-  const why = (k) => tr(...MISSING_WORD[m[k]]).toLowerCase();
+  const why = (k) => (m[k] === 'other' ? (m[`${k}Other`] || 'other reason') : tr(...(MISSING_WORD[m[k]] || [m[k], m[k]])).toLowerCase());
   const parts = [
     v.systolic ? `BP ${v.systolic}/${v.diastolic}` : m.bp ? `BP ${why('bp')}` : null,
     v.heartRate ? `${v.heartRate} bpm` : m.heartRate ? tr(`Pulse ${why('heartRate')}`, `Pulso ${why('heartRate')}`) : null,

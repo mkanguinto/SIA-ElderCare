@@ -14,6 +14,7 @@ import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import { StatusChip, StatusTimeline, statusLine } from './status';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ContactClinic } from './contact';
+import { SelectOther } from '../components/ui';
 import { Avatar, Badge, WeekDots, QuickAction, PatientPicker, SwitchPill, usePeople, sirenIcon } from './figma';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Cta, Chip, Banner, Ring, Loader, useT, usePrefs,
@@ -465,14 +466,14 @@ function DevicePicker({ devices, setDevice }) {
     <div className="m-note" style={{ padding: '.75rem 1rem' }}>
       <strong style={{ fontSize: '.875rem' }}>{tr('Measured with', 'Ginamit sa pagsukat')}</strong>
       <label className="m-device">{tr('Blood pressure:', 'Presyon:')}
-        <select value={devices.bp} onChange={(e) => setDevice('bp', e.target.value)} aria-label={tr('Blood pressure device', 'Gamit sa presyon')}>
-          {BP_DEVICES.map(([k]) => <option key={k} value={k}>{label(BP_DEVICES, k)}</option>)}
-        </select>
+        <SelectOther value={devices.bp} onChange={(v) => setDevice('bp', v)} other={devices.bpOther} onOther={(v) => setDevice('bpOther', v)} label={tr('Blood pressure device', 'Gamit sa presyon')}
+          aria-label={tr('Blood pressure device', 'Gamit sa presyon')} options={BP_DEVICES.map(([k]) => [k, label(BP_DEVICES, k)])}
+          otherLabel={tr('Other (type it)', 'Iba pa (i-type)')} otherPlaceholder={tr('Which device?', 'Anong gamit?')} />
       </label>
       <label className="m-device" style={{ marginTop: '.35rem' }}>{tr('Thermometer:', 'Thermometer:')}
-        <select value={devices.thermometer} onChange={(e) => setDevice('thermometer', e.target.value)} aria-label={tr('Thermometer type', 'Uri ng thermometer')}>
-          {THERMOMETERS.map(([k]) => <option key={k} value={k}>{label(THERMOMETERS, k)}</option>)}
-        </select>
+        <SelectOther value={devices.thermometer} onChange={(v) => setDevice('thermometer', v)} other={devices.thermometerOther} onOther={(v) => setDevice('thermometerOther', v)}
+          label={tr('Thermometer type', 'Uri ng thermometer')} aria-label={tr('Thermometer type', 'Uri ng thermometer')} options={THERMOMETERS.map(([k]) => [k, label(THERMOMETERS, k)])}
+          otherLabel={tr('Other (type it)', 'Iba pa (i-type)')} otherPlaceholder={tr('Which thermometer?', 'Anong thermometer?')} />
       </label>
       {devices.bp === 'wrist_digital' && <p className="m-caption" style={{ marginTop: '.35rem' }}>{tr('Wrist monitors read less accurately: keep the wrist at heart level.', 'Hindi gaanong tumpak ang pang-pulso: itapat ang pulso sa puso.')}</p>}
     </div>
@@ -539,15 +540,14 @@ function VitalField({ k, label, value, onChange, error, hint, placeholder, decim
 
 /** "Not measured / No device / Unknown": why a reading is empty, so the nurse never mistakes it for 0 or normal. */
 /** "No reading?" under a vital: why it is empty (never a zero). A small dropdown so it fits half-width fields. */
-function MissingPicker({ label, value, onChange }) {
+function MissingPicker({ label, value, onChange, other, onOther }) {
   const tr = useT();
   return (
     <label className={`m-missing-select ${value ? 'is-set' : ''}`}>
       <span>{tr('No reading?', 'Walang sukat?')}</span>
-      <select value={value || ''} onChange={(e) => onChange(e.target.value || undefined)} aria-label={tr(`${label}: why is it empty?`, `${label}: bakit walang sukat?`)}>
-        <option value="">{tr('Choose why', 'Pumili')}</option>
-        {MISSING_REASONS.map(([k, en, fil]) => <option key={k} value={k}>{tr(en, fil)}</option>)}
-      </select>
+      <SelectOther value={value} onChange={(v) => onChange(v || undefined)} other={other} onOther={onOther} label={label} aria-label={tr(`${label}: why is it empty?`, `${label}: bakit walang sukat?`)}
+        placeholder={tr('Choose why', 'Pumili')} options={MISSING_REASONS.map(([k, en, fil]) => [k, tr(en, fil)])}
+        otherLabel={tr('Other (type it)', 'Iba pa (i-type)')} otherPlaceholder={tr('Why?', 'Bakit?')} />
     </label>
   );
 }
@@ -568,7 +568,7 @@ function CheckIn({ user }) {
   const [vitals, setVitals] = useState(d.vitals || EMPTY_VITALS);
   const [missing, setMissingState] = useState(d.missing || {});
   const setMissing = (k) => (reason) => setMissingState((m) => { const next = { ...m }; if (reason) next[k] = reason; else delete next[k]; return next; });
-  const missingFor = (k) => ({ value: missing[k], onChange: setMissing(k) });
+  const missingFor = (k) => ({ value: missing[k], onChange: setMissing(k), other: missing[`${k}Other`], onOther: setMissing(`${k}Other`) });
   const [given, setGiven] = useState(d.given || {});
   const [reasons, setReasons] = useState(d.reasons || {});
   const [symptoms, setSymptoms] = useState(d.symptoms || []);
@@ -627,7 +627,12 @@ function CheckIn({ user }) {
   function buildBody() {
     const num = (x) => (x === '' ? undefined : Number(x));
     const v = Object.fromEntries(Object.entries(vitals).map(([k, x]) => [k, num(x)]).filter(([, x]) => x !== undefined));
-    const vitalsMissing = Object.fromEntries(Object.entries(missing).filter(([k]) => (k === 'bp' ? v.systolic === undefined && v.diastolic === undefined : v[k] === undefined)));
+    // "<vital>Other" holds the caregiver's own words when the reason is "other"; it goes with its vital.
+    const vitalsMissing = Object.fromEntries(Object.entries(missing).filter(([key]) => {
+      const k = key.replace(/Other$/, '');
+      if (key !== k && missing[k] !== 'other') return false;
+      return k === 'bp' ? v.systolic === undefined && v.diastolic === undefined : v[k] === undefined;
+    }));
     const answered = meds.filter((m) => given[m.id] !== undefined);
     const missed = meds.filter((m) => given[m.id] === false).map((m) => `${m.name} ${m.dosage}${reasons[m.id] ? ` – ${reasons[m.id]}` : ''}`.slice(0, 100));
     const told = SYMPTOMS.filter((s) => symptoms.includes(s.key) && s.key !== 'fall' && s.key !== 'confused').map((s) => s.en);
@@ -644,8 +649,8 @@ function CheckIn({ user }) {
       ...(noteText ? { notes: noteText.slice(0, 2000) } : {}),
       ...(weather.status === 'ready' ? { environment: toEnvironment(weather.weather) } : {}),
       measurementDevice: {
-        ...(v.systolic ? { bp: devices.bp } : {}),
-        ...(v.temperatureC ? { thermometer: devices.thermometer } : {}),
+        ...(v.systolic ? { bp: devices.bp, ...(devices.bp === 'other' ? { bpOther: devices.bpOther || '' } : {}) } : {}),
+        ...(v.temperatureC ? { thermometer: devices.thermometer, ...(devices.thermometer === 'other' ? { thermometerOther: devices.thermometerOther || '' } : {}) } : {}),
         ...(v.spo2 ? { oximeter: 'fingertip' } : {}),
       },
     };

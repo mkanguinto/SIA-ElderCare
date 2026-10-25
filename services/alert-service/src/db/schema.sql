@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS subscribers (
   UNIQUE (patient_id, phone_e164)
 );
 CREATE INDEX IF NOT EXISTS idx_subscribers_patient ON subscribers (patient_id);
+-- "other" relation (a neighbour, a friend): relation_label says who they are.
+ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS relation_label TEXT;
+ALTER TABLE subscribers DROP CONSTRAINT IF EXISTS subscribers_relation_check;
+ALTER TABLE subscribers ADD CONSTRAINT subscribers_relation_check CHECK (relation IN ('caregiver','family','sponsor','other'));
 
 CREATE TABLE IF NOT EXISTS alert_rules (
   code          TEXT PRIMARY KEY,

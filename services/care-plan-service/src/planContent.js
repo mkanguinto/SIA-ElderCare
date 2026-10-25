@@ -12,13 +12,19 @@
  */
 
 const ASSIST_AREAS = ['eating', 'meal_preparation', 'fluids', 'hygiene', 'oral_care', 'dressing', 'toileting', 'mobility', 'transfers', 'communication', 'other'];
-const ASSIST_LEVELS = ['independent', 'supervision', 'some_help', 'full_help'];
+const ASSIST_LEVELS = ['independent', 'supervision', 'some_help', 'full_help', 'other'];
 const INSTRUCTION_KINDS = ['diet', 'fluids', 'swallowing', 'skin_wound', 'restriction', 'other'];
 // Instructions only a clinical source can give; a nurse's own assessment is not enough for these.
 const SPECIALISED_KINDS = ['diet', 'fluids', 'swallowing', 'skin_wound'];
-const SOURCE_TYPES = ['physician_order', 'partner_clinic', 'hospital_discharge', 'clinic_protocol', 'nurse_assessment'];
+const SOURCE_TYPES = ['physician_order', 'partner_clinic', 'hospital_discharge', 'clinic_protocol', 'nurse_assessment', 'other'];
 const CLINICAL_SOURCES = SOURCE_TYPES.filter((s) => s !== 'nurse_assessment');
-const VERIFY_METHODS = ['in_person', 'phone', 'written_order', 'referral_document'];
+const VERIFY_METHODS = ['in_person', 'phone', 'written_order', 'referral_document', 'other'];
+// "Other" in a list comes with the nurse's own words (2-80 characters) under "<field>Other".
+function otherText(v, field, errors) {
+  const t = typeof v === 'string' ? v.trim() : '';
+  if (t.length < 2 || t.length > 80) { errors.push(`${field} is required when "other" is chosen (2-80 characters)`); return undefined; }
+  return t;
+}
 const ALLERGY_STATUS = ['none_known', 'listed', 'not_assessed'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isDate = (v) => typeof v === 'string' && DATE_RE.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
@@ -40,6 +46,7 @@ function source(v, field, errors, { clinicalOnly = false } = {}) {
   const out = {};
   if (!types.includes(v.type)) errors.push(`${field}.source.type must be one of: ${types.join(', ')}`);
   else out.type = v.type;
+  if (out.type === 'other') out.typeOther = otherText(v.typeOther, `${field}.source.typeOther`, errors);
   out.clinician = str(v.clinician, `${field}.source.clinician`, errors, { max: 120 });
   out.facility = str(v.facility, `${field}.source.facility`, errors, { max: 120 });
   out.reference = str(v.reference, `${field}.source.reference`, errors, { max: 160 });
@@ -82,7 +89,11 @@ function validateContent(body, { partial = true } = {}) {
         if (!n || typeof n !== 'object') { errors.push(`${f} must be an object`); return null; }
         if (!ASSIST_AREAS.includes(n.area)) errors.push(`${f}.area must be one of: ${ASSIST_AREAS.join(', ')}`);
         if (!ASSIST_LEVELS.includes(n.level)) errors.push(`${f}.level must be one of: ${ASSIST_LEVELS.join(', ')}`);
-        return JSON.parse(JSON.stringify({ area: n.area, level: n.level, details: str(n.details, `${f}.details`, errors, { max: 500 }) }));
+        return JSON.parse(JSON.stringify({
+          area: n.area, ...(n.area === 'other' ? { areaOther: otherText(n.areaOther, `${f}.areaOther`, errors) } : {}),
+          level: n.level, ...(n.level === 'other' ? { levelOther: otherText(n.levelOther, `${f}.levelOther`, errors) } : {}),
+          details: str(n.details, `${f}.details`, errors, { max: 500 }),
+        }));
       }).filter(Boolean);
     }
   }
@@ -175,6 +186,7 @@ function validateVerification(body, today) {
     facility: str(b.facility, 'facility', errors, { max: 160 }),
     reference: str(b.reference, 'reference', errors, { max: 160 }),
     method: b.method,
+    ...(b.method === 'other' ? { methodOther: otherText(b.methodOther, 'methodOther', errors) } : {}),
     verifiedOn: b.verifiedOn,
   };
   if (!v.clinicianName) errors.push('clinicianName is required');

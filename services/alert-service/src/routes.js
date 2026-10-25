@@ -628,9 +628,9 @@ router.post('/webhooks/textbee', async (req, res, next) => {
 
 /* --------------------------- SMS contacts (subscribers) --------------------------- */
 // Who receives a patient's SMS alerts. Clinic staff / admins manage them (RBAC at the gateway).
-const RELATIONS = ['caregiver', 'family', 'sponsor'];
+const RELATIONS = ['caregiver', 'family', 'sponsor', 'other'];  // other: relationLabel says who (e.g. neighbour)
 function toSubscriberDto(r) {
-  return { id: r.id, patientId: r.patient_id, userId: r.user_id, name: r.name, relation: r.relation, phone: r.phone_e164, smsEnabled: r.sms_enabled, createdAt: r.created_at };
+  return { id: r.id, patientId: r.patient_id, userId: r.user_id, name: r.name, relation: r.relation, relationLabel: r.relation_label || null, phone: r.phone_e164, smsEnabled: r.sms_enabled, createdAt: r.created_at };
 }
 
 router.get('/api/alerts/subscribers', async (req, res, next) => {
@@ -654,6 +654,8 @@ router.post('/api/alerts/subscribers', async (req, res, next) => {
     const name = typeof b.name === 'string' ? b.name.trim() : '';
     if (name.length < 2 || name.length > 80) errors.push('name must be 2-80 characters');
     if (!RELATIONS.includes(b.relation)) errors.push(`relation must be one of: ${RELATIONS.join(', ')}`);
+    const relationLabel = b.relation === 'other' && typeof b.relationLabel === 'string' ? b.relationLabel.trim() : null;
+    if (b.relation === 'other' && (!relationLabel || relationLabel.length < 2 || relationLabel.length > 60)) errors.push('relationLabel is required when relation is "other" (2-60 characters)');
     const phone = normalizePhone(b.phone);
     if (!phone) errors.push('phone must be a mobile number, e.g. 09171234567 or +639171234567');
     if (b.userId !== undefined && b.userId !== null && b.userId !== '' && !/^[A-Za-z0-9._-]{1,64}$/.test(String(b.userId))) errors.push('userId is invalid');
@@ -661,10 +663,11 @@ router.post('/api/alerts/subscribers', async (req, res, next) => {
     if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
 
     const { rows } = await pool.query(
-      `INSERT INTO subscribers (patient_id, user_id, name, relation, phone_e164, created_by) VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (patient_id, phone_e164) DO UPDATE SET name = EXCLUDED.name, relation = EXCLUDED.relation, user_id = EXCLUDED.user_id, sms_enabled = TRUE
+      `INSERT INTO subscribers (patient_id, user_id, name, relation, relation_label, phone_e164, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (patient_id, phone_e164) DO UPDATE SET name = EXCLUDED.name, relation = EXCLUDED.relation, relation_label = EXCLUDED.relation_label,
+         user_id = EXCLUDED.user_id, sms_enabled = TRUE
        RETURNING *`,
-      [b.patientId, b.userId || null, name, b.relation, phone, req.user.id],
+      [b.patientId, b.userId || null, name, b.relation, relationLabel, phone, req.user.id],
     );
     return res.status(201).json(toSubscriberDto(rows[0]));
   } catch (err) {

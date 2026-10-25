@@ -177,7 +177,7 @@ function CaseReviews({ patientId }) {
 const CONCERN_TONE = { open: 'critical', acknowledged: 'moderate', resolved: 'ok' };
 
 /** Concerns raised by the caregiver: open until a nurse resolves them with an assessment and the action taken. */
-function Concerns({ patientId }) {
+export function Concerns({ patientId }) {
   const [d, setD] = useState(null);
   const [act, setAct] = useState(null); // {id, op}
   const [f, setF] = useState({ note: '', assessment: '', actionTaken: '' });
@@ -237,7 +237,7 @@ const FLAG = { not_done: 'Not done', not_applicable: 'Not applicable', not_taken
   plan_version_differs: 'Different plan version', prescription_changed: 'Prescription changed', comment: 'Comment' };
 
 /** Caregiver reports that need a nurse's look (missing readings, doses not taken, version differences). */
-function CareReports({ patientId }) {
+export function CareReports({ patientId }) {
   const [d, setD] = useState(null);
   const [open, setOpen] = useState(null);
   const [note, setNote] = useState('');
