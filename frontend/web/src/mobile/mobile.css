@@ -1072,3 +1072,16 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .m-desk .med-table td:nth-child(4) { grid-area: act; }
 .m-desk .med-table td:nth-child(4) .btn-row { justify-content: flex-end; margin-top: 0; }
 .m-desk .med-table td:nth-child(3) { font-size: .875rem; }
+/* Phone: every field in the shared panels looks like a field (a border), and choice groups look like choices. */
+.m-desk :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  border: 1.5px solid #c9d6ce; border-radius: .75rem; padding: .6rem .8rem; background: #fff; color: var(--text-primary); font: inherit; font-weight: 400; }
+.m-desk textarea { min-height: 5.5rem; resize: vertical; }
+.m-desk :is(input, select, textarea):focus { border-color: var(--bg-primary); outline: 3px solid var(--bg-primary-soft); outline-offset: 0; }
+.m-desk :is(.ad-field, .field) { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .9rem; font-weight: 700; font-size: .9375rem; }
+.m-desk .m-seg { border: 1.5px solid #c9d6ce; background: #fff; flex-wrap: wrap; border-radius: 1.25rem; }
+.m-desk .m-seg button { min-height: 2.75rem; border: 0; }
+.m-desk .m-seg button[aria-pressed='true'] { background: var(--bg-cta); color: #fff; }
+.m-desk .ad-add { display: inline-flex; align-items: center; min-height: 2.75rem; padding: .4rem 1rem; border: 1.5px dashed #9fb5a8; border-radius: 999px; background: #fff; margin: .25rem 0 .75rem; }
+.m-desk .ad-label { margin: 1rem 0 .5rem; }
+.m-desk .ad-form-row { border: 1px solid #dce5df; border-radius: 1rem; padding: .75rem .75rem 0; margin-bottom: .75rem; background: #f8faf9; }
+.m-desk .ad-form-row > .m-link { align-self: flex-start; margin-bottom: .75rem; }
