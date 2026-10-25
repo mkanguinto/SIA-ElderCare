@@ -47,8 +47,11 @@ function useLive() {
   ]).then(([health, messaging]) => setState({ health, messaging, at: new Date() })), []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    // Only while the page is on screen: a forgotten background tab must not keep the free cloud services awake.
+    const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 5000);
+    const onShow = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onShow);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onShow); };
   }, [load]);
   return [state, load];
 }
