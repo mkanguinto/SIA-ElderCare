@@ -74,7 +74,7 @@ export function Medications({ patientId, canEdit }) {
       {data && data.error && <p className="muted">{data.error}</p>}
       {data && data.medications && inUse.length === 0 && <p className="muted">No medicines prescribed.</p>}
       {inUse.length > 0 && (
-        <table className="table">
+        <table className="table med-table">
           <thead><tr><th>Medicine</th><th>Schedule</th><th>Source</th><th /></tr></thead>
           <tbody>
             {inUse.map((m) => (

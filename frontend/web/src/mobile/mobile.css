@@ -1064,3 +1064,11 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .m-desk > :last-child { margin-bottom: .5rem; }
 .m-desk .ad-plan > .m-between { flex-wrap: wrap; gap: .5rem; }
 .m-desk .ad-plan > .m-between h2 { white-space: nowrap; }
+/* Medicines on a phone: two columns per card - name and schedule on the left, actions and source on the right. */
+.m-desk .med-table tr { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); grid-template-areas: "med act" "sched src"; gap: .35rem 1rem; align-items: start; }
+.m-desk .med-table td:nth-child(1) { grid-area: med; }
+.m-desk .med-table td:nth-child(2) { grid-area: sched; }
+.m-desk .med-table td:nth-child(3) { grid-area: src; }
+.m-desk .med-table td:nth-child(4) { grid-area: act; }
+.m-desk .med-table td:nth-child(4) .btn-row { justify-content: flex-end; margin-top: 0; }
+.m-desk .med-table td:nth-child(3) { font-size: .875rem; }
