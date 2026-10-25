@@ -1818,7 +1818,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{nurseToken}}"
+                "value": "Bearer {{adminToken}}"
               }
             ],
             "url": {
@@ -1864,7 +1864,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{nurseToken}}"
+                "value": "Bearer {{adminToken}}"
               }
             ],
             "url": {
@@ -1879,7 +1879,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Postman Test Patient\",\n  \"birthDate\": \"1948-03-15\",\n  \"sex\": \"M\",\n  \"addressLine\": \"12 Mabini St, Brgy 5, Manila\",\n  \"zipCode\": \"1000\",\n  \"conditions\": [\n    \"hypertension\"\n  ],\n  \"baseline\": {\n    \"systolic\": 130,\n    \"diastolic\": 80\n  },\n  \"medications\": [\n    {\n      \"name\": \"Amlodipine\",\n      \"dosage\": \"5 mg\",\n      \"frequency\": \"Once daily\",\n      \"times\": [\n        \"08:00\"\n      ],\n      \"source\": {\n        \"type\": \"physician_order\",\n        \"prescriber\": \"Dr. Postman Test\"\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"fullName\": \"Postman Test Patient\",\n  \"birthDate\": \"1948-03-15\",\n  \"sex\": \"M\",\n  \"addressLine\": \"12 Mabini St, Brgy 5, Manila\",\n  \"zipCode\": \"1000\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

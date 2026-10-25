@@ -12,7 +12,7 @@ import { vitalsSummary } from './data';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ClinicMessages, MessagesBanner } from './contact';
 import { ToastProvider } from '../toast';
-import { SelectOther, FAMILY_VERIFY, familyVerificationBody } from '../components/ui';
+import { HealthCard } from '../components/health';
 import { CareToday } from '../components/care';
 import CarePlanManager from '../clinic/CarePlanManager';
 import { Concerns, CareReports } from '../clinic/PatientCase';
@@ -42,8 +42,7 @@ export default function NurseApp({ user, path }) {
   const parts = sub.split('/').filter(Boolean);
   let screen;
   let nav = true;
-  if (sub === '/patients/new') { screen = <AddPatient />; nav = false; }
-  else if (parts[0] === 'patients' && parts[2] === 'schedule') { screen = <ScheduleVisit patientId={parts[1]} />; nav = false; }
+  if (parts[0] === 'patients' && parts[2] === 'schedule') { screen = <ScheduleVisit patientId={parts[1]} />; nav = false; }
   else if (parts[0] === 'patients' && parts[2] === 'handover') { screen = <HandoverForm user={user} patientId={parts[1]} />; nav = false; }
   else if (parts[0] === 'patients' && parts[1]) screen = <PatientDetail user={user} patientId={parts[1]} />;
   else if (sub === '/patients') screen = <Patients />;
@@ -278,6 +277,7 @@ export function PatientDetail({ user, patientId }) {
       )}
 
       {tab === 'overview' && <>
+      <div className="m-desk"><HealthCard patient={patient} canEdit className="ad-panel" onSaved={setPatient} /></div>
       <PatientReviews patientId={patientId} />
       <div className="m-desk"><Concerns patientId={patientId} /><CareReports patientId={patientId} /></div>
 
@@ -400,103 +400,6 @@ export function ScheduleVisit({ patientId }) {
   );
 }
 
-/* ------------------------------ N4 add patient ------------------------------ */
-const CONDITIONS = [
-  ['hypertension', 'High blood pressure', 'Altapresyon'],
-  ['diabetes', 'Diabetes', 'Diabetes'],
-  ['cardiovascular', 'Heart disease', 'Sakit sa puso'],
-  ['copd', 'Lung disease (COPD)', 'Sakit sa baga'],
-];
-export function AddPatient() {
-  const tr = useT();
-  const [f, setF] = useState({ fullName: '', birthDate: '', sex: 'F', barangay: '', city: 'Manila', zipCode: '', ecName: '', ecPhone: '' });
-  const [conditions, setConditions] = useState([]);
-  const [mobility, setMobility] = useState(false);
-  const [alone, setAlone] = useState(false);
-  const [users, setUsers] = useState({ caregivers: [], family: [] });
-  const [caregiverId, setCaregiverId] = useState('');
-  const [familyId, setFamilyId] = useState('');
-  const [familyVerify, setFamilyVerify] = useState({ method: '', methodOther: '' });
-  const [errors, setErrors] = useState(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api('/api/directory/users?role=caregiver,family_member').then((r) => setUsers({ caregivers: r.users.filter((u) => u.role === 'caregiver'), family: r.users.filter((u) => u.role === 'family_member') })).catch(() => {});
-  }, []);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
-  const toggle = (c) => setConditions((l) => (l.includes(c) ? l.filter((x) => x !== c) : [...l, c]));
-
-  async function submit(e) {
-    e.preventDefault();
-    if (familyId && (!familyVerify.method || (familyVerify.method === 'other' && !familyVerify.methodOther.trim()))) {
-      setErrors([tr('Say how you confirmed the family member, or leave the family account empty for now.', 'Sabihin kung paano kinumpirma ang kapamilya, o iwanang blangko muna.')]);
-      return;
-    }
-    setBusy(true);
-    setErrors(null);
-    try {
-      const r = await api('/api/patients', {
-        method: 'POST',
-        body: {
-          fullName: f.fullName, birthDate: f.birthDate, sex: f.sex,
-          addressLine: [f.barangay && `Brgy. ${f.barangay.replace(/^brgy\.?\s*/i, '')}`, f.city].filter(Boolean).join(', '),
-          zipCode: f.zipCode, conditions, mobilityRestricted: mobility,
-          emergencyContact: f.ecPhone ? { name: f.ecName || 'Family contact', relation: 'family', phone: f.ecPhone.replace(/\s/g, '') } : undefined,
-          notes: alone ? 'Lives alone' : undefined,
-        },
-      });
-      const pid = r.patient.id;
-      if (caregiverId) await api(`/api/directory/users/${caregiverId}/patients`, { method: 'PUT', body: { add: [pid] } }).catch(() => {});
-      if (familyId) await api(`/api/directory/users/${familyId}/patients`, { method: 'PUT', body: { add: [pid], familyVerification: familyVerificationBody(familyVerify) } }).catch(() => {});
-      if (f.ecPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.ecName || 'Family contact', relation: 'family', phone: f.ecPhone.replace(/\s/g, '') } }).catch(() => {});
-      navigate(`${base()}/patients/${pid}`);
-    } catch (err) {
-      setErrors(err.status === 409 ? [tr('This patient already exists (same name and birth date).', 'Mayroon nang ganitong pasyente.')] : err.details || [err.message]);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <TopBar title={tr('Add patient', 'Magdagdag ng pasyente')} back={base()} />
-      <form className="m-stack" onSubmit={submit}>
-        <label className="m-field"><span>{tr('Full name', 'Buong pangalan')}</span><input required minLength={3} value={f.fullName} onChange={set('fullName')} autoComplete="off" /></label>
-        <div className="m-grid-2">
-          <label className="m-field"><span>{tr('Birth date', 'Kaarawan')}</span><input required type="date" value={f.birthDate} onChange={set('birthDate')} /></label>
-          <label className="m-field"><span>{tr('Sex', 'Kasarian')}</span><select value={f.sex} onChange={set('sex')}><option value="F">{tr('Female', 'Babae')}</option><option value="M">{tr('Male', 'Lalaki')}</option><option value="X">{tr('Other', 'Iba')}</option></select></label>
-          <label className="m-field"><span>Barangay</span><input required value={f.barangay} onChange={set('barangay')} placeholder="659" /></label>
-          <label className="m-field"><span>{tr('ZIP code', 'ZIP code')}</span><input required inputMode="numeric" value={f.zipCode} onChange={set('zipCode')} placeholder="1012" /></label>
-        </div>
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="m-field" style={{ padding: 0 }}><span>{tr('Health conditions (affect the risk score)', 'Mga kondisyon (nakaaapekto sa risk score)')}</span></legend>
-          <div className="m-pills" style={{ marginTop: '.4rem' }}>
-            {CONDITIONS.map(([k, en, fil]) => <button key={k} type="button" className="m-pill" aria-pressed={conditions.includes(k)} onClick={() => toggle(k)}>{conditions.includes(k) && <Icon name="check" size={16} />}{tr(en, fil)}</button>)}
-            <button type="button" className="m-pill" aria-pressed={mobility} onClick={() => setMobility(!mobility)}>{mobility && <Icon name="check" size={16} />}{tr('Mobility-restricted', 'Limitado ang galaw')}</button>
-            <button type="button" className="m-pill" aria-pressed={alone} onClick={() => setAlone(!alone)}>{alone && <Icon name="check" size={16} />}{tr('Lives alone', 'Mag-isang nakatira')}</button>
-          </div>
-        </fieldset>
-        <label className="m-field"><span>{tr('Caregiver', 'Tagapag-alaga')}</span>
-          <select value={caregiverId} onChange={(e) => setCaregiverId(e.target.value)}><option value="">{tr('Not yet', 'Wala pa')}</option>{users.caregivers.map((u) => <option key={u.id} value={u.id}>{u.username} — {u.name}</option>)}</select></label>
-        <label className="m-field"><span>{tr('Family account', 'Account ng pamilya')}</span>
-          <select value={familyId} onChange={(e) => setFamilyId(e.target.value)}><option value="">{tr('Not yet', 'Wala pa')}</option>{users.family.map((u) => <option key={u.id} value={u.id}>{u.username} — {u.name}</option>)}</select></label>
-        {familyId && (
-          <label className="m-field"><span>{tr('How did you confirm they are family?', 'Paano kinumpirma na kapamilya?')}</span>
-            <SelectOther label={tr('Family verification', 'Pagkumpirma ng pamilya')} value={familyVerify.method} onChange={(method) => setFamilyVerify({ ...familyVerify, method })}
-              other={familyVerify.methodOther} onOther={(methodOther) => setFamilyVerify({ ...familyVerify, methodOther })} options={FAMILY_VERIFY}
-              placeholder={tr('Choose', 'Pumili')} otherPlaceholder={tr('How it was confirmed', 'Paano kinumpirma')} /></label>
-        )}
-        <div className="m-grid-2">
-          <label className="m-field"><span>{tr('Family contact for SMS', 'Contact para sa SMS')}</span><input value={f.ecName} onChange={set('ecName')} placeholder="Jose Cruz" /></label>
-          <label className="m-field"><span>{tr('Mobile number', 'Numero')}</span><input inputMode="tel" value={f.ecPhone} onChange={set('ecPhone')} placeholder="09187654321" /></label>
-        </div>
-        <Banner tone="info" icon="bell">{tr('Duplicate check: the same name and birth date is blocked.', 'Hindi puwede ang parehong pangalan at kaarawan.')}</Banner>
-        {errors && <div className="m-error" role="alert">{errors.map((x) => <p key={x}>{x}</p>)}</div>}
-        <Cta type="submit" disabled={busy}>{busy ? tr('Adding…', 'Idinadagdag…') : tr('Add patient', 'Idagdag')}</Cta>
-      </form>
-    </>
-  );
-}
-
-/* ------------------------------ patients / visits ------------------------------ */
 export function Patients() {
   const tr = useT();
   const [list, setList] = useState(null);
@@ -507,7 +410,8 @@ export function Patients() {
   const shown = (list || []).filter((p) => !search || `${p.fullName} ${p.id} ${p.zipCode}`.toLowerCase().includes(search.toLowerCase()));
   return (
     <>
-      <TopBar title={tr('Patients', 'Mga pasyente')} action={<Link to={`${base()}/patients/new`} className="m-icon-btn" aria-label={tr('Add patient', 'Magdagdag')}><Icon name="plus" /></Link>} />
+      <TopBar title={tr('Patients', 'Mga pasyente')} />
+      <p className="m-caption" style={{ margin: '0 0 .75rem' }}>{tr('New elders are registered by the administrator and linked to a care team.', 'Ang administrator ang nagrerehistro ng bagong pasyente.')}</p>
       <label className="m-search"><Icon name="search" /><span className="m-sr">{tr('Search', 'Hanapin')}</span><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tr('Search name, ID or ZIP', 'Hanapin')} /></label>
       <div className="m-stack" style={{ marginTop: '1rem' }}>
         {!list && <Loader />}

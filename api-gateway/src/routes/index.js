@@ -22,7 +22,9 @@
  * | PATCH  | /api/clinic/queue/:itemId           | clinic                              | Clinic Risk Queue      |
  * | GET    | /api/clinic/patients/:id/emr-history| clinic, admin                       | Clinic Risk Queue      |
  * v1.1 additions:
- * | GET/POST | /api/patients                     | clinic, admin                       | Daily Check-In Logger  |
+ * | GET    | /api/patients                       | clinic                              | Daily Check-In Logger  |
+ * | POST   | /api/patients                       | admin (register; no clinical fields) | Daily Check-In Logger |
+ * | PATCH  | /api/patients/:id/health            | clinic (conditions, mobility)       | Daily Check-In Logger  |
  * | GET    | /api/patients/:id/medications       | caregiver, family (own), clinic, admin | Daily Check-In Logger |
  * | POST/PATCH | /api/patients/:id/medications[/:medId] | clinic                     | Daily Check-In Logger  |
  * | GET    | /api/patients/:id/visits            | caregiver, family (own), clinic, admin | Clinic Risk Queue   |
@@ -108,7 +110,9 @@ router.get(
 
 // Patient onboarding + list (nurses: the records carry conditions and baselines)
 router.get('/patients', authorize(ROLES.CLINIC), forwardTo('checkin'));
-router.post('/patients', authorize(ROLES.CLINIC), forwardTo('checkin'));
+// An admin registers elders (identity, address, contacts); nurses record the clinical part.
+router.post('/patients', authorize(ROLES.ADMIN), forwardTo('checkin'));
+router.patch('/patients/:id/health', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 // Prescribed medications: caregivers / family see their own patients; clinic staff prescribe
 router.get(

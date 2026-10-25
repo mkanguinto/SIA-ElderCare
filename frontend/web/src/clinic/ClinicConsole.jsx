@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { ToastProvider } from '../toast';
-import { ScheduleVisit, AddPatient, Patients, Digest, Reviews } from '../mobile/nurse';
+import { ScheduleVisit, Patients, Digest, Reviews } from '../mobile/nurse';
 import { HandoverForm } from '../mobile/handover';
 import { ClinicMessages } from '../mobile/contact';
 import DesktopShell from '../components/DesktopShell';
@@ -51,7 +51,6 @@ export default function ClinicConsole({ user, path }) {
   let width = 'is-wide';
   // Every page uses the full width beside the sidebar; forms lay their fields out in two columns.
   if (!parts.length) page = <RiskQueue user={user} />;
-  else if (parts[0] === 'patients' && parts[1] === 'new') { page = <AddPatient />; width = 'is-wide is-form'; }
   else if (parts[0] === 'patients' && parts[2] === 'schedule') { page = <ScheduleVisit patientId={parts[1]} />; width = 'is-wide is-form'; }
   else if (parts[0] === 'patients' && parts[2] === 'handover') { page = <HandoverForm user={user} patientId={parts[1]} />; width = 'is-wide is-form'; }
   else if (parts[0] === 'patients' && parts[1]) page = <PatientCase key={parts[1]} user={user} patientId={parts[1]} />;

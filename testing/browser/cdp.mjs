@@ -61,11 +61,16 @@ export async function launch({ width = 390, height = 844 } = {}) {
   const page = {
     evaluate,
     async goto(p) { await send('Page.navigate', { url: WEB + p }); await sleep(600); },
-    /** Signs in through the web app's own /oauth proxy and stores the session the way the app does. */
-    async login(username) {
+    /**
+     * Signs in through the web app's own /oauth proxy and stores the session the way the app does. The first-time
+     * intro (caregiver / family) is marked as seen unless intro: true.
+     */
+    async login(username, { intro = false } = {}) {
       await page.goto('/');
+      const seen = intro ? '' : "try{localStorage.setItem('eldercare.intro.'+JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub,'done')}catch(e){}";
       const ok = await evaluate(`fetch('/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'password',username:${JSON.stringify(username)},password:${JSON.stringify(PASSWORD)},device:'phone'})})
-        .then(r=>r.json()).then(d=>{sessionStorage.clear();sessionStorage.setItem('eldercare.session',JSON.stringify({accessToken:d.access_token,refreshToken:d.refresh_token}));return !!d.access_token})`);
+        .then(r=>r.json()).then(d=>{sessionStorage.clear();sessionStorage.setItem('eldercare.session',JSON.stringify({accessToken:d.access_token,refreshToken:d.refresh_token}));
+          ${seen} return !!d.access_token})`);
       if (!ok) throw new Error(`login failed for ${username}`);
     },
     text: () => evaluate('document.body.innerText'),

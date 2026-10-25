@@ -47,6 +47,7 @@ export function CareTeams({ Head }) {
   return (
     <>
       <Head title="Care teams" sub="Manage elder assignments, care team rosters, and track changes.">
+        <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setTab('link')}>+ Add New Elder</button>
         <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setCreating(true)}>+ Create New Team</button>
       </Head>
       <div className="ad-tabs" role="tablist" aria-label="Care teams">
@@ -92,6 +93,11 @@ export function CareTeams({ Head }) {
       {data && tab === 'link' && (
         <>
           <section className="ad-panel">
+            <h2>Add a new elder</h2>
+            <p className="m-caption">Registers the elder and links the care team, case nurse, caregiver and SMS contact. Health conditions, mobility and medicines are recorded by the nurse.</p>
+            <NewElder data={data} users={users || []} run={run} />
+          </section>
+          <section className="ad-panel">
             <h2>Elders</h2>
             <p className="m-caption">Cases already held by a nurse move only by an accepted handover.</p>
             <table className="ad-table">
@@ -100,7 +106,7 @@ export function CareTeams({ Head }) {
             </table>
           </section>
           <section className="ad-panel">
-            <h2>Link another elder</h2>
+            <h2>Link an existing elder</h2>
             <AddElder data={data} onSave={(id, body) => run(() => api(`/api/clinic/patients/${encodeURIComponent(id)}/care`, { method: 'PUT', body }), `${body.patientName} linked to ${body.careTeamId}`)} />
           </section>
         </>
@@ -158,6 +164,57 @@ function ElderRow({ p, data, onSave }) {
       </td>
       <td><button type="button" className="m-link" disabled={!changed} onClick={() => onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`)}>Save</button></td>
     </tr>
+  );
+}
+
+const BLANK_ELDER = { fullName: '', birthDate: '', sex: 'F', barangay: '', city: 'Manila', zipCode: '', careTeamId: '', monitoringPlanId: 'MP-DAILY', caseNurseId: '', caregiverId: '', contactName: '', contactPhone: '' };
+
+/**
+ * Registers an elder (identity, address, contacts) and links the care team, monitoring plan, first case nurse,
+ * caregiver account and SMS contact. No clinical data: a nurse records conditions, mobility and medicines.
+ */
+function NewElder({ data, users, run }) {
+  const [f, setF] = useState(() => ({ ...BLANK_ELDER, careTeamId: data.teams[0] ? data.teams[0].id : '' }));
+  const [done, setDone] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const members = (data.teams.find((t) => t.id === f.careTeamId) || { members: [] }).members;
+  const caregivers = users.filter((u) => u.role === 'caregiver' && u.status !== 'disabled');
+  async function submit(e) {
+    e.preventDefault();
+    setDone(null);
+    let pid;
+    const ok = await run(async () => {
+      const r = await api('/api/patients', { method: 'POST', body: {
+        fullName: f.fullName.trim(), birthDate: f.birthDate, sex: f.sex, zipCode: f.zipCode.trim(),
+        addressLine: [f.barangay && `Brgy. ${f.barangay.trim().replace(/^brgy\.?\s*/i, '')}`, f.city.trim()].filter(Boolean).join(', '),
+        ...(f.contactPhone ? { emergencyContact: { name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } } : {}),
+      } });
+      pid = r.patient.id;
+      await api(`/api/clinic/patients/${encodeURIComponent(pid)}/care`, { method: 'PUT', body: { patientName: f.fullName.trim(), careTeamId: f.careTeamId, monitoringPlanId: f.monitoringPlanId, ...(f.caseNurseId ? { caseNurseId: f.caseNurseId } : {}) } });
+      if (f.caregiverId) await api(`/api/directory/users/${f.caregiverId}/patients`, { method: 'PUT', body: { add: [pid] } });
+      if (f.contactPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } });
+    }, `${f.fullName.trim()} registered`);
+    if (ok) { setDone(`${f.fullName.trim()} is ${pid}. The nurse records health conditions and medicines next; family accounts are linked by a nurse with family verification.`); setF({ ...BLANK_ELDER, careTeamId: f.careTeamId }); }
+  }
+  return (
+    <form onSubmit={submit}>
+      <div className="ad-form-grid">
+        <label className="ad-field"><span>Full name</span><input value={f.fullName} onChange={set('fullName')} minLength={3} required /></label>
+        <label className="ad-field"><span>Birth date</span><input type="date" value={f.birthDate} onChange={set('birthDate')} required /></label>
+        <label className="ad-field"><span>Sex</span><select value={f.sex} onChange={set('sex')}><option value="F">Female</option><option value="M">Male</option><option value="X">Other</option></select></label>
+        <label className="ad-field"><span>Barangay</span><input value={f.barangay} onChange={set('barangay')} placeholder="659" required /></label>
+        <label className="ad-field"><span>City</span><input value={f.city} onChange={set('city')} required /></label>
+        <label className="ad-field"><span>ZIP code (weather check)</span><input value={f.zipCode} onChange={set('zipCode')} inputMode="numeric" placeholder="1012" required /></label>
+        <label className="ad-field"><span>Care team</span><select value={f.careTeamId} onChange={(e) => setF({ ...f, careTeamId: e.target.value, caseNurseId: '' })} required>{data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
+        <label className="ad-field"><span>Monitoring plan</span><select value={f.monitoringPlanId} onChange={set('monitoringPlanId')}>{data.monitoringPlans.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+        <label className="ad-field"><span>Case nurse</span><select value={f.caseNurseId} onChange={set('caseNurseId')}><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+        <label className="ad-field"><span>Caregiver account</span><select value={f.caregiverId} onChange={set('caregiverId')}><option value="">Not yet</option>{caregivers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></label>
+        <label className="ad-field"><span>SMS contact name</span><input value={f.contactName} onChange={set('contactName')} placeholder="Jose Reyes" /></label>
+        <label className="ad-field"><span>SMS contact mobile</span><input value={f.contactPhone} onChange={set('contactPhone')} inputMode="tel" placeholder="09187654321" /></label>
+      </div>
+      <button type="submit" className="m-btn ad-btn-auto">Register elder</button>
+      {done && <p className="m-banner tone-ok" role="status" style={{ marginTop: '1rem' }}>{done}</p>}
+    </form>
   );
 }
 

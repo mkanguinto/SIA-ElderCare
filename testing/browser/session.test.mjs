@@ -10,10 +10,12 @@ import { launch, harness, api, PASSWORD, sleep } from './cdp.mjs';
 const USER = 'caregiver.maria';
 const value = (page) => page.evaluate("(document.querySelector('#vital-heartRate') || {}).value");
 
-/** Signs in like page.login, but keeps the rest of sessionStorage (drafts) and sets a short idle limit. */
+/** Signs in like page.login (intro marked as seen), but keeps the rest of sessionStorage (drafts) and sets a short idle limit. */
 async function signIn(page, username, idleLockMinutes) {
   const ok = await page.evaluate(`fetch('/oauth/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'password',username:${JSON.stringify(username)},password:${JSON.stringify(PASSWORD)},device:'phone'})})
-    .then(r=>r.json()).then(d=>{sessionStorage.setItem('eldercare.session',JSON.stringify({accessToken:d.access_token,refreshToken:d.refresh_token,idleLockMinutes:${idleLockMinutes}}));return !!d.access_token})`);
+    .then(r=>r.json()).then(d=>{sessionStorage.setItem('eldercare.session',JSON.stringify({accessToken:d.access_token,refreshToken:d.refresh_token,idleLockMinutes:${idleLockMinutes}}));
+      try{localStorage.setItem('eldercare.intro.'+JSON.parse(atob(d.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub,'done')}catch(e){}
+      return !!d.access_token})`);
   if (!ok) throw new Error(`login failed for ${username}`);
 }
 

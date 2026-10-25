@@ -14,6 +14,7 @@ import { bluetoothSupported, readBloodPressure } from './bluetooth';
 import { StatusChip, StatusTimeline, statusLine } from './status';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ContactClinic } from './contact';
+import { Intro, introSeen } from './intro';
 import { SelectOther } from '../components/ui';
 import { Avatar, Badge, WeekDots, QuickAction, PatientPicker, SwitchPill, usePeople, sirenIcon } from './figma';
 import {
@@ -61,8 +62,10 @@ const NAV = (tr) => [
 export default function CaregiverApp({ user, path }) {
   const tr = useT();
   const sub = path.slice(BASE.length) || '/';
+  const [intro, setIntro] = useState(() => !introSeen(user.id));
   let screen;
-  if (sub.startsWith('/check-in')) screen = <CheckIn user={user} />;
+  if (intro || sub === '/intro') screen = <Intro user={user} onDone={() => { setIntro(false); if (sub === '/intro') navigate(BASE); }} />;
+  else if (sub.startsWith('/check-in')) screen = <CheckIn user={user} />;
   else if (sub === '/medicines') screen = <Medicines user={user} />;
   else if (sub === '/duties') screen = <Duties user={user} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
@@ -73,7 +76,7 @@ export default function CaregiverApp({ user, path }) {
   else if (sub.startsWith('/patients/')) screen = <PatientProfile user={user} patientId={decodeURIComponent(sub.split('/')[2])} />;
   else if (sub === '/contact') screen = <CaregiverContact user={user} />;
   else screen = <Home user={user} />;
-  const wizard = sub.startsWith('/check-in');
+  const wizard = sub.startsWith('/check-in') || intro || sub === '/intro';
   return (
     <MobileFrame plain={wizard} light>
       {screen}

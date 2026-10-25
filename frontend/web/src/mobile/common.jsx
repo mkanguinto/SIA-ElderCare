@@ -194,6 +194,7 @@ export function Profile({ user, back, desktopTo, notifications }) {
       <PrefRow icon="globe" label={tr('Language', 'Wika')}><LangToggle /></PrefRow>
       <PrefRow icon="textSize" label={tr('Large Text Mode', 'Malaking letra')} last={!notifications}><SwitchPill on={big} onClick={() => setPrefs({ big: !big })} label={tr('Large Text Mode', 'Malaking letra')} /></PrefRow>
       {notifications && <PrefRow icon="bell" label={tr('Notifications & Reminders', 'Abiso at paalala')} last>{notifications}</PrefRow>}
+      {['caregiver', 'family_member'].includes(user.role) && <button type="button" className="m-btn is-block" style={{ marginTop: '1rem' }} onClick={() => navigate(`${back}/intro`)}><Icon name="heart" />{tr('How ElderCare works', 'Paano gumagana ang ElderCare')}</button>}
       {desktopTo && <button type="button" className="m-btn is-block" style={{ marginTop: '1rem' }} onClick={() => navigate(desktopTo)}><Icon name="monitor" />{tr('Open the desktop view', 'Buksan ang desktop view')}</button>}
       <button type="button" className="m-logout" onClick={requestSignOut}><Icon name="logout" size={18} />{tr('Log out', 'Mag-log out')}</button>
     </>

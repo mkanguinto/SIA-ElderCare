@@ -7,7 +7,7 @@ const { detectAnomalies } = require('./anomaly');
 const outbox = require('./outbox');
 const logger = require('./lib/logger');
 const { requireInternalToken } = require('./lib/internalAuth');
-const { validatePatient, validateMedication, validateStop, validateRxVerification } = require('./patientValidation');
+const { validatePatient, validateHealth, validateMedication, validateStop, validateRxVerification } = require('./patientValidation');
 const { parsePagination, pageInfo } = require('./lib/pagination');
 
 const router = express.Router();
@@ -258,10 +258,17 @@ router.get('/api/patients', async (req, res, next) => {
   }
 });
 
-// POST /api/patients   (clinic staff / admin) - onboard a new patient, optionally with prescriptions
+// POST /api/patients   (admin) - register a new elder: identity, address and contacts. The clinical part
+// (conditions, mobility, usual readings, prescriptions) is recorded afterwards by a nurse.
 router.post('/api/patients', async (req, res, next) => {
   try {
-    if (!requireRole(req, res, CLINIC_ROLES)) return undefined;
+    if (!requireRole(req, res, ['system_admin'])) return undefined;
+    const b = req.body || {};
+    const clinical = [(Array.isArray(b.conditions) && b.conditions.length) && 'conditions', b.mobilityRestricted && 'mobilityRestricted',
+      (b.baseline && Object.keys(b.baseline).length) && 'baseline', (Array.isArray(b.medications) && b.medications.length) && 'medications'].filter(Boolean);
+    if (clinical.length) {
+      return res.status(422).json({ error: 'validation_failed', details: [`${clinical.join(', ')}: recorded by a nurse on the patient's profile, not at registration`] });
+    }
     const result = validatePatient(req.body);
     if (!result.ok) return res.status(422).json({ error: 'validation_failed', details: result.errors });
     const p = result.value;
@@ -304,6 +311,27 @@ router.post('/api/patients', async (req, res, next) => {
 });
 
 /* ----------------------------- Prescribed medications ----------------------------- */
+
+// PATCH /api/patients/:id/health   (clinic staff) - conditions and limited mobility (they feed the risk score
+// from the next check-in on)
+router.patch('/api/patients/:id/health', async (req, res, next) => {
+  try {
+    if (!requireRole(req, res, ['clinic_staff'])) return undefined;
+    const result = validateHealth(req.body);
+    if (!result.ok) return res.status(422).json({ error: 'validation_failed', details: result.errors });
+    const v = result.value;
+    const { rows: [row] } = await pool.query(
+      `UPDATE patients SET conditions = COALESCE($2, conditions), mobility_restricted = COALESCE($3, mobility_restricted), updated_at = now()
+        WHERE id = $1 RETURNING *`,
+      [req.params.id, v.conditions ? v.conditions : null, v.mobilityRestricted === undefined ? null : v.mobilityRestricted],
+    );
+    if (!row) return res.status(404).json({ error: 'not_found', message: 'Patient not found' });
+    logger.info('patient health updated', { requestId: req.get('x-request-id'), patientId: row.id, by: req.user.id });
+    return res.json({ patient: toPatientDto(row) });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 // GET /api/patients/:id/medications?includeInactive=true
 // Caregivers and family members see only their own patients (checked at the gateway and here).

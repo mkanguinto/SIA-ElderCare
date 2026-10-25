@@ -85,12 +85,19 @@ ok(r.s === 200 && r.j.medications.length >= 1, `caregiver sees prescribed medici
 ok((await call('GET', '/api/patients/P-1002/medications', fam)).s === 403, 'family cannot read another patient\'s medicines (403)');
 ok((await call('POST', '/api/patients/P-1001/medications', cg, { name: 'X', dosage: '1', frequency: 'daily' })).s === 403, 'caregiver cannot prescribe (403)');
 
-// Patient onboarding (fixed test identity: first run creates it, later runs hit the duplicate check)
-const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000', conditions: ['hypertension'], medications: [{ name: 'Amlodipine', dosage: '5 mg', frequency: 'Once daily', times: ['08:00'], source: { type: 'physician_order', prescriber: 'Dr. Test Prescriber' } }] };
-ok((await call('POST', '/api/patients', nurse, { fullName: 'X' })).s === 422, 'onboarding validation (422)');
-r = await call('POST', '/api/patients', nurse, newPatient);
-ok(r.s === 201 || r.s === 409, `onboarding creates a patient or detects the duplicate (${r.s} ${r.j.patient ? r.j.patient.id : r.j.patientId})`);
-ok((await call('POST', '/api/patients', cg, newPatient)).s === 403, 'caregiver cannot onboard patients (403)');
+// Patient registration by the admin (fixed test identity: first run creates it, later runs hit the duplicate
+// check); the nurse then records the clinical part (conditions, mobility).
+const newPatient = { fullName: 'E2E Test Patient', birthDate: '1950-01-01', sex: 'F', addressLine: '1 Test St, Brgy 1, Manila', zipCode: '1000' };
+ok((await call('POST', '/api/patients', admin, { fullName: 'X' })).s === 422, 'registration validation (422)');
+ok((await call('POST', '/api/patients', admin, { ...newPatient, conditions: ['hypertension'] })).s === 422, 'the admin cannot record health conditions at registration (422)');
+r = await call('POST', '/api/patients', admin, newPatient);
+ok(r.s === 201 || r.s === 409, `the admin registers a patient or the duplicate is detected (${r.s} ${r.j.patient ? r.j.patient.id : r.j.patientId})`);
+const e2ePid = r.j.patient ? r.j.patient.id : r.j.patientId;
+ok((await call('POST', '/api/patients', nurse, newPatient)).s === 403, 'a nurse cannot register patients (403)');
+ok((await call('POST', '/api/patients', cg, newPatient)).s === 403, 'caregiver cannot register patients (403)');
+r = await call('PATCH', `/api/patients/${e2ePid}/health`, nurse, { conditions: ['hypertension', 'Heart disease'], mobilityRestricted: true });
+ok(r.s === 200 && r.j.patient.conditions.includes('heart_disease') && r.j.patient.mobilityRestricted === true, 'the nurse records conditions and limited mobility');
+ok((await call('PATCH', `/api/patients/${e2ePid}/health`, admin, { conditions: [] })).s === 403, 'the admin cannot change health conditions (403)');
 r = await call('GET', '/api/directory/users?role=caregiver', nurse);
 ok(r.s === 200 && r.j.users.length >= 1, 'clinic can list caregiver accounts for assignment');
 r = await call('GET', '/api/alerts/subscribers?patientId=P-1001', nurse);

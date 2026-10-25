@@ -9,6 +9,7 @@ import { AlertDetail, Profile, useNotifications } from './common';
 import { DutiesScreen } from './duties';
 import { Avatar, usePeople, exclamationIcon } from './figma';
 import { StatusChip, statusLine } from './status';
+import { Intro, introSeen } from './intro';
 import { visitWhen, VISIT_TYPE_LABEL } from '../format';
 import {
   MobileFrame, BottomNav, Greeting, TopBar, Chip, Loader, useT, usePrefs,
@@ -46,8 +47,11 @@ export default function FamilyApp({ user, path }) {
   const tr = useT();
   const sub = path.slice(BASE.length) || '/';
   const patientId = user.patients[0];
+  const [intro, setIntro] = useState(() => !introSeen(user.id));
+  const showIntro = intro || sub === '/intro';
   let screen;
-  if (!patientId) screen = <div className="m-note"><strong>{tr('No family member linked yet', 'Wala pang naka-link')}</strong>{tr('Ask the health center to link your account to your relative.', 'Hilingin sa health center na i-link ang iyong account.')}</div>;
+  if (showIntro) screen = <Intro user={user} onDone={() => { setIntro(false); if (sub === '/intro') navigate(BASE); }} />;
+  else if (!patientId) screen = <div className="m-note"><strong>{tr('No family member linked yet', 'Wala pang naka-link')}</strong>{tr('Ask the health center to link your account to your relative.', 'Hilingin sa health center na i-link ang iyong account.')}</div>;
   else if (sub === '/trends') screen = <Trends patientId={patientId} />;
   else if (sub === '/medicines') screen = <Medicines patientId={patientId} />;
   else if (sub.startsWith('/alerts/')) screen = <AlertDetail id={sub.split('/')[2]} back={`${BASE}/alerts`} />;
@@ -57,9 +61,9 @@ export default function FamilyApp({ user, path }) {
   else if (sub === '/contact') screen = <ContactClinic user={user} patients={[{ id: patientId, name: '' }]} back={BASE} />;
   else screen = <Today user={user} patientId={patientId} />;
   return (
-    <MobileFrame light>
+    <MobileFrame light plain={showIntro}>
       {screen}
-      <BottomNav items={NAV(tr)} />
+      {!showIntro && <BottomNav items={NAV(tr)} />}
     </MobileFrame>
   );
 }
