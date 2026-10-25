@@ -17,7 +17,9 @@
  *
  *   node scripts/deploy-render.mjs            create / update everything and start the deploys
  *   node scripts/deploy-render.mjs --dry-run  print the plan, call nothing
- *   node scripts/deploy-render.mjs --status   show each service's latest deploy status
+ *   node scripts/deploy-render.mjs --status   show each service's latest deploy status (and whether it is suspended)
+ *   node scripts/deploy-render.mjs --suspend  switch every Docker service off (no free hours used while off)
+ *   node scripts/deploy-render.mjs --resume   switch them on again (about a minute before the first page loads)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,6 +29,9 @@ import { execFileSync } from 'node:child_process';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const DRY = process.argv.includes('--dry-run');
 const STATUS = process.argv.includes('--status');
+// Free web services share 750 hours a month per workspace; a suspended service uses none.
+const SUSPEND = process.argv.includes('--suspend');
+const RESUME = process.argv.includes('--resume');
 const REPO = 'https://github.com/mkanguinto/SIA-ElderCare';
 
 function readEnv(file) {
@@ -237,8 +242,20 @@ async function main() {
       const svc = await findService(s.name, ownerId);
       if (!svc) { console.log(`${s.name.padEnd(24)} not created`); continue; }
       const [d] = await render('GET', `/services/${svc.id}/deploys?limit=1`);
-      console.log(`${s.name.padEnd(24)} ${(d ? d.deploy.status : 'no deploy').padEnd(22)} ${svc.serviceDetails.url}`);
+      console.log(`${s.name.padEnd(24)} ${(svc.suspended === 'suspended' ? 'SUSPENDED' : d ? d.deploy.status : 'no deploy').padEnd(22)} ${svc.serviceDetails.url}`);
     }
+    return;
+  }
+  if (SUSPEND || RESUME) {
+    // The static web app costs no hours; the eight Docker services do.
+    for (const s of SERVICES) {
+      const svc = await findService(s.name, ownerId);
+      if (!svc) { console.log(`${s.name.padEnd(24)} not created`); continue; }
+      await render('POST', `/services/${svc.id}/${SUSPEND ? 'suspend' : 'resume'}`);
+      console.log(`${s.name.padEnd(24)} ${SUSPEND ? 'suspended' : 'resumed'}`);
+    }
+    console.log(SUSPEND ? '\nThe site is off and uses no free hours. Before the next rehearsal: node scripts/deploy-render.mjs --resume'
+      : '\nStarting: the first page load takes about a minute.');
     return;
   }
 
@@ -265,6 +282,8 @@ async function main() {
 
   console.log('4/4 Deploys');
   for (const s of [...SERVICES, WEB]) {
+    // A service switched off with --suspend cannot deploy: switch it on first.
+    if (svc[s.key].suspended === 'suspended') { await render('POST', `/services/${svc[s.key].id}/resume`); console.log(`  ${s.name}: resumed`); }
     await render('POST', `/services/${svc[s.key].id}/deploys`, { clearCache: 'do_not_clear' });
     console.log(`  ${s.name}: deploy started`);
   }
