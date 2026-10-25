@@ -534,12 +534,12 @@ Every service has a `.env.example`. Most important:
    to get them back). To start clean again, `node scripts/reset-patient-data.mjs` shows what would be cleared and
    `--yes` clears it: patients and everything about them, and caregiver / family links. Accounts, care teams, nurse
    duty, alert rules and the audit log are kept; new patients start at P-1001. This cannot be undone.
+6. If a service shows `update_failed` (a free instance did not start in time), deploy that one again from the
+   Render dashboard; the others keep running.
 7. **Free hours.** Render's free plan gives 750 instance-hours a month per workspace; with eight services that is
    about four days of non-stop running. The app only keeps the services awake while a page is on screen; if the
    hours still run out, Render suspends every service until the next month (we moved to a second workspace on
    2026-10-25, hence the `-xxxx` suffixes in the addresses). After moving, update the TextBee webhook address.
-6. If a service shows `update_failed` (a free instance did not start in time), deploy that one again from the
-   Render dashboard; the others keep running.
 
 Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
 `/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share
