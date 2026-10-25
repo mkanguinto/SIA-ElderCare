@@ -203,7 +203,9 @@ async function refreshSession(refreshToken, findUser) {
   // Two requests (e.g. two tabs) refreshed with the same token a moment apart: hand the loser the
   // current token instead of treating it as theft.
   const graceSec = config.jwt.refreshReuseGraceSec;
-  if (claims.jti === session.previousJti && graceSec > 0 && Date.now() / 1000 - session.rotatedAt <= graceSec) {
+  // Measured in milliseconds (rotatedAt alone is whole seconds, which can tip a short window either way).
+  const sinceRotation = (Date.now() - (session.rotatedAtMs || session.rotatedAt * 1000)) / 1000;
+  if (claims.jti === session.previousJti && graceSec > 0 && sinceRotation <= graceSec) {
     return tokenResponse(user, claims.sid, session.currentJti).response;
   }
 
