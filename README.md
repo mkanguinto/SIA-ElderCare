@@ -548,10 +548,14 @@ Every service has a `.env.example`. Most important:
    duty, alert rules and the audit log are kept; new patients start at P-1001. This cannot be undone.
 6. If a service shows `update_failed` (a free instance did not start in time), deploy that one again from the
    Render dashboard; the others keep running.
-7. **Free hours.** Render's free plan gives 750 instance-hours a month per workspace; with eight services that is
-   about four days of non-stop running. The app only keeps the services awake while a page is on screen; if the
-   hours still run out, Render suspends every service until the next month (we moved to a second workspace on
-   2026-10-25, hence the `-xxxx` suffixes in the addresses). After moving, update the TextBee webhook address.
+7. **Free hours.** Render's free plan gives 750 instance-hours a month per workspace for all eight services
+   together: about four days of non-stop running, or roughly 70 hours of real use (opening the app wakes all of
+   them; each sleeps 15 minutes after its last request). The app keeps them awake only while a page is on screen.
+   To make the hours last: `node scripts/deploy-render.mjs --suspend` after a rehearsal (suspended services use no
+   hours; the web page stays up but shows "Starting the servers…"), `--resume` about a minute before the next one,
+   and check the hours used in the Render dashboard (Billing → Usage). If they still run out, Render suspends every
+   service until the next month (we moved to a second workspace on 2026-10-25, hence the `-xxxx` addresses). After
+   moving, update the TextBee webhook address.
 8. **Visitor addresses.** onrender.com is served through Cloudflare, so the gateway reads the visitor's address
    from `CF-Connecting-IP` / `True-Client-IP` (`CLIENT_IP_HEADER`, set by the deploy script). Without it every
    visitor would share one rate-limit bucket (300 requests/min, 20 failed sign-ins per 15 min) and the audit log
