@@ -313,7 +313,7 @@ export function PatientDetail({ user, patientId }) {
       </>}
 
       {item && tab === 'overview' && (
-        <div className="m-footer-actions">
+        <div className="m-footer-actions is-static">
           <div className="m-grid-2">
             {heldByOther
               ? <button type="button" className="m-btn" disabled>{tr(`Held by ${heldBy.split(',')[0]}`, `Hawak ni ${heldBy.split(',')[0]}`)}</button>
