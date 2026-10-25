@@ -280,6 +280,16 @@ To show it in the defense:
 The cloud (https://eldercare-web-2knr.onrender.com) has the accounts but **no patients**, so the story is built live in
 the order it happens in real life. Password for every demo account: `ElderCare@2026`.
 
+**Demo-day checklist**
+- The night before: clear test data (`node scripts/reset-patient-data.mjs --yes`), check the TextBee webhook points
+  at the current gateway, and decide which allow-listed numbers receive the codes (one number can receive both).
+- Keep the SMS phone charging with the TextBee app open and battery saver off; the Accounts page shows when it was
+  last online and warns after 30 minutes of silence.
+- **Backup:** if the cloud is down or slow, run the same app locally (`docker compose up -d`, then
+  `cd frontend/web && npx vite --host 0.0.0.0 --port 3000`). Phones on the same Wi-Fi open
+  `http://<laptop IP>:3000`. Local Docker has the demo elders unless you clear them.
+- Close ElderCare tabs after rehearsals: the free plan has 750 hours a month for all services together.
+
 **Before the presentation (10 minutes ahead)**
 1. Open the web app and sign in once so the free Render services wake up ("Starting the servers…" ≈ 1 minute).
 2. Open the windows you will switch between (separate browsers or private windows, since each one is one session):

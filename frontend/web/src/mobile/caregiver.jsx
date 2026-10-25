@@ -28,13 +28,14 @@ const BASE = '/m/caregiver';
 function useElders(user) {
   const [elders, setElders] = useState(null);
   const load = useCallback(() => Promise.all(user.patients.map(async (id) => {
-    const [p, h, m, v] = await Promise.all([
+    const [p, h, m, v, c] = await Promise.all([
       api(`/api/patients/${id}`).catch(() => ({ id, fullName: id, conditions: [] })),
       api(`/api/patients/${id}/history?days=7&limit=30`).catch(() => ({ checkins: [] })),
       api(`/api/patients/${id}/medications`).catch(() => ({ medications: [] })),
       api(`/api/patients/${id}/visits?view=upcoming`).catch(() => ({ visits: [] })),
+      api(`/api/patients/${id}/case`).catch(() => ({ case: null })),
     ]);
-    return { ...p, checkins: h.checkins || [], meds: m.medications || [], visits: v.visits || [] };
+    return { ...p, checkins: h.checkins || [], meds: m.medications || [], visits: v.visits || [], case: c.case || null };
   })).then(setElders), [user.patients]);
   useEffect(() => { load(); }, [load]);
   return [elders, load];
@@ -175,9 +176,12 @@ function Home({ user }) {
 /** Grey patient card: name, today's state, last check-in time, the week's dots. */
 function PatientCard({ e, tr }) {
   const sev = e.latest && e.latest.severity;
+  // A flagged reading the clinic has since closed (visit done / case resolved) is no longer "needs attention".
+  const followedUp = e.latest && e.case && e.case.closed && new Date(e.case.closedAt) >= new Date(e.latest.recordedAt);
   const badge = !e.latest ? <Badge tone="moderate">{tr('Due now', 'Kailangan na')}</Badge>
     : sev === 'none' || sev === 'low' ? <Badge>{tr('All Normal', 'Normal lahat')}</Badge>
-      : <Badge tone="critical">{tr('Needs attention', 'Bantayan')}</Badge>;
+      : followedUp ? <Badge>{tr('Followed up', 'Na-follow up')}</Badge>
+        : <Badge tone="critical">{tr('Needs attention', 'Bantayan')}</Badge>;
   return (
     <Link to={`${BASE}/patients/${e.id}`} className="m-person">
       <Avatar name={e.fullName} />

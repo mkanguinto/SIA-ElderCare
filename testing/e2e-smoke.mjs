@@ -71,6 +71,9 @@ ok(r.s === 200 && r.j.visits.some((v) => v.id === visitId), 'caregiver sees the 
 ok((await call('GET', '/api/patients/P-1002/visits', fam)).s === 403, 'family cannot see another patient\'s visits (403)');
 r = await call('PATCH', `/api/clinic/visits/${visitId}`, nurse, { status: 'completed', outcome: 'BP 126/80 on recheck, medicines reviewed', resolveCase: true });
 ok(r.s === 200 && r.j.visit.status === 'completed' && r.j.item.status === 'resolved', 'completing the visit resolves the case');
+r = await call('GET', '/api/patients/P-1001/case', fam);
+ok(r.s === 200 && r.j.case && r.j.case.closed && r.j.case.visitCompletedAt && r.j.case.closedAt, 'the family sees the case closed after the visit (Followed up)');
+ok((await call('GET', '/api/patients/P-1001/case', cg)).s === 200 && (await call('GET', '/api/patients/P-1002/case', fam)).s === 403, "caregiver sees the case; family cannot see another elder's case (403)");
 r = await call('GET', `/api/checkins/${urgentCheckin.id}`, nurse);
 ok(r.s === 200 && !r.j.checkin.review && ['received', 'awaiting_review'].includes(r.j.checkin.status), 'resolving the case does not mark its check-in reviewed (reviewed and resolved stay separate)');
 r = await call('GET', '/api/clinic/visits?view=recent&patientId=P-1001', nurse);

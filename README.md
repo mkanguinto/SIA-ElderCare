@@ -185,6 +185,8 @@ Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gat
 * **Task editing** opens the form in place of the task. **"Other (type it)"** ends every descriptive dropdown (route, sources, verification methods, help needed, SMS contact relation, measuring devices, why a reading is empty); the server accepts *other* only with the typed words.
 * **Who registers an elder.** The **admin** registers elders (*Care teams → + Add New Elder*): identity, address, ZIP code, care team, monitoring plan, case nurse, caregiver account and SMS contact - no health information (`POST /api/patients` is admin-only and refuses conditions, mobility, usual readings and medicines). The **nurse** records the clinical part on the patient's *Overview* (*Health conditions*, `PATCH /api/patients/:id/health`), the prescriptions and the care plan.
 * **First-time intro.** On their first visit, caregivers and family see four short cards (what ElderCare does, the daily check-in / today at a glance, tasks / alerts, what to do when something is wrong / contacting the clinic), with Skip; *Me → How ElderCare works* shows them again.
+* **The family and caregiver see the follow-up.** After a flagged reading, the family's card turns from *Needs attention* to *Followed up* once the clinic closes the case ("A nurse visited her at 9:30 AM. Case closed by Ana Cruz, RN"), and the caregiver's elder card says *Followed up* (`GET /api/patients/:id/case`: status, when and by whom, no clinical notes; own elder only).
+* **New links without signing in again.** When the admin or a nurse links an elder, the caregiver or family app picks it up when it is opened or comes back on screen (a fresh token carries the current links).
 * **Family verification.** A family account is linked to an elder only when a nurse records how the relationship was confirmed (the elder in person or by phone, ID and a document, or other); it is written to the account audit log.
 * **Nurse phone view.** On a phone (or *Settings → Phone view* in the console) the patient screen has **Overview / Care plan & medicines / Care team** tabs with the same panels as the computer.
 
@@ -403,6 +405,16 @@ OPENWEATHER_API_KEY=xxx TEXTBEE_API_KEY=... TEXTBEE_DEVICE_ID=... SMS_DRY_RUN=fa
 
 ## 6b. SMS via TextBee
 
+**How fast is an SMS?** TextBee is an *SMS gateway built on an Android phone*: our server hands the text to
+TextBee's cloud, which pushes it to the TextBee app on a phone with a SIM, and that phone sends it over the mobile
+network. With the phone online, a code normally arrives in a few seconds to about a minute. If the phone is
+offline, asleep (battery saver) or the app is closed, the text **waits in TextBee's queue** until the phone comes
+back; the network can add its own delay, and Philippine networks may hold or drop person-to-person texts. ElderCare
+shows each step as it is, never as delivered too early: *waiting for the SMS phone* (queued) → *sent* (left the
+phone) → *delivered* (network report). The Accounts page warns when the SMS phone has been offline for over
+30 minutes and, after 2 minutes of waiting, tells the admin to open the TextBee app. A production system would use
+a commercial SMS provider (e.g. Semaphore, Twilio) with a delivery SLA; the phone gateway keeps the class project free.
+
 TextBee turns an Android phone into the SMS gateway. The alert service sends:
 
 ```http
@@ -540,6 +552,10 @@ Every service has a `.env.example`. Most important:
    about four days of non-stop running. The app only keeps the services awake while a page is on screen; if the
    hours still run out, Render suspends every service until the next month (we moved to a second workspace on
    2026-10-25, hence the `-xxxx` suffixes in the addresses). After moving, update the TextBee webhook address.
+8. **Visitor addresses.** onrender.com is served through Cloudflare, so the gateway reads the visitor's address
+   from `CF-Connecting-IP` / `True-Client-IP` (`CLIENT_IP_HEADER`, set by the deploy script). Without it every
+   visitor would share one rate-limit bucket (300 requests/min, 20 failed sign-ins per 15 min) and the audit log
+   would record Render's proxy instead of the person.
 
 Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
 `/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share

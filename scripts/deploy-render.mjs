@@ -105,6 +105,8 @@ function envFor(key, url) {
   switch (key) {
     case 'gateway': return {
       ...common, PORT: '8080', CORS_ORIGINS: url.web, JWT_ALGORITHM: 'HS256',
+      // onrender.com is served through Cloudflare, which sets the visitor's address in these headers.
+      CLIENT_IP_HEADER: 'cf-connecting-ip,true-client-ip',
       JWT_SECRET: S.JWT_SECRET, JWT_REFRESH_SECRET: S.JWT_REFRESH_SECRET, JWT_KID: 'k1', JWT_REFRESH_KID: 'r1',
       JWT_ACCESS_TTL: env.JWT_ACCESS_TTL || '15m', TOKEN_STORE_FILE: '/tmp/token-store.json',
       // Accounts live in Neon (auth_db) so accounts made in the app survive redeploys; reset links point at the web app.
