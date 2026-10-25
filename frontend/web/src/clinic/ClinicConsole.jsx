@@ -25,7 +25,11 @@ const sections = (unseen) => [
     { to: '/clinic/history', label: 'Case History', icon: 'file' },
   ] },
   { title: 'Reports', items: [{ to: '/clinic/digest', label: 'Daily Digest', icon: 'zap' }] },
-  { title: 'Settings', items: [{ to: '/clinic/alert-rules', label: 'Alert Rules', icon: 'sliders' }] },
+  { title: 'Settings', items: [
+    { to: '/clinic/alert-rules', label: 'Alert Rules', icon: 'sliders' },
+    // The nurse's phone app on this computer (the same screens a nurse sees on a phone).
+    { to: '/m/nurse', label: 'Phone view', icon: 'smartphone' },
+  ] },
 ];
 
 /** Unseen family messages, for the sidebar badge. */
