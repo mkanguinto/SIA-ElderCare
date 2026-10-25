@@ -80,6 +80,10 @@ jobs:
           sed -i 's/^INTERNAL_SERVICE_TOKEN=.*/INTERNAL_SERVICE_TOKEN=ci-internal-token/' .env
           sed -i 's/^TEXTBEE_WEBHOOK_SECRET=.*/TEXTBEE_WEBHOOK_SECRET=ci-textbee-secret/' .env
           sed -i 's/^DASHBOARD_PASSWORD=.*/DASHBOARD_PASSWORD=ci-dashboard-password/' .env
+          # Postman and the smoke test run back to back from one address: more requests per minute (300) and
+          # deliberate wrong passwords (20 per 15 min) than a real deployment allows from one address.
+          echo 'RATE_LIMIT_MAX=5000' >> .env
+          echo 'RATE_LIMIT_AUTH_MAX=500' >> .env
           docker compose up -d --build
           for i in $(seq 1 40); do curl -sf http://localhost:8080/health && break; sleep 3; done
           sleep 10

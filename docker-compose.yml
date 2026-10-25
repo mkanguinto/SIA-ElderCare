@@ -134,6 +134,7 @@ services:
       LEGACY_ADAPTER_URL: http://legacy-emr-adapter:4004
       CARE_SERVICE_URL: http://care-plan-service:4006
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-300}"
+      RATE_LIMIT_AUTH_MAX: "${RATE_LIMIT_AUTH_MAX:-20}"   # failed sign-ins per IP per 15 min
       # TextBee webhooks: gateway verifies X-Signature, Node-RED routes them by content (alert = direct)
       NODE_RED_URL: http://node-red:1880
       TEXTBEE_WEBHOOK_TARGET: "${TEXTBEE_WEBHOOK_TARGET:-node-red}"
