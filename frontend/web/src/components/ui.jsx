@@ -104,5 +104,9 @@ export function SelectOther({ value, onChange, other, onOther, options, placehol
   );
 }
 
+/** How a nurse confirmed that someone is the elder's family (family verification, recorded with the link). */
+export const FAMILY_VERIFY = [['elder_in_person', 'The elder confirmed it in person'], ['elder_by_phone', 'The elder confirmed it by phone'], ['id_and_document', 'ID and a document checked']];
+export const familyVerificationBody = (v) => ({ method: v.method, ...(v.method === 'other' ? { methodOther: (v.methodOther || '').trim() } : {}) });
+
 /** The label of a listed value, or the typed words when it is "other". */
 export const listLabel = (labels, value, otherText) => (value === 'other' ? otherText || 'Other' : labels[value] || value);

@@ -12,17 +12,19 @@ legacy RHU clinic EMRs. React web dashboards and a React Native caregiver app ar
 - `docs/MESSAGING.md` – RabbitMQ topology, event catalogue + JSON Schemas, DLQ, idempotency (v2 · Batch 1)
 - `docs/SECURITY.md` – token revocation, refresh rotation + reuse detection, `kid` key rotation, Docker secrets (v2 · Batch 2)
 - `docs/NODE_RED.md` – Node-RED EAI flows: TextBee SMS content-based router, weather orchestration, DLQ monitor + replay dashboard (v2 · Batch 3)
-- `docs/CARE_PLAN.md` – Care Plan Service: caregiver duties by category, daily checklist, adherence (v2 · Batch 4)
+- `docs/CARE_PLAN.md` – nurse-led care plan: versions (draft → active), partner-clinic verification, verified prescriptions, caregiver checklist and reports, concerns (v2 · Batch 4)
 - `docs/EVALUATION_RESPONSE.md` – each item of the professor's evaluation → where it is addressed
 - `docs/PROPOSAL_TRACEABILITY.md` – every proposal section mapped to code and verification evidence
-- `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, demo script
+- `docs/SUBMISSION_GUIDE.md` – frontend, cloud deployment, middleware data flows (with measured results), JMeter, CI/CD, **presentation walkthrough** (clean start)
 - `testing/README.md` – Postman, SoapUI, JMeter and failure-test commands
 
-### Verified results (v2 Docker run, 2026-10-22: PostgreSQL 16, RabbitMQ 3.13, Node-RED 4.1, all services)
+### Verified results (Docker run: PostgreSQL 16, RabbitMQ 3.13, Node-RED 4.1, all services; tests re-run 2026-10-25, measurements 2026-10-22)
 | Check | Result |
 |---|---|
-| Unit tests | 110 / 110 passing (7 packages) |
-| End-to-end smoke test | 95 / 95 passing (all batches) |
+| Unit tests | 167 / 167 passing (7 packages) |
+| End-to-end smoke test | 165 / 165 passing (all batches) |
+| Care plan end-to-end | 71 / 71 passing (`npm run test:care-plan`) |
+| Browser tests (headless Chrome) | 68 / 68 passing (5 files: phone screens, nurse console, handover, sessions, contact) |
 | Postman collection (Postman CLI) | 95 requests, 157 assertions, 0 failures |
 | SoapUI test cases (replayed) | 4 / 4 passing |
 | Database isolation | every service reaches only its own database (4 × 4 login checks) |
@@ -161,6 +163,8 @@ Caregiver app (Expo Go on your phone): set `expo.extra.apiBaseUrl` in `frontend/
 | `nurse.carla` | clinic_staff | all · holds P-1002 (lead, Team B) |
 | `admin.harold` | system_admin | all |
 
+**Local Docker** seeds the demo elders above (`SEED_DEMO_DATA=true`). **The cloud (Render) starts with the same accounts but no patients**: elders are added in the app and caregivers / family are linked to them there (see the presentation walkthrough in `docs/SUBMISSION_GUIDE.md`).
+
 Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gateway/data/users.json` is only the bootstrap list: accounts in it that are not in the database yet are imported at start-up. Without `AUTH_DATABASE_URL` (unit tests, no Docker) the file itself is used.
 
 ### Accounts and sessions
@@ -174,6 +178,13 @@ Accounts live in the gateway's own database (`auth_db`, scrypt hashes). `api-gat
 * **Admin who is also a nurse: two separate accounts, one staff identity.** Nurse and admin accounts carry a staff ID (`ST-001`). Creating an admin account for an existing nurse ("Same person as …") links it to the nurse's staff ID: separate password, sessions and role, one account per role, the name must match. The audit log records the staff ID of whoever acted and of the account acted on, and can be filtered by person. An admin cannot send codes or links to, disable or enable their own other account: another admin must do it.
 * Duty coverage and case handover are separate from sessions: signing out never moves a case.
 * **Account SMS carry no links.** Philippine networks (Globe, Smart) block or silently drop person-to-person texts with links, and can still report them delivered. Activation and password-reset texts therefore contain only an 8-character code; the person opens the app (*Activate my account*, or *Sign in → Forgot password? → I have a reset code*) and types it with their username. The admin page says "Reported delivered" and that only the person using the code confirms it arrived.
+
+### Care plan, medicines and the nurse's phone
+* **Care plan versions.** A nurse on the elder's care team writes a **draft** (goals, preferences, assistance needs, allergies, clinical instructions, caregiver responsibilities, contacts, tasks); caregivers keep following the plan in use until the draft is **activated**. Diet, fluids, swallowing, skin / wound care, after-hours and emergency instructions need a clinical source and the **partner clinic's approval**: the clinician is not an app user, so the nurse records who approved it, how (in person, by phone, written order, referral document or other), the reference and the date. An elder must first be linked to a care team by the admin.
+* **Prescriptions** are recorded from their source (prescriber, facility, reference) and never changed in place: a change is a new record that supersedes the old one, a stop needs a reason. Dose times are chosen from dropdowns (half-hour steps, AM / PM, *Other time*); **+ Add another time** adds a dose and a time already chosen cannot be picked twice. *How often* opens one time row per dose.
+* **Task editing** opens the form in place of the task. **"Other (type it)"** ends every descriptive dropdown (route, sources, verification methods, help needed, SMS contact relation, measuring devices, why a reading is empty); the server accepts *other* only with the typed words.
+* **Family verification.** A family account is linked to an elder only when a nurse records how the relationship was confirmed (the elder in person or by phone, ID and a document, or other); it is written to the account audit log.
+* **Nurse phone view.** On a phone (or *Settings → Phone view* in the console) the patient screen has **Overview / Care plan & medicines / Care team** tabs with the same panels as the computer.
 
 ### Contacting the clinic (with proof)
 * Family members and caregivers tap **Contact the clinic** (`/m/family/contact`, `/m/caregiver/contact`): the clinic name, phone number (`CLINIC_HOTLINE`) and hours, a reason, an optional message and *Please call me back*, then **Call now** or **Send message**.
@@ -449,8 +460,9 @@ Slow EMR: `MOCK_EMR_DELAY_MS=8000 docker compose up -d mock-legacy-emr`.
 | Layer | Tool | Asset |
 |---|---|---|
 | Unit | `node --test` | `*/test/*.test.js` – 60 tests: vitals + patient validation, anomaly rules, heat index, triage thresholds, visit validation, TextBee client + webhook signature, SMS parsing, EMR mapping, gateway auth/RBAC |
-| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 160 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
-| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – nurse handover: pending list, Accept, case moves to My cases |
+| End-to-end smoke | Node script | `testing/e2e-smoke.mjs` (`npm run smoke`) – 165 checks through the gateway (triage, visits, check-in status, care teams and handover, …) |
+| Care plan end-to-end | Node script | `testing/care-plan-e2e.mjs` (`npm run test:care-plan`) – 71 checks: versions, verification, prescriptions, checklist, reports, concerns, roles |
+| Browser (headless Chrome) | Node + DevTools protocol | `testing/browser/` (`npm run test:browser`) – 68 checks: phone screens, nurse console, handover, sessions and drafts, contact the clinic |
 | Accounts / sessions | `node --test` + smoke + Postman | `api-gateway/test/accounts.test.js`, `accountRules.test.js`; smoke "Accounts and sessions"; Postman folder 12 |
 | Weather demo / failure | fake OpenWeatherMap | `testing/mocks/fake-openweathermap.js` – heatwave + typhoon on demand, no API key |
 | Functional + security | Postman | `testing/postman/ElderCare_Connect.postman_collection.json` (folders 0–4) |
@@ -504,7 +516,8 @@ Every service has a `.env.example`. Most important:
 |---|---|---|
 | Web app (phone UI, clinic pages, admin console) | Render static site `eldercare-web` | always on, served from a CDN |
 | API gateway, check-in, alert, clinic risk, care plan, legacy EMR adapter, mock legacy EMR, Node-RED | 8 Render free web services (Docker, Singapore) | sleep after 15 min idle; the app shows "Starting the servers…" and wakes them via `GET /health/wake` (about 1 min) |
-| PostgreSQL | Neon, one database + one non-superuser login per service | `checkin_db`, `alert_db`, `clinic_db`, `care_db` |
+| PostgreSQL | Neon, one database + one non-superuser login per service | `checkin_db`, `alert_db`, `clinic_db`, `care_db`, `auth_db` (accounts) |
+| Node-RED | `https://eldercare-node-red.onrender.com` | DLQ dashboard `/dlq` (user `ops`, `DASHBOARD_PASSWORD`), flow editor `/admin` (user `admin`, `NODE_RED_ADMIN_PASSWORD`); both in `.env.render` |
 | RabbitMQ | CloudAMQP free instance | exchanges, retry tiers and DLQs are declared by the services |
 
 1. Put three values in `.env`: `RENDER_API_KEY` (Render > Account settings > API keys), `NEON_DATABASE_URL`
@@ -514,6 +527,13 @@ Every service has a `.env.example`. Most important:
 3. `node scripts/deploy-render.mjs --status` shows each deploy. Builds take 5–10 minutes the first time.
 4. To ship new code, push and run the script again: Render pulls the public repo by URL, so a push alone does not
    start a deploy (unless you connect the GitHub account in Render). Set `RENDER_BRANCH` to deploy a branch other than `main`.
+
+5. **No demo patients in the cloud.** The script deploys with `SEED_DEMO_DATA=false` (set `RENDER_SEED_DEMO_DATA=true`
+   to get them back). To start clean again, `node scripts/reset-patient-data.mjs` shows what would be cleared and
+   `--yes` clears it: patients and everything about them, and caregiver / family links. Accounts, care teams, nurse
+   duty, alert rules and the audit log are kept; new patients start at P-1001. This cannot be undone.
+6. If a service shows `update_failed` (a free instance did not start in time), deploy that one again from the
+   Render dashboard; the others keep running.
 
 Render free instances cannot receive private-network traffic, so the services have public URLs; every route except
 `/health` requires the gateway's `X-Internal-Token`, and only the gateway accepts user tokens. Free instances share

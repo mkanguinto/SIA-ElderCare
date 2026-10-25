@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../toast';
-import { PriorityTag, SeverityBadge, Empty, ErrorNote, Loading, SelectOther, listLabel } from '../components/ui';
+import { PriorityTag, SeverityBadge, Empty, ErrorNote, Loading, SelectOther, listLabel, FAMILY_VERIFY, familyVerificationBody } from '../components/ui';
 import TrendChart from '../components/TrendChart';
 import { VisitCard } from '../components/visits';
 import { EmrPanel } from './ClinicQueue';
@@ -162,11 +162,15 @@ export function CareTeam({ patientId, canEdit }) {
   const linked = (users || []).filter((u) => u.patients.includes(patientId));
   const unlinked = (users || []).filter((u) => !u.patients.includes(patientId));
 
+  // Family verification: a family account is linked only with how the nurse confirmed the relationship.
+  const [verify, setVerify] = useState({ method: '', methodOther: '' });
+  const linkIsFamily = Boolean(link && users && (users.find((x) => x.id === link) || {}).role === 'family_member');
   async function linkUser() {
     if (!link) return;
     try {
-      await api(`/api/directory/users/${link}/patients`, { method: 'PUT', body: { add: [patientId] } });
       const u = users.find((x) => x.id === link);
+      await api(`/api/directory/users/${link}/patients`, { method: 'PUT', body: { add: [patientId], ...(u.role === 'family_member' ? { familyVerification: familyVerificationBody(verify) } : {}) } });
+      setVerify({ method: '', methodOther: '' });
       toast({ tone: 'success', title: `${u.name} can now see this patient`, body: 'They need to sign out and sign in again.' });
       setLink('');
       load();
@@ -218,7 +222,13 @@ export function CareTeam({ patientId, canEdit }) {
             <option value="">Link a caregiver or family account…</option>
             {unlinked.map((u) => <option key={u.id} value={u.id}>{u.name} ({ROLE_LABEL[u.role]})</option>)}
           </select>
-          <button type="button" className="btn btn-secondary btn-sm" disabled={!link} onClick={linkUser}>Link</button>
+          {linkIsFamily && (
+            <label className="field"><span>How did you confirm they are family?</span>
+              <SelectOther label="Family verification" value={verify.method} onChange={(method) => setVerify({ ...verify, method })} other={verify.methodOther}
+                onOther={(methodOther) => setVerify({ ...verify, methodOther })} options={FAMILY_VERIFY} placeholder="Choose" otherPlaceholder="How it was confirmed" />
+            </label>
+          )}
+          <button type="button" className="btn btn-secondary btn-sm" disabled={!link || (linkIsFamily && !verify.method)} onClick={linkUser}>Link</button>
         </div>
       )}
 

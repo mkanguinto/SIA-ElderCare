@@ -12,6 +12,7 @@ import { vitalsSummary } from './data';
 import { useRestoredDraft, useKeepDraft, DraftNotice } from './drafts';
 import { ClinicMessages, MessagesBanner } from './contact';
 import { ToastProvider } from '../toast';
+import { SelectOther, FAMILY_VERIFY, familyVerificationBody } from '../components/ui';
 import { CareToday } from '../components/care';
 import CarePlanManager from '../clinic/CarePlanManager';
 import { Concerns, CareReports } from '../clinic/PatientCase';
@@ -415,6 +416,7 @@ export function AddPatient() {
   const [users, setUsers] = useState({ caregivers: [], family: [] });
   const [caregiverId, setCaregiverId] = useState('');
   const [familyId, setFamilyId] = useState('');
+  const [familyVerify, setFamilyVerify] = useState({ method: '', methodOther: '' });
   const [errors, setErrors] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -425,6 +427,10 @@ export function AddPatient() {
 
   async function submit(e) {
     e.preventDefault();
+    if (familyId && (!familyVerify.method || (familyVerify.method === 'other' && !familyVerify.methodOther.trim()))) {
+      setErrors([tr('Say how you confirmed the family member, or leave the family account empty for now.', 'Sabihin kung paano kinumpirma ang kapamilya, o iwanang blangko muna.')]);
+      return;
+    }
     setBusy(true);
     setErrors(null);
     try {
@@ -439,7 +445,8 @@ export function AddPatient() {
         },
       });
       const pid = r.patient.id;
-      for (const uid of [caregiverId, familyId].filter(Boolean)) await api(`/api/directory/users/${uid}/patients`, { method: 'PUT', body: { add: [pid] } }).catch(() => {});
+      if (caregiverId) await api(`/api/directory/users/${caregiverId}/patients`, { method: 'PUT', body: { add: [pid] } }).catch(() => {});
+      if (familyId) await api(`/api/directory/users/${familyId}/patients`, { method: 'PUT', body: { add: [pid], familyVerification: familyVerificationBody(familyVerify) } }).catch(() => {});
       if (f.ecPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.ecName || 'Family contact', relation: 'family', phone: f.ecPhone.replace(/\s/g, '') } }).catch(() => {});
       navigate(`${base()}/patients/${pid}`);
     } catch (err) {
@@ -471,6 +478,12 @@ export function AddPatient() {
           <select value={caregiverId} onChange={(e) => setCaregiverId(e.target.value)}><option value="">{tr('Not yet', 'Wala pa')}</option>{users.caregivers.map((u) => <option key={u.id} value={u.id}>{u.username} — {u.name}</option>)}</select></label>
         <label className="m-field"><span>{tr('Family account', 'Account ng pamilya')}</span>
           <select value={familyId} onChange={(e) => setFamilyId(e.target.value)}><option value="">{tr('Not yet', 'Wala pa')}</option>{users.family.map((u) => <option key={u.id} value={u.id}>{u.username} — {u.name}</option>)}</select></label>
+        {familyId && (
+          <label className="m-field"><span>{tr('How did you confirm they are family?', 'Paano kinumpirma na kapamilya?')}</span>
+            <SelectOther label={tr('Family verification', 'Pagkumpirma ng pamilya')} value={familyVerify.method} onChange={(method) => setFamilyVerify({ ...familyVerify, method })}
+              other={familyVerify.methodOther} onOther={(methodOther) => setFamilyVerify({ ...familyVerify, methodOther })} options={FAMILY_VERIFY}
+              placeholder={tr('Choose', 'Pumili')} otherPlaceholder={tr('How it was confirmed', 'Paano kinumpirma')} /></label>
+        )}
         <div className="m-grid-2">
           <label className="m-field"><span>{tr('Family contact for SMS', 'Contact para sa SMS')}</span><input value={f.ecName} onChange={set('ecName')} placeholder="Jose Cruz" /></label>
           <label className="m-field"><span>{tr('Mobile number', 'Numero')}</span><input inputMode="tel" value={f.ecPhone} onChange={set('ecPhone')} placeholder="09187654321" /></label>

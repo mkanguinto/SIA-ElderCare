@@ -9,7 +9,8 @@
  *   RENDER_API_KEY      Render > Account settings > API keys
  *   NEON_DATABASE_URL   Neon > project > Connection string (the owner role, e.g. neondb_owner), any database
  *   CLOUDAMQP_URL       CloudAMQP > instance > AMQP URL (amqps://user:pass@host/vhost)
- * Optional: RENDER_REGION (default singapore), RENDER_BRANCH (default main), RENDER_PREFIX (default eldercare).
+ * Optional: RENDER_REGION (default singapore), RENDER_BRANCH (default main), RENDER_PREFIX (default eldercare),
+ *   RENDER_SEED_DEMO_DATA (default false: the cloud has no demo patients).
  *
  * Secrets generated for the cloud (JWT keys, internal token, DB passwords, Node-RED passwords) are written to
  * .env.render on the first run and reused afterwards, so re-running only updates what changed.
@@ -64,6 +65,9 @@ const S = {
   NODE_RED_ADMIN_PASSWORD: keep('NODE_RED_ADMIN_PASSWORD', () => secret(12)),
   NODE_RED_CREDENTIAL_SECRET: keep('NODE_RED_CREDENTIAL_SECRET', () => secret(24)),
 };
+// Demo patients are not seeded in the cloud: it starts empty, and patients are added in the app (see
+// scripts/reset-patient-data.mjs to clear it again). RENDER_SEED_DEMO_DATA=true brings the demo patients back.
+const SEED = env.RENDER_SEED_DEMO_DATA === 'true' ? 'true' : 'false';
 const DBS = [
   { svc: 'checkin', role: 'checkin_svc', db: 'checkin_db' },
   { svc: 'alert', role: 'alert_svc', db: 'alert_db' },
@@ -111,17 +115,17 @@ function envFor(key, url) {
       UPSTREAM_TIMEOUT_MS: '70000', RATE_LIMIT_MAX: '600',
       TEXTBEE_WEBHOOK_TARGET: 'node-red', TEXTBEE_WEBHOOK_SECRET: S.TEXTBEE_WEBHOOK_SECRET, TEXTBEE_VALIDATE_WEBHOOK: 'true',
     };
-    case 'checkin': return { ...common, PORT: '4001', SERVICE_NAME: 'checkin-service', ...db('checkin'), ...mq, SEED_DEMO_DATA: 'true', ALERT_SERVICE_URL: url.alert, CLINIC_SERVICE_URL: url.clinic };
+    case 'checkin': return { ...common, PORT: '4001', SERVICE_NAME: 'checkin-service', ...db('checkin'), ...mq, SEED_DEMO_DATA: SEED, ALERT_SERVICE_URL: url.alert, CLINIC_SERVICE_URL: url.clinic };
     case 'alert': return {
-      ...common, PORT: '4002', SERVICE_NAME: 'alert-service', NODE_ENV: 'development', ...db('alert'), ...mq, SEED_DEMO_DATA: 'true',
+      ...common, PORT: '4002', SERVICE_NAME: 'alert-service', NODE_ENV: 'development', ...db('alert'), ...mq, SEED_DEMO_DATA: SEED,
       CHECKIN_SERVICE_URL: url.checkin, CLINIC_SERVICE_URL: url.clinic, WEATHER_POLL_ENABLED: 'false',
       SMS_DRY_RUN: env.SMS_DRY_RUN || 'true', SMS_DAILY_LIMIT: env.SMS_DAILY_LIMIT || '40', TEXTBEE_WEBHOOK_SECRET: S.TEXTBEE_WEBHOOK_SECRET,
       ...pass('OPENWEATHER_API_KEY', 'OPENWEATHER_ONECALL_ENABLED', 'SMS_PROVIDER', 'TEXTBEE_API_KEY', 'TEXTBEE_DEVICE_ID', 'TEXTBEE_BASE_URL',
         'TEXTBEE_SIM_SUBSCRIPTION_ID', 'TEXTBEE_VALIDATE_WEBHOOK', 'SMS_RECIPIENT_ALLOWLIST', 'SMS_RETRY_ON_TIMEOUT', 'HEAT_INDEX_THRESHOLD_C'),
     };
-    case 'clinic': return { ...common, PORT: '4003', SERVICE_NAME: 'clinic-risk-service', ...db('clinic'), ...mq, SEED_DEMO_DATA: 'true', LEGACY_ADAPTER_URL: url.adapter, VISIT_TZ_OFFSET: '+08:00',
+    case 'clinic': return { ...common, PORT: '4003', SERVICE_NAME: 'clinic-risk-service', ...db('clinic'), ...mq, SEED_DEMO_DATA: SEED, LEGACY_ADAPTER_URL: url.adapter, VISIT_TZ_OFFSET: '+08:00',
       ALERT_SERVICE_URL: url.alert, ...pass('CLINIC_HOTLINE', 'CLINIC_HOTLINE_NAME', 'CLINIC_HOURS') };
-    case 'care': return { ...common, PORT: '4006', SERVICE_NAME: 'care-plan-service', ...db('care'), SEED_DEMO_DATA: 'true', CARE_TZ_OFFSET: '+08:00',
+    case 'care': return { ...common, PORT: '4006', SERVICE_NAME: 'care-plan-service', ...db('care'), SEED_DEMO_DATA: SEED, CARE_TZ_OFFSET: '+08:00',
       CLINIC_SERVICE_URL: url.clinic, CHECKIN_SERVICE_URL: url.checkin };
     case 'adapter': return { ...common, PORT: '4004', SERVICE_NAME: 'legacy-emr-adapter', LEGACY_EMR_URL: `${url.mockEmr}/emr`, ...pass('LEGACY_EMR_USERNAME', 'LEGACY_EMR_PASSWORD') };
     case 'mockEmr': return { PORT: '4005', NODE_ENV: 'production', PUBLIC_URL: `${url.mockEmr}/emr` };

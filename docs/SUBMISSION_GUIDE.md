@@ -275,22 +275,59 @@ To show it in the defense:
 
 ---
 
-## Demo script (about 12 minutes)
+## Presentation walkthrough (clean start, about 15 minutes)
 
-1. **Admin console:** all services up, circuit breakers closed, sign-in security (key ID, rotation date,
-   sessions), users and roles. Open the **DLQ dashboard**: queues empty, last weather run, SMS router counts.
-2. **Caregiver** (phone app, `/m/caregiver`): submit normal vitals, then BP 186/118 with a medicine "Not
-   given". Open the **Duties** tab and tick off "Give morning medicines".
-3. **Family** (phone app, `/m/family`): the critical alert appears ("Why am I seeing this?"); show that the
-   SMS was queued (alert-service log). Today shows the caregiver's duties; tap See all for adherence.
-4. **Clinic Portal:** P1 item at the top with its score breakdown. Open the patient to show the legacy EMR
-   history (SOAP translated to JSON) and the **care plan editor**; add a duty from a suggestion.
-5. **Alert rules:** lower `WEATHER_HEAT` to 30 °C, click **Run now** on the DLQ dashboard (or use the fake
-   OWM server), and the heat warnings and triage items appear. Set the rule back.
-6. **SMS:** `node testing/mocks/send-sms.mjs +639175550102 "SOS nahulog si lola"` → the critical family alert
-   appears; `… +639175550101 STOP` turns that number's SMS alerts off.
-7. **Resilience:** `docker compose stop alert-service`, submit a check-in (still 201), show the waiting
-   message in the RabbitMQ UI, `docker compose start alert-service`, and the alert arrives.
-8. **Security:** in Postman, family → clinic queue = 403, a tampered token = 401, a reused refresh token
-   ends the session, logout makes the old token fail.
-9. **CI:** show the green GitHub Actions run.
+The cloud (https://eldercare-web.onrender.com) has the accounts but **no patients**, so the story is built live in
+the order it happens in real life. Password for every demo account: `ElderCare@2026`.
+
+**Before the presentation (10 minutes ahead)**
+1. Open the web app and sign in once so the free Render services wake up ("Starting the servers…" ≈ 1 minute).
+2. Open the windows you will switch between (separate browsers or private windows, since each one is one session):
+   computer – `admin.harold`, `nurse.ana`; phone (or a narrow window) – `nurse.ben`. Sign in `caregiver.maria` and
+   `family.jose` **after step 2**: a caregiver or family member sees a newly linked elder from their next sign-in.
+3. If you rehearsed and want an empty start again: `node scripts/reset-patient-data.mjs --yes`.
+
+**1 · Admin sets up (computer, `admin.harold`)**
+- *Integration monitor* / *Service health*: every service is up; *Dead-letter queue*: empty.
+- *Accounts*: the staff, caregiver and family accounts; show the SMS check (real SMS only to allow-listed numbers;
+  simulated messages are labelled NOT sent).
+- *Care teams*: the teams and their nurses. (Come back here in step 3.)
+
+**2 · Nurse registers the elder (computer, `nurse.ana`)**
+- *Patients* → **+ Add patient**: name, birth date, barangay, ZIP code (drives the weather check), conditions,
+  "limited mobility", caregiver `caregiver.maria`, family `family.jose` with **How did you confirm they are family?**,
+  and an SMS contact. The elder gets the next number (P-1001 on a clean start).
+
+**3 · Admin links the elder to a care team (`admin.harold`)**
+- *Care teams* → the new elder: team, monitoring plan and first case nurse (Ana). Without this no nurse can write
+  the care plan (the app says so).
+
+**4 · Nurse writes the care plan (`nurse.ana`, patient → *Care Plan & Medicines*)**
+- **Add medicine** from the prescription: strength, dose, route, *How often* = Twice a day → two time dropdowns
+  (the second cannot repeat the first), source (prescriber) and *Checked against the source*.
+- **Start the care plan**: goals, preferences, assistance needs, allergies, a clinical instruction (e.g. low-salt
+  diet from the physician's order), caregiver responsibilities, contacts, responsible nurse; add tasks
+  (e.g. "Check blood pressure", daily 07:30). **Edit** a task to show it opens in place.
+- The plan cannot be activated until the **partner-clinic approval** is recorded (clinician, how, reference, date),
+  then **Activate version 1**. Show the same screens on the phone: *Settings → Phone view*.
+
+**5 · Caregiver does the day's care (phone, `caregiver.maria`)**
+- *Duties*: today's tasks and medicine doses from the active plan; tick one, skip one with a reason.
+- *Check-in*: first normal readings, then a high one (e.g. BP 186/118) with a medicine *Not given*.
+
+**6 · The system reacts (show both)**
+- *Family* (`family.jose`): the alert appears with "Why am I seeing this?"; the duties and medicines of the day;
+  **Contact the clinic** → send a message.
+- *Nurse* (`nurse.ana`): the elder is at the top of the **Risk Queue** (P1) with the score breakdown; *Check-in
+  Reviews* → **Mark reviewed** / **Record action**; *Family Messages* → reply; open the case → **Schedule a visit**,
+  then complete it with **resolve case** → it moves to *Case History*.
+
+**7 · Shift change (`nurse.ana` → `nurse.ben`)**
+- Patient → *Care team* → **Hand over this case**; Ben accepts under *Handover* and the case moves to him.
+
+**8 · Integration extras (if time allows)**
+- **Check weather risk now** on the risk queue (OpenWeatherMap × the elder's ZIP code).
+- Node-RED DLQ dashboard `https://eldercare-node-red.onrender.com/dlq` (user `ops`).
+- Security in Postman: family → clinic queue = 403, tampered token = 401. Resilience (local Docker only):
+  `docker compose stop alert-service`, a check-in is still accepted and the alert arrives after
+  `docker compose start alert-service`.

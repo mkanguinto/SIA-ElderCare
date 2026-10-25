@@ -17,6 +17,7 @@ const { request } = require('../lib/resilientHttp');
 const logger = require('../lib/logger');
 
 const router = express.Router();
+const FAMILY_VERIFY_METHODS = ['elder_in_person', 'elder_by_phone', 'id_and_document', 'other'];
 router.use(authenticate, authorize(ROLES.CLINIC, ROLES.ADMIN));
 
 router.get('/users', async (req, res, next) => {
@@ -55,12 +56,24 @@ router.put('/users/:userId/patients', async (req, res, next) => {
       if (r.status === 404) return res.status(422).json({ error: 'validation_failed', details: [`Patient ${pid} does not exist`] });
       if (r.status !== 200) return res.status(502).json({ error: 'bad_gateway', message: 'Could not verify the patient' });
     }
+    // Family verification: a family member sees an elder only after a nurse records how the relationship was
+    // confirmed (by the elder in person or by phone, an ID and a document, or another way described in words).
+    let familyVerification;
     if (target.role === 'family_member' && add.length) {
-      return res.status(422).json({ error: 'validation_failed', details: ['Family members are linked to an elder through family verification'] });
+      const v = (req.body && req.body.familyVerification) || {};
+      const other = typeof v.methodOther === 'string' ? v.methodOther.trim() : '';
+      const note = typeof v.note === 'string' ? v.note.trim() : '';
+      const errors = [];
+      if (req.user.role !== ROLES.CLINIC) errors.push('Only a nurse can verify a family member');
+      if (!FAMILY_VERIFY_METHODS.includes(v.method)) errors.push(`Family members are linked to an elder through family verification: familyVerification.method must be one of ${FAMILY_VERIFY_METHODS.join(', ')}`);
+      if (v.method === 'other' && (other.length < 2 || other.length > 80)) errors.push('familyVerification.methodOther is required when "other" is chosen (2-80 characters)');
+      if (note.length > 300) errors.push('familyVerification.note must be at most 300 characters');
+      if (errors.length) return res.status(422).json({ error: 'validation_failed', details: errors });
+      familyVerification = { method: v.method, ...(v.method === 'other' ? { methodOther: other } : {}), ...(note ? { note } : {}), verifiedBy: req.user.id, verifiedAt: new Date().toISOString() };
     }
     const updated = await updateUserPatients(target.id, { add, remove });
     logger.info('user patients updated', { requestId: req.id, userId: target.id, add, remove, by: req.user.id });
-    await audit(req, 'patients_linked', target.id, { add, remove });
+    await audit(req, 'patients_linked', target.id, { add, remove, ...(familyVerification ? { familyVerification } : {}) });
     return res.json({ user: updated, note: 'The user must sign out and sign in again to see the change.' });
   } catch (err) {
     return next(err);
