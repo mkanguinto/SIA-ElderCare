@@ -277,7 +277,7 @@ To show it in the defense:
 
 ## Presentation walkthrough (clean start, about 15 minutes)
 
-The cloud (https://eldercare-web.onrender.com) has the accounts but **no patients**, so the story is built live in
+The cloud (https://eldercare-web-2knr.onrender.com) has the accounts but **no patients**, so the story is built live in
 the order it happens in real life. Password for every demo account: `ElderCare@2026`.
 
 **Before the presentation (10 minutes ahead)**
@@ -334,7 +334,7 @@ the order it happens in real life. Password for every demo account: `ElderCare@2
 
 **8 · Integration extras (if time allows)**
 - **Check weather risk now** on the risk queue (OpenWeatherMap × the elder's ZIP code).
-- Node-RED DLQ dashboard `https://eldercare-node-red.onrender.com/dlq` (user `ops`).
+- Node-RED DLQ dashboard `https://eldercare-node-red-oolu.onrender.com/dlq` (user `ops`).
 - Security in Postman: family → clinic queue = 403, tampered token = 401. Resilience (local Docker only):
   `docker compose stop alert-service`, a check-in is still accepted and the alert arrives after
   `docker compose start alert-service`.

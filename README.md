@@ -519,7 +519,7 @@ Every service has a `.env.example`. Most important:
 | Web app (phone UI, clinic pages, admin console) | Render static site `eldercare-web` | always on, served from a CDN |
 | API gateway, check-in, alert, clinic risk, care plan, legacy EMR adapter, mock legacy EMR, Node-RED | 8 Render free web services (Docker, Singapore) | sleep after 15 min idle; the app shows "Starting the servers…" and wakes them via `GET /health/wake` (about 1 min) |
 | PostgreSQL | Neon, one database + one non-superuser login per service | `checkin_db`, `alert_db`, `clinic_db`, `care_db`, `auth_db` (accounts) |
-| Node-RED | `https://eldercare-node-red.onrender.com` | DLQ dashboard `/dlq` (user `ops`, `DASHBOARD_PASSWORD`), flow editor `/admin` (user `admin`, `NODE_RED_ADMIN_PASSWORD`); both in `.env.render` |
+| Node-RED | `https://eldercare-node-red-oolu.onrender.com` | DLQ dashboard `/dlq` (user `ops`, `DASHBOARD_PASSWORD`), flow editor `/admin` (user `admin`, `NODE_RED_ADMIN_PASSWORD`); both in `.env.render` |
 | RabbitMQ | CloudAMQP free instance | exchanges, retry tiers and DLQs are declared by the services |
 
 1. Put three values in `.env`: `RENDER_API_KEY` (Render > Account settings > API keys), `NEON_DATABASE_URL`
@@ -534,6 +534,10 @@ Every service has a `.env.example`. Most important:
    to get them back). To start clean again, `node scripts/reset-patient-data.mjs` shows what would be cleared and
    `--yes` clears it: patients and everything about them, and caregiver / family links. Accounts, care teams, nurse
    duty, alert rules and the audit log are kept; new patients start at P-1001. This cannot be undone.
+7. **Free hours.** Render's free plan gives 750 instance-hours a month per workspace; with eight services that is
+   about four days of non-stop running. The app only keeps the services awake while a page is on screen; if the
+   hours still run out, Render suspends every service until the next month (we moved to a second workspace on
+   2026-10-25, hence the `-xxxx` suffixes in the addresses). After moving, update the TextBee webhook address.
 6. If a service shows `update_failed` (a free instance did not start in time), deploy that one again from the
    Render dashboard; the others keep running.
 
