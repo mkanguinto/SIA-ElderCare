@@ -3,6 +3,7 @@
 // case that a nurse already holds can move only through a handover the incoming nurse accepts.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { Link } from '../router';
 import { relTime, initials } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, toneFor } from '../mobile/kit';
@@ -47,7 +48,6 @@ export function CareTeams({ Head }) {
   return (
     <>
       <Head title="Care teams" sub="Manage elder assignments, care team rosters, and track changes.">
-        <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setTab('link')}>+ Add New Elder</button>
         <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setCreating(true)}>+ Create New Team</button>
       </Head>
       <div className="ad-tabs" role="tablist" aria-label="Care teams">
@@ -100,14 +100,18 @@ export function CareTeams({ Head }) {
           <section className="ad-panel">
             <h2>Elders</h2>
             <p className="m-caption">Cases already held by a nurse move only by an accepted handover.</p>
-            <table className="ad-table">
-              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th><span className="m-sr">Save</span></th></tr></thead>
-              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} onSave={(body, label) => run(() => api(`/api/clinic/patients/${encodeURIComponent(p.id)}/care`, { method: 'PUT', body }), label)} />)}</tbody>
+            <table className="ad-table ad-elders">
+              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th>Caregiver</th><th><span className="m-sr">Save</span></th></tr></thead>
+              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} caregivers={(users || []).filter((u) => u.role === 'caregiver' && u.status !== 'disabled')} run={run}
+                onSave={(body, label) => run(() => api(`/api/clinic/patients/${encodeURIComponent(p.id)}/care`, { method: 'PUT', body }), label)} />)}</tbody>
             </table>
           </section>
           <section className="ad-panel">
-            <h2>Link an existing elder</h2>
-            <AddElder data={data} onSave={(id, body) => run(() => api(`/api/clinic/patients/${encodeURIComponent(id)}/care`, { method: 'PUT', body }), `${body.patientName} linked to ${body.careTeamId}`)} />
+            {/* Only for an elder whose registration stopped before the care-team link (not in the list above). */}
+            <details className="ad-fallback">
+              <summary>Elder missing from the list above? Link by patient number</summary>
+              <AddElder data={data} onSave={(id, body) => run(() => api(`/api/clinic/patients/${encodeURIComponent(id)}/care`, { method: 'PUT', body }), `${body.patientName} linked to ${body.careTeamId}`)} />
+            </details>
           </section>
         </>
       )}
@@ -143,12 +147,27 @@ export function CareTeams({ Head }) {
   );
 }
 
-function ElderRow({ p, data, onSave }) {
+function ElderRow({ p, data, caregivers, run, onSave }) {
   const [team, setTeam] = useState(p.careTeamId || '');
   const [plan, setPlan] = useState(p.monitoringPlanId || '');
   const [nurse, setNurse] = useState('');
+  const [caregiver, setCaregiver] = useState('');
   const members = (data.teams.find((t) => t.id === team) || { members: [] }).members;
-  const changed = team !== (p.careTeamId || '') || plan !== (p.monitoringPlanId || '') || nurse;
+  // Caregivers are linked to an elder here (not when the account is made); one elder can have more than one.
+  const linked = caregivers.filter((u) => (u.patients || []).includes(p.id));
+  const free = caregivers.filter((u) => !(u.patients || []).includes(p.id));
+  const careChanged = team !== (p.careTeamId || '') || plan !== (p.monitoringPlanId || '') || nurse;
+  const changed = careChanged || caregiver;
+  async function save() {
+    if (careChanged) await onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`);
+    if (caregiver) {
+      const name = (caregivers.find((u) => u.id === caregiver) || {}).name;
+      await run(() => api(`/api/directory/users/${caregiver}/patients`, { method: 'PUT', body: { add: [p.id] } }), `${name} is now ${p.name}'s caregiver (they see it the next time they open the app)`);
+      setCaregiver('');
+    }
+  }
+  const unlink = (u) => window.confirm(`Unlink ${u.name} from ${p.name}? They will no longer see this elder.`)
+    && run(() => api(`/api/directory/users/${u.id}/patients`, { method: 'PUT', body: { remove: [p.id] } }), `${u.name} unlinked from ${p.name}`);
   return (
     <tr>
       <td><strong>{p.name}</strong><span className="m-sub">{p.id}</span></td>
@@ -162,7 +181,20 @@ function ElderRow({ p, data, onSave }) {
         )}
         {p.handoverPendingTo && <Chip tone="moderate">Handover to {p.handoverPendingTo} pending</Chip>}
       </td>
-      <td><button type="button" className="m-link" disabled={!changed} onClick={() => onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`)}>Save</button></td>
+      <td>
+        {linked.map((u) => (
+          <span key={u.id} className="ad-linked">{u.name}<button type="button" className="m-link" onClick={() => unlink(u)} aria-label={`Unlink ${u.name}`}>Unlink</button></span>
+        ))}
+        {caregivers.length === 0
+          ? <span className="m-sub">No caregiver account yet. <Link to="/admin/users">Create one in Accounts</Link></span>
+          : free.length > 0 && (
+            <select value={caregiver} onChange={(e) => setCaregiver(e.target.value)} aria-label={`Link a caregiver to ${p.name}`}>
+              <option value="">{linked.length ? 'Add another caregiver' : 'No caregiver yet - choose'}</option>
+              {free.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
+            </select>
+          )}
+      </td>
+      <td><button type="button" className="m-link" disabled={!changed} onClick={save}>Save</button></td>
     </tr>
   );
 }
@@ -208,7 +240,8 @@ function NewElder({ data, users, run }) {
         <label className="ad-field"><span>Care team</span><select value={f.careTeamId} onChange={(e) => setF({ ...f, careTeamId: e.target.value, caseNurseId: '' })} required>{data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
         <label className="ad-field"><span>Monitoring plan</span><select value={f.monitoringPlanId} onChange={set('monitoringPlanId')}>{data.monitoringPlans.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
         <label className="ad-field"><span>Case nurse</span><select value={f.caseNurseId} onChange={set('caseNurseId')}><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
-        <label className="ad-field"><span>Caregiver account</span><select value={f.caregiverId} onChange={set('caregiverId')}><option value="">Not yet</option>{caregivers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></label>
+        <label className="ad-field"><span>Caregiver account</span><select value={f.caregiverId} onChange={set('caregiverId')}><option value="">Not yet</option>{caregivers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select>
+          {caregivers.length === 0 && <span className="m-sub">No caregiver account yet. <Link to="/admin/users">Create one in Accounts</Link>, then link it here or in the Elders list below.</span>}</label>
         <label className="ad-field"><span>SMS contact name</span><input value={f.contactName} onChange={set('contactName')} placeholder="Jose Reyes" /></label>
         <label className="ad-field"><span>SMS contact mobile</span><input value={f.contactPhone} onChange={set('contactPhone')} inputMode="tel" placeholder="09187654321" /></label>
       </div>

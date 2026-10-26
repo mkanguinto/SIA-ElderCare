@@ -20,7 +20,7 @@ It also added **Node-RED** for the integration flows.
 | Nurse phone app | `src/mobile/nurse.jsx` | clinic_staff | queue, patient + EMR history, visits, add patient, daily digest (computers use the Clinic Portal below) |
 | Clinic Portal | `src/pages/ClinicQueue.jsx`, `PatientProfile.jsx`, `CaseHistory.jsx` | clinic_staff, system_admin | queue, visits, case history (paged), EMR history, care plan editor |
 | Alert Rules | `src/pages/AlertRules.jsx` | admin (edit), clinic (read) | `GET/POST/PATCH/DELETE /api/alerts/rules` |
-| Admin console | `src/admin/AdminConsole.jsx` | system_admin | `/api/admin/health`, `/api/admin/messaging` (+ replay), `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, daily digest export (JSON / XML), link to the Node-RED DLQ dashboard |
+| Admin console | `src/admin/AdminConsole.jsx` | system_admin | `/api/admin/health`, `/api/admin/messaging` (+ replay), `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, link to the Node-RED DLQ dashboard |
 
 Caregivers and families have no desktop pages: on a computer the phone app is shown in a phone-sized frame.
 
@@ -308,7 +308,7 @@ the order it happens in real life. Password for every demo account: `ElderCare@2
 - On the caregiver's phone: *Sign in → Activate my account* → username + code → choose a password. Do the same for
   a family account if you show the family side.
 
-**2 · Admin registers the elder (*Care teams → + Add New Elder*)**
+**2 · Admin registers the elder (*Care teams → Link & Assignments → Add a new elder*)**
 - Name, birth date, sex, barangay, city, ZIP code (drives the weather check), care team (*RHU Manila - Team A*),
   monitoring plan, case nurse (*Ana Cruz*), caregiver account, SMS contact. **Register elder** shows the new
   number (P-1001 on a clean start). The admin enters no health information.

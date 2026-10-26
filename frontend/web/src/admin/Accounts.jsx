@@ -234,7 +234,7 @@ function Manage({ a, run, sent }) {
 const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'System admin'], ['family_member', 'Family member (link via verification)']];
 const STAFF = ['clinic_staff', 'system_admin'];
 function NewAccount({ staff, onCreate }) {
-  const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '', patients: '' };
+  const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '' };
   const [f, setF] = useState(blank);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const isStaff = STAFF.includes(f.role);
@@ -244,14 +244,13 @@ function NewAccount({ staff, onCreate }) {
   return (
     <section className="ad-panel">
       <h2>New account</h2>
-      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Family members are linked to an elder only after the clinic verifies them.
+      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Elders are linked afterwards: caregivers in Care teams → Link &amp; Assignments, family members by a nurse after family verification.
         A nurse who is also an admin gets a second, separate account linked to the same staff ID: separate password and sessions, one person in the audit log.</p>
       <form onSubmit={async (e) => {
         e.preventDefault();
         const ok = await onCreate({
           role: f.role, name: (person ? person.name : f.name).trim(), username: f.username.trim(), phone: f.phone.trim(),
           ...(isStaff && f.staffId ? { staffId: f.staffId } : {}),
-          ...(f.role === 'caregiver' && f.patients.trim() ? { patients: f.patients.split(/[\s,]+/).filter(Boolean) } : {}),
         });
         if (ok) setF({ ...blank, role: f.role });
       }}>
@@ -267,7 +266,6 @@ function NewAccount({ staff, onCreate }) {
           <label className="ad-field"><span>Full name</span><input value={person ? person.name : f.name} onChange={set('name')} readOnly={Boolean(person)} minLength={2} required /></label>
           <label className="ad-field"><span>Username</span><input value={f.username} onChange={set('username')} placeholder={f.role === 'system_admin' ? 'admin.ana' : 'caregiver.liza'} pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required /></label>
           <label className="ad-field"><span>Mobile number</span><input value={f.phone} onChange={set('phone')} placeholder="0917 123 4567" inputMode="tel" required /></label>
-          {f.role === 'caregiver' && <label className="ad-field"><span>Elder IDs</span><input value={f.patients} onChange={set('patients')} placeholder="P-1003" /></label>}
         </div>
         <button type="submit" className="m-btn is-dark ad-btn-auto">Create and send code</button>
       </form>
