@@ -13,9 +13,27 @@ import PatientCase from './PatientCase';
 import ClinicVisits from '../pages/ClinicVisits';
 import CaseHistory from '../pages/CaseHistory';
 import AlertRules from '../pages/AlertRules';
+import { Accounts, AuditLog } from '../admin/Accounts';
+import { CareTeams } from '../admin/CareTeams';
+import { Head, useLive, Monitor, Health, Dlq } from '../admin/AdminConsole';
 import '../mobile/mobile.css';
 
-const sections = (unseen) => [
+// Team-lead nurses (lead of a care team) also run their teams: caregiver and family accounts, registering and
+// linking elders, the audit log, and the operations pages (read-only).
+const TEAM_LEAD = [
+  { title: 'Team lead', items: [
+    { to: '/clinic/accounts', label: 'Accounts', icon: 'user' },
+    { to: '/clinic/elders', label: 'Elders & linking', icon: 'users' },
+    { to: '/clinic/audit', label: 'Audit log', icon: 'shield' },
+  ] },
+  { title: 'Operations', items: [
+    { to: '/clinic/operations', label: 'Integration monitor', icon: 'pulse' },
+    { to: '/clinic/operations/health', label: 'Service health', icon: 'server' },
+    { to: '/clinic/operations/dlq', label: 'Dead-letter queue', icon: 'inbox' },
+  ] },
+];
+
+const sections = (unseen, lead) => [
   { title: 'Main', items: [
     { to: '/clinic', label: 'Risk Queue', icon: 'clipboard' },
     { to: '/clinic/reviews', label: 'Check-in Reviews', icon: 'eye' },
@@ -25,6 +43,7 @@ const sections = (unseen) => [
     { to: '/clinic/history', label: 'Case History', icon: 'file' },
   ] },
   { title: 'Reports', items: [{ to: '/clinic/digest', label: 'Daily Digest', icon: 'zap' }] },
+  ...(lead ? TEAM_LEAD : []),
   { title: 'Settings', items: [
     { to: '/clinic/alert-rules', label: 'Alert Rules', icon: 'sliders' },
     // The nurse's phone app on this computer (the same screens a nurse sees on a phone).
@@ -44,8 +63,25 @@ function useUnseen() {
   return n;
 }
 
+/** { teamLead, leadTeams } for the signed-in nurse (GET /api/me). */
+function useMe() {
+  const [me, setMe] = useState(null);
+  useEffect(() => { api('/api/me').then(setMe).catch(() => setMe({ teamLead: false, leadTeams: [] })); }, []);
+  return me;
+}
+
+/** Operations pages for a team lead: live service health and queues, refreshed while on screen. */
+function Operations({ view }) {
+  const [live, reload] = useLive();
+  if (view === 'health') return <Health live={live} />;
+  if (view === 'dlq') return <Dlq live={live} reload={reload} readOnly />;
+  return <Monitor live={live} />;
+}
+
 export default function ClinicConsole({ user, path }) {
   const unseen = useUnseen();
+  const me = useMe();
+  const lead = Boolean(me && me.teamLead);
   const parts = path.replace(/\/+$/, '').split('/').filter(Boolean).slice(1); // after "clinic"
   let page;
   let width = 'is-wide';
@@ -61,11 +97,16 @@ export default function ClinicConsole({ user, path }) {
   else if (parts[0] === 'visits') page = <ClinicVisits user={user} />;
   else if (parts[0] === 'history') page = <CaseHistory />;
   else if (parts[0] === 'alert-rules') page = <AlertRules user={user} />;
+  else if (lead && parts[0] === 'accounts') page = <Accounts Head={Head} lead />;
+  else if (lead && parts[0] === 'elders') page = <CareTeams Head={Head} leadTeams={me.leadTeams} accountsPath="/clinic/accounts" />;
+  else if (lead && parts[0] === 'audit') page = <AuditLog Head={Head} />;
+  else if (lead && parts[0] === 'operations') page = <Operations view={parts[1]} />;
+  else if (!me && ['accounts', 'elders', 'audit', 'operations'].includes(parts[0])) page = <p className="m-caption">Loading…</p>;
   else page = <RiskQueue user={user} />;
 
   return (
     <ToastProvider>
-      <DesktopShell variant="nurse" label="Clinic" sections={sections(unseen)} user={user} userSub={user.username}>
+      <DesktopShell variant="nurse" label="Clinic" sections={sections(unseen, lead)} user={user} userSub={user.username}>
         <div className={`ad-page ${width}`}>{page}</div>
       </DesktopShell>
     </ToastProvider>

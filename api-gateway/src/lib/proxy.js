@@ -14,7 +14,7 @@ const logger = require('./logger');
 const { request, CircuitOpenError } = require('./resilientHttp');
 
 // Request headers that must never be forwarded from the client.
-const HOP_BY_HOP = ['host', 'connection', 'content-length', 'transfer-encoding', 'x-internal-token', 'x-user-id', 'x-user-name', 'x-user-role', 'x-user-patients'];
+const HOP_BY_HOP = ['host', 'connection', 'content-length', 'transfer-encoding', 'x-internal-token', 'x-user-id', 'x-user-name', 'x-user-role', 'x-user-patients', 'x-user-lead-teams'];
 
 function buildHeaders(req) {
   const headers = {};
@@ -29,6 +29,7 @@ function buildHeaders(req) {
     headers['x-user-name'] = encodeURIComponent(req.user.name || '');
     headers['x-user-role'] = req.user.role;
     headers['x-user-patients'] = req.user.patients.join(',');
+    if (req.user.leadTeams) headers['x-user-lead-teams'] = req.user.leadTeams.join(','); // set by adminOrTeamLead
   }
   return headers;
 }

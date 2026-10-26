@@ -38,6 +38,12 @@ export default async function run({ shots } = {}) {
     await page.click('Care Team & System Settings', '.ad-tabs');
     check(await page.waitFor('SMS alert contacts') && await page.waitFor('Legacy clinic records'), 'patient case: care team & system settings tab');
     check(await page.evaluate("document.querySelector('.ad-profile').innerText.includes('nurse.ana')"), 'sidebar profile card shows the username');
+    // Ana leads Team A: the team-lead tools appear in her console.
+    check(await page.waitFor('Team lead') && await page.evaluate("[...document.querySelectorAll('.ad-sep')].some((e) => e.textContent === 'Operations')"), 'team-lead nurse: Team lead and Operations sections in the sidebar');
+    await page.goto('/clinic/elders');
+    check(await page.waitFor('Add a new elder') && await page.waitFor('Elders'), 'team-lead nurse: registers and links elders');
+    await page.goto('/clinic/accounts');
+    check(await page.waitFor('New account') && !(await page.evaluate("[...document.querySelectorAll('select option')].some((o) => o.value === 'clinic_staff')")), 'team-lead nurse: creates caregiver and family accounts only');
 
     await page.login('admin.harold');
     await page.goto('/admin/alert-rules');

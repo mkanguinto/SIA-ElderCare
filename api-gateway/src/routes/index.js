@@ -43,8 +43,8 @@
  * | GET/PUT| /api/clinic/duty[/me]               | clinic (admin may read)             | Clinic Risk Queue      |
  * | GET    | /api/clinic/care-teams              | clinic, admin                       | Clinic Risk Queue      |
  * | POST/DELETE | /api/clinic/care-teams[/:id/members[/:nurseId]] | admin              | Clinic Risk Queue      |
- * | PUT    | /api/clinic/patients/:id/care       | admin                               | Clinic Risk Queue      |
- * | GET    | /api/clinic/care-log                | admin                               | Clinic Risk Queue      |
+ * | PUT    | /api/clinic/patients/:id/care       | admin, team-lead nurse (own teams)  | Clinic Risk Queue      |
+ * | GET    | /api/clinic/care-log                | admin, team-lead nurse (own teams)  | Clinic Risk Queue      |
  * | GET/POST/DELETE | /api/alerts/subscribers    | clinic, admin                       | Family Alert & Notif.  |
  * v2 Batch 2:
  * | GET    | /api/alerts/rules[/:code]           | clinic, admin                       | Family Alert & Notif.  |
@@ -68,6 +68,7 @@ const express = require('express');
 const { authenticate } = require('../middleware/authMiddleware');
 const { authorize, requirePatientAccess, requireBodyPatientAccess } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
+const { adminOrTeamLead, leadTeamsFor } = require('../middleware/teamLead');
 const config = require('../config');
 const { forwardTo, buildHeaders } = require('../lib/proxy');
 const { request } = require('../lib/resilientHttp');
@@ -83,6 +84,12 @@ router.use(authenticate);
 // histories, medicines, visits, care plans or clinic cases, and no clinical actions (dispatching alerts,
 // triage, reviews). An admin who also works as a nurse uses a separate nurse account.
 const PATIENT_DATA = [ROLES.CAREGIVER, ROLES.FAMILY, ROLES.CLINIC];
+
+// What the signed-in person may do beyond their role: a nurse who leads a care team gets the team-lead tools.
+router.get('/me', async (req, res) => {
+  const leadTeams = await leadTeamsFor(req.user, req.id);
+  res.json({ id: req.user.id, role: req.user.role, teamLead: leadTeams.length > 0, leadTeams });
+});
 
 /* ----------------------------- Daily Check-In Logger ----------------------------- */
 
@@ -110,8 +117,8 @@ router.get(
 
 // Patient onboarding + list (nurses: the records carry conditions and baselines)
 router.get('/patients', authorize(ROLES.CLINIC), forwardTo('checkin'));
-// An admin registers elders (identity, address, contacts); nurses record the clinical part.
-router.post('/patients', authorize(ROLES.ADMIN), forwardTo('checkin'));
+// The admin or a team-lead nurse registers elders (identity, address, contacts); nurses record the clinical part.
+router.post('/patients', adminOrTeamLead, forwardTo('checkin'));
 router.patch('/patients/:id/health', authorize(ROLES.CLINIC), forwardTo('checkin'));
 
 // Prescribed medications: caregivers / family see their own patients; clinic staff prescribe
@@ -224,7 +231,23 @@ router.post(
 
 // SMS contacts per patient (who receives alerts)
 router.get('/alerts/subscribers', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
-router.post('/alerts/subscribers', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
+// An SMS contact can be an account holder (e.g. the elder's caregiver): send userId without a phone and the
+// number on that account is used. Account numbers are never sent to the browser in full.
+async function phoneFromAccount(req, res, next) {
+  try {
+    const b = req.body || {};
+    if (b.userId && !b.phone) {
+      const a = await store.getById(String(b.userId));
+      if (!a || !a.phone) return res.status(422).json({ error: 'validation_failed', details: ['That account has no mobile number'] });
+      req.body = { ...b, phone: a.phone, name: b.name || a.name };
+      req.rawBody = Buffer.from(JSON.stringify(req.body));
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+router.post('/alerts/subscribers', authorize(ROLES.CLINIC, ROLES.ADMIN), phoneFromAccount, forwardTo('alert'));
 router.delete('/alerts/subscribers/:id', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('alert'));
 
 // Heatwave / typhoon alert rules read by the weather mashup (admin CRUD; clinic staff may read)
@@ -265,14 +288,14 @@ router.post('/clinic/handover/:id/:op(accept|decline|cancel)', authorize(ROLES.C
 router.get('/clinic/my-cases', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.get('/clinic/queue/pending-handovers', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.get('/clinic/patients/:id/care', authorize(ROLES.CLINIC), forwardTo('clinic'));
-router.put('/clinic/patients/:id/care', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.put('/clinic/patients/:id/care', adminOrTeamLead, forwardTo('clinic'));
 router.get('/clinic/duty', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
 router.put('/clinic/duty/me', authorize(ROLES.CLINIC), forwardTo('clinic'));
 router.get('/clinic/care-teams', authorize(ROLES.CLINIC, ROLES.ADMIN), forwardTo('clinic'));
 router.post('/clinic/care-teams', authorize(ROLES.ADMIN), forwardTo('clinic'));
 router.post('/clinic/care-teams/:id/members', authorize(ROLES.ADMIN), forwardTo('clinic'));
 router.delete('/clinic/care-teams/:id/members/:nurseId', authorize(ROLES.ADMIN), forwardTo('clinic'));
-router.get('/clinic/care-log', authorize(ROLES.ADMIN), forwardTo('clinic'));
+router.get('/clinic/care-log', adminOrTeamLead, forwardTo('clinic'));
 
 router.patch(
   '/clinic/queue/:itemId',

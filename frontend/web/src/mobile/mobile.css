@@ -705,7 +705,7 @@
 .ad-head h1 { margin: 0; font-size: 1.75rem; letter-spacing: -.01em; }
 .ad-head p { margin: .35rem 0 0; color: var(--text-secondary); max-width: 62rem; }
 .ad-head .m-seg { background: var(--bg-muted); }
-.is-admin .ad-head h1, .is-admin .ad-main > .page-header h1, .ad-on-dark { color: #fff; }
+.is-admin .ad-head h1, .is-admin .ad-main > .page-header h1, .is-admin .ad-on-dark { color: #fff; }
 .is-admin .ad-head p { color: rgba(255,255,255,.88); }
 .ad-live { display: inline-flex; align-items: center; gap: .5rem; padding: .5rem 1rem; border-radius: 999px; background: #fff; color: var(--text-primary); font-size: .875rem; font-weight: 700; white-space: nowrap; }
 .ad-live > span { width: .45rem; height: .45rem; border-radius: 50%; background: var(--text-primary); }

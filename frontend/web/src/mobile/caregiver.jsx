@@ -716,19 +716,19 @@ function CheckIn({ user }) {
           </div>
           {bt.msg && <p className="m-caption" role="status">{bt.msg}</p>}
           <div className="m-grid-2">
-            <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
-            <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
+            <VitalField k="systolic" label={tr('Top number', 'Itaas na numero')} value={vitals.systolic} onChange={set('systolic')} error={errors.systolic} hint={tr('Usual: 90–139', 'Karaniwan: 90–139')} placeholder={patient && patient.baseline && patient.baseline.systolic ? String(patient.baseline.systolic) : '120'} />
+            <VitalField k="diastolic" label={tr('Bottom number', 'Ibabang numero')} value={vitals.diastolic} onChange={set('diastolic')} error={errors.diastolic} hint={tr('Usual: 60–89', 'Karaniwan: 60–89')} placeholder={patient && patient.baseline && patient.baseline.diastolic ? String(patient.baseline.diastolic) : '80'} />
           </div>
           {vitals.systolic === '' && vitals.diastolic === '' && <MissingPicker label={tr('Blood pressure', 'Presyon ng dugo')} {...missingFor('bp')} />}
           <div className="m-grid-2" style={{ alignItems: 'start' }}>
-            <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} missing={missingFor('heartRate')} />
-            <VitalField k="temperatureC" decimal label={tr('Temperature (°C)', 'Temperatura (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} missing={missingFor('temperatureC')} />
+            <VitalField k="heartRate" label={tr('Heart rate (bpm)', 'Tibok ng puso (bpm)')} value={vitals.heartRate} onChange={set('heartRate')} error={errors.heartRate} hint={tr('Usual at rest: 60–100', 'Karaniwan habang nagpapahinga: 60–100')} placeholder="72" missing={missingFor('heartRate')} />
+            <VitalField k="temperatureC" decimal label={tr('Temperature (°C)', 'Temperatura (°C)')} value={vitals.temperatureC} onChange={set('temperatureC')} error={errors.temperatureC} hint={tr('Usual: 36.1–37.5 °C · fever from 38', 'Karaniwan: 36.1–37.5 °C · lagnat mula 38')} placeholder="36.8" missing={missingFor('temperatureC')} />
           </div>
-          <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Normal is 95% or higher', 'Normal ang 95% pataas')} missing={missingFor('spo2')} />
+          <VitalField k="spo2" label={tr('Oxygen level SpO₂ (%)', 'Oxygen SpO₂ (%)')} value={vitals.spo2} onChange={set('spo2')} error={errors.spo2} hint={tr('Usual: 95–100% · low below 95', 'Karaniwan: 95–100% · mababa kung mas mababa sa 95')} placeholder="97" missing={missingFor('spo2')} />
           <details className="m-more">
             <summary>{tr('Blood sugar and measuring devices (optional)', 'Blood sugar at gamit sa pagsukat (opsyonal)')}</summary>
             <div className="m-stack" style={{ marginTop: '.75rem' }}>
-              <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL)', 'Blood sugar (mg/dL)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} missing={missingFor('bloodGlucose')} />
+              <VitalField k="bloodGlucose" label={tr('Blood sugar (mg/dL)', 'Blood sugar (mg/dL)')} value={vitals.bloodGlucose} onChange={set('bloodGlucose')} error={errors.bloodGlucose} hint={tr('Usual before meals: 70–130 mg/dL', 'Karaniwan bago kumain: 70–130 mg/dL')} placeholder="110" missing={missingFor('bloodGlucose')} />
               <DevicePicker devices={devices} setDevice={setDevice} />
             </div>
           </details>
