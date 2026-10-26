@@ -18,7 +18,7 @@ const ROLES = [
   { username: 'caregiver.maria', icon: 'clipboard', en: ['Caregiver', 'Log daily check-ins and medicines'], fil: ['Tagapag-alaga', 'Mag-check-in araw-araw at itala ang gamot'] },
   { username: 'family.jose', icon: 'heart', en: ['Family', 'See how your loved one is doing'], fil: ['Pamilya', 'Tingnan ang kalagayan ng mahal mo sa buhay'] },
   { username: 'nurse.ana', icon: 'users', en: ['Nurse', 'Risk queue, visits and patients'], fil: ['Nars', 'Risk queue, pagbisita at pasyente'], tag: ['Phone or computer', 'Phone o computer'] },
-  { username: 'admin.harold', icon: 'monitor', en: ['Admin', 'Service health and accounts'], fil: ['Admin', 'Kalagayan ng serbisyo at mga account'], tag: ['Computer', 'Computer'] },
+  { username: 'admin.harold', icon: 'monitor', en: ['Health Center Admin', 'Service health, staff accounts and care teams'], fil: ['Admin ng health center', 'Kalagayan ng serbisyo, account ng kawani at care team'], tag: ['Computer', 'Computer'] },
 ];
 
 export function Landing() {
@@ -184,7 +184,7 @@ export function NoAccount() {
       </ol>
       <div className="m-note" style={{ marginTop: '1rem' }}>
         <strong>{tr('Clinic staff', 'Kawani ng klinika')}</strong>
-        {tr('Nurse and admin accounts are set up by the system administrator.', 'Ang account ng nars at admin ay ginagawa ng system administrator.')}
+        {tr('Nurse and admin accounts are set up by the health center administrator.', 'Ang account ng nars at admin ay ginagawa ng administrator ng health center.')}
       </div>
       <div style={{ marginTop: '1.5rem' }}><Cta onClick={() => navigate('/signin')}>{tr('I have my username', 'May username na ako')}</Cta></div>
     </MobileFrame>

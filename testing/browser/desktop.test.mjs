@@ -38,6 +38,12 @@ export default async function run({ shots } = {}) {
     await page.click('Care Team & System Settings', '.ad-tabs');
     check(await page.waitFor('SMS alert contacts') && await page.waitFor('Legacy clinic records'), 'patient case: care team & system settings tab');
     check(await page.evaluate("document.querySelector('.ad-profile').innerText.includes('nurse.ana')"), 'sidebar profile card shows the username');
+    // Ana leads Team A: the team-lead tools appear in her console.
+    check(await page.waitFor('Team lead') && await page.evaluate("[...document.querySelectorAll('.ad-sep')].some((e) => e.textContent === 'Operations')"), 'team-lead nurse: Team lead and Operations sections in the sidebar');
+    await page.goto('/clinic/elders');
+    check(await page.waitFor('Add a new elder') && await page.waitFor('Elders'), 'team-lead nurse: registers and links elders');
+    await page.goto('/clinic/accounts');
+    check(await page.waitFor('New account') && !(await page.evaluate("[...document.querySelectorAll('select option')].some((o) => o.value === 'clinic_staff')")), 'team-lead nurse: creates caregiver and family accounts only');
 
     await page.login('admin.harold');
     await page.goto('/admin/alert-rules');
@@ -45,9 +51,13 @@ export default async function run({ shots } = {}) {
     await page.goto('/admin/care-teams');
     check(await page.waitFor('Team Roster & Elders') && await page.waitFor('Add Nurse'), 'admin: care teams roster tab');
     await page.click('Link & Assignments', '.ad-tabs');
-    check(await page.waitFor('Add a new elder') && await page.waitFor('Register elder') && await page.waitFor('Link an existing elder'), 'admin: link & assignments tab registers a new elder and links existing ones');
+    check(await page.waitFor('Add a new elder') && await page.waitFor('Register elder') && await page.waitFor('Elder missing from the list above'), 'admin: link & assignments tab registers a new elder (patient number only as a fallback)');
+    check(await page.evaluate("[...document.querySelectorAll('.ad-elders th')].some((th) => th.textContent === 'Caregiver') && !!document.querySelector('select[aria-label^=\"Link a caregiver\"]')"), 'admin: each elder row links a caregiver');
     await page.click('Create New Team');
     check(await page.waitFor({ expr: "!!document.querySelector('.ad-drawer [role=dialog], .ad-drawer')" }) && await page.waitFor('New care team'), 'admin: Create New Team opens the drawer');
+    await page.goto('/admin/users');
+    check(await page.waitFor('New account') && !(await page.text()).includes('Elder IDs'), 'admin: new accounts do not ask for elder IDs');
+    check(!(await page.text()).includes('Digest export'), 'admin: no digest export page in the menu');
     await page.goto('/clinic');
     await sleep(800);
     check(await page.evaluate("location.pathname.startsWith('/admin')"), 'admin cannot open the nurse console (patient data)');

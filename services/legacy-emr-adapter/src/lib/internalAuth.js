@@ -36,6 +36,8 @@ function requireInternalToken(req, res, next) {
       name,
       role,
       patients: (req.get('x-user-patients') || '').split(',').filter(Boolean),
+      // Teams a nurse leads, set by the gateway only on routes that checked it (team-lead tools).
+      leadTeams: (req.get('x-user-lead-teams') || '').split(',').filter(Boolean),
     };
   }
   return next();

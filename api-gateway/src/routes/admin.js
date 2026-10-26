@@ -13,6 +13,7 @@ const express = require('express');
 const axios = require('axios');
 const config = require('../config');
 const { authenticate } = require('../middleware/authMiddleware');
+const { adminOrTeamLead } = require('../middleware/teamLead');
 const { authorize } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
 const { breakerSnapshots } = require('../lib/resilientHttp');
@@ -32,7 +33,7 @@ async function probe(name, baseUrl) {
   }
 }
 
-router.get('/health', authenticate, authorize(ROLES.ADMIN), async (req, res) => {
+router.get('/health', authenticate, adminOrTeamLead, async (req, res) => {
   const services = await Promise.all(Object.entries(config.services).map(([k, url]) => probe(k, url)));
   const overall = services.every((s) => s.status === 'up') ? 'up' : 'degraded';
   res.json({ gateway: 'up', overall, services, circuitBreakers: breakerSnapshots(), checkedAt: new Date().toISOString() });
@@ -40,7 +41,7 @@ router.get('/health', authenticate, authorize(ROLES.ADMIN), async (req, res) => 
 
 // GET /api/admin/users : accounts and role assignments (Section 17 - Admin View). Read-only;
 // accounts are changed in data/users.json (or the external IdP), never through an API that could leak hashes.
-router.get('/users', authenticate, authorize(ROLES.ADMIN), async (req, res, next) => {
+router.get('/users', authenticate, adminOrTeamLead, async (req, res, next) => {
   try {
     const users = await listUsers();
     const byRole = users.reduce((acc, u) => ({ ...acc, [u.role]: (acc[u.role] || 0) + 1 }), {});
@@ -72,7 +73,7 @@ router.get('/security', authenticate, authorize(ROLES.ADMIN), (req, res) => {
 const MESSAGING_SERVICES = ['checkin', 'alert', 'clinic'];
 const internal = (req) => ({ 'x-internal-token': config.internalServiceToken, 'x-request-id': req.id || req.get('x-request-id') || '', 'x-user-id': req.user.id, 'x-user-role': req.user.role });
 
-router.get('/messaging', authenticate, authorize(ROLES.ADMIN), async (req, res) => {
+router.get('/messaging', authenticate, adminOrTeamLead, async (req, res) => {
   const services = await Promise.all(MESSAGING_SERVICES.map(async (name) => {
     try {
       const { data } = await axios.get(`${config.services[name]}/internal/messaging`, { timeout: 3000, headers: internal(req) });

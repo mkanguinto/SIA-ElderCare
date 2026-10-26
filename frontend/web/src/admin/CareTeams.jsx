@@ -3,6 +3,7 @@
 // case that a nurse already holds can move only through a handover the incoming nurse accepts.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { Link } from '../router';
 import { relTime, initials } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, toneFor } from '../mobile/kit';
@@ -29,10 +30,18 @@ const TABS = [['roster', 'Team Roster & Elders'], ['link', 'Link & Assignments']
 const LOG_FILTERS = [['', 'All'], ['duty_changed', 'Duty changed'], ['handover_accepted', 'Handover accepted'], ['handover_submitted', 'Handover sent']];
 const logChip = (action) => (action.startsWith('handover') ? ['info', 'bell'] : ['', 'checkCircle']);
 
-export function CareTeams({ Head }) {
-  const [{ data, users, nurses, duty, log, error }, reload] = useCareTeams();
+/**
+ * leadTeams: a team-lead nurse in the nurse console - only the teams they lead, only registering and linking
+ * elders and the log (team structure stays with the admin). accountsPath: where "Create one in Accounts" goes.
+ */
+export function CareTeams({ Head, leadTeams = null, accountsPath = '/admin/users' }) {
+  const [{ data: all, users, nurses, duty, log, error }, reload] = useCareTeams();
+  const data = all && leadTeams
+    ? { ...all, teams: all.teams.filter((t) => leadTeams.includes(t.id)), patients: all.patients.filter((p) => leadTeams.includes(p.careTeamId)) }
+    : all;
+  const tabs = leadTeams ? TABS.filter(([k]) => k !== 'roster') : TABS;
   const [msg, setMsg] = useState(null);
-  const [tab, setTab] = useState('roster');
+  const [tab, setTab] = useState(leadTeams ? 'link' : 'roster');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [logFilter, setLogFilter] = useState('');
@@ -46,12 +55,11 @@ export function CareTeams({ Head }) {
   const teams = data ? data.teams.filter((t) => !q || [t.name, t.id, t.clinicId, ...t.members.map((m) => m.name), ...elders(t).map((p) => `${p.name} ${p.id}`)].join(' ').toLowerCase().includes(q)) : [];
   return (
     <>
-      <Head title="Care teams" sub="Manage elder assignments, care team rosters, and track changes.">
-        <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setTab('link')}>+ Add New Elder</button>
-        <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setCreating(true)}>+ Create New Team</button>
+      <Head title={leadTeams ? 'Elders & linking' : 'Care teams'} sub={leadTeams ? `Register elders and link them to a case nurse and a caregiver (${data ? data.teams.map((t) => t.name).join(', ') : 'your teams'}).` : 'Manage elder assignments, care team rosters, and track changes.'}>
+        {!leadTeams && <button type="button" className="m-btn ad-btn-auto ad-btn-light" onClick={() => setCreating(true)}>+ Create New Team</button>}
       </Head>
       <div className="ad-tabs" role="tablist" aria-label="Care teams">
-        {TABS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+        {tabs.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {msg && <p className={`m-banner tone-${msg.tone}`} role={msg.tone === 'critical' ? 'alert' : 'status'} style={{ marginBottom: '1rem' }}>{msg.text}</p>}
       {error && <p className="m-banner tone-critical">{error}</p>}
@@ -95,19 +103,23 @@ export function CareTeams({ Head }) {
           <section className="ad-panel">
             <h2>Add a new elder</h2>
             <p className="m-caption">Registers the elder and links the care team, case nurse, caregiver and SMS contact. Health conditions, mobility and medicines are recorded by the nurse.</p>
-            <NewElder data={data} users={users || []} run={run} />
+            <NewElder data={data} users={users || []} run={run} accountsPath={accountsPath} />
           </section>
           <section className="ad-panel">
             <h2>Elders</h2>
             <p className="m-caption">Cases already held by a nurse move only by an accepted handover.</p>
-            <table className="ad-table">
-              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th><span className="m-sr">Save</span></th></tr></thead>
-              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} onSave={(body, label) => run(() => api(`/api/clinic/patients/${encodeURIComponent(p.id)}/care`, { method: 'PUT', body }), label)} />)}</tbody>
+            <table className="ad-table ad-elders">
+              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th>Caregiver</th><th><span className="m-sr">Save</span></th></tr></thead>
+              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} caregivers={(users || []).filter((u) => u.role === 'caregiver' && u.status !== 'disabled')} run={run} accountsPath={accountsPath}
+                onSave={(body, label) => run(() => api(`/api/clinic/patients/${encodeURIComponent(p.id)}/care`, { method: 'PUT', body }), label)} />)}</tbody>
             </table>
           </section>
           <section className="ad-panel">
-            <h2>Link an existing elder</h2>
-            <AddElder data={data} onSave={(id, body) => run(() => api(`/api/clinic/patients/${encodeURIComponent(id)}/care`, { method: 'PUT', body }), `${body.patientName} linked to ${body.careTeamId}`)} />
+            {/* Only for an elder whose registration stopped before the care-team link (not in the list above). */}
+            <details className="ad-fallback">
+              <summary>Elder missing from the list above? Link by patient number</summary>
+              <AddElder data={data} onSave={(id, body) => run(() => api(`/api/clinic/patients/${encodeURIComponent(id)}/care`, { method: 'PUT', body }), `${body.patientName} linked to ${body.careTeamId}`)} />
+            </details>
           </section>
         </>
       )}
@@ -143,12 +155,27 @@ export function CareTeams({ Head }) {
   );
 }
 
-function ElderRow({ p, data, onSave }) {
+function ElderRow({ p, data, caregivers, run, onSave, accountsPath }) {
   const [team, setTeam] = useState(p.careTeamId || '');
   const [plan, setPlan] = useState(p.monitoringPlanId || '');
   const [nurse, setNurse] = useState('');
+  const [caregiver, setCaregiver] = useState('');
   const members = (data.teams.find((t) => t.id === team) || { members: [] }).members;
-  const changed = team !== (p.careTeamId || '') || plan !== (p.monitoringPlanId || '') || nurse;
+  // Caregivers are linked to an elder here (not when the account is made); one elder can have more than one.
+  const linked = caregivers.filter((u) => (u.patients || []).includes(p.id));
+  const free = caregivers.filter((u) => !(u.patients || []).includes(p.id));
+  const careChanged = team !== (p.careTeamId || '') || plan !== (p.monitoringPlanId || '') || nurse;
+  const changed = careChanged || caregiver;
+  async function save() {
+    if (careChanged) await onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`);
+    if (caregiver) {
+      const name = (caregivers.find((u) => u.id === caregiver) || {}).name;
+      await run(() => api(`/api/directory/users/${caregiver}/patients`, { method: 'PUT', body: { add: [p.id] } }), `${name} is now ${p.name}'s caregiver (they see it the next time they open the app)`);
+      setCaregiver('');
+    }
+  }
+  const unlink = (u) => window.confirm(`Unlink ${u.name} from ${p.name}? They will no longer see this elder.`)
+    && run(() => api(`/api/directory/users/${u.id}/patients`, { method: 'PUT', body: { remove: [p.id] } }), `${u.name} unlinked from ${p.name}`);
   return (
     <tr>
       <td><strong>{p.name}</strong><span className="m-sub">{p.id}</span></td>
@@ -162,23 +189,44 @@ function ElderRow({ p, data, onSave }) {
         )}
         {p.handoverPendingTo && <Chip tone="moderate">Handover to {p.handoverPendingTo} pending</Chip>}
       </td>
-      <td><button type="button" className="m-link" disabled={!changed} onClick={() => onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`)}>Save</button></td>
+      <td>
+        {linked.map((u) => (
+          <span key={u.id} className="ad-linked">{u.name}<button type="button" className="m-link" onClick={() => unlink(u)} aria-label={`Unlink ${u.name}`}>Unlink</button></span>
+        ))}
+        {caregivers.length === 0
+          ? <span className="m-sub">No caregiver account yet. <Link to={accountsPath}>Create one in Accounts</Link></span>
+          : free.length > 0 && (
+            <select value={caregiver} onChange={(e) => setCaregiver(e.target.value)} aria-label={`Link a caregiver to ${p.name}`}>
+              <option value="">{linked.length ? 'Add another caregiver' : 'No caregiver yet - choose'}</option>
+              {free.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
+            </select>
+          )}
+      </td>
+      <td><button type="button" className="m-link" disabled={!changed} onClick={save}>Save</button></td>
     </tr>
   );
 }
 
-const BLANK_ELDER = { fullName: '', birthDate: '', sex: 'F', barangay: '', city: 'Manila', zipCode: '', careTeamId: '', monitoringPlanId: 'MP-DAILY', caseNurseId: '', caregiverId: '', contactName: '', contactPhone: '' };
+const BLANK_ELDER = { fullName: '', birthDate: '', sex: 'F', barangay: '', city: 'Manila', zipCode: '', careTeamId: '', monitoringPlanId: 'MP-DAILY', caseNurseId: '', caregiverId: '', contactName: '', contactPhone: '', contactUserId: '' };
 
 /**
  * Registers an elder (identity, address, contacts) and links the care team, monitoring plan, first case nurse,
  * caregiver account and SMS contact. No clinical data: a nurse records conditions, mobility and medicines.
  */
-function NewElder({ data, users, run }) {
+function NewElder({ data, users, run, accountsPath }) {
   const [f, setF] = useState(() => ({ ...BLANK_ELDER, careTeamId: data.teams[0] ? data.teams[0].id : '' }));
   const [done, setDone] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const members = (data.teams.find((t) => t.id === f.careTeamId) || { members: [] }).members;
   const caregivers = users.filter((u) => u.role === 'caregiver' && u.status !== 'disabled');
+  // Choosing a caregiver makes them the SMS contact: their name and the number on their account (shown masked;
+  // the server uses the full number). "Use another contact" types a different person instead.
+  const fromAccount = f.contactUserId ? caregivers.find((u) => u.id === f.contactUserId) : null;
+  const pickCaregiver = (e) => {
+    const u = caregivers.find((x) => x.id === e.target.value);
+    const keepTyped = !f.contactUserId && (f.contactName || f.contactPhone);
+    setF({ ...f, caregiverId: e.target.value, ...(keepTyped ? {} : u ? { contactUserId: u.id, contactName: u.name, contactPhone: '' } : { contactUserId: '', contactName: '' }) });
+  };
   async function submit(e) {
     e.preventDefault();
     setDone(null);
@@ -187,12 +235,13 @@ function NewElder({ data, users, run }) {
       const r = await api('/api/patients', { method: 'POST', body: {
         fullName: f.fullName.trim(), birthDate: f.birthDate, sex: f.sex, zipCode: f.zipCode.trim(),
         addressLine: [f.barangay && `Brgy. ${f.barangay.trim().replace(/^brgy\.?\s*/i, '')}`, f.city.trim()].filter(Boolean).join(', '),
-        ...(f.contactPhone ? { emergencyContact: { name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } } : {}),
+        ...(f.contactPhone && !f.contactUserId ? { emergencyContact: { name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } } : {}),
       } });
       pid = r.patient.id;
       await api(`/api/clinic/patients/${encodeURIComponent(pid)}/care`, { method: 'PUT', body: { patientName: f.fullName.trim(), careTeamId: f.careTeamId, monitoringPlanId: f.monitoringPlanId, ...(f.caseNurseId ? { caseNurseId: f.caseNurseId } : {}) } });
       if (f.caregiverId) await api(`/api/directory/users/${f.caregiverId}/patients`, { method: 'PUT', body: { add: [pid] } });
-      if (f.contactPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } });
+      if (f.contactUserId) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.contactName.trim(), relation: 'caregiver', userId: f.contactUserId } });
+      else if (f.contactPhone) await api('/api/alerts/subscribers', { method: 'POST', body: { patientId: pid, name: f.contactName.trim() || 'Family contact', relation: 'family', phone: f.contactPhone.replace(/\s/g, '') } });
     }, `${f.fullName.trim()} registered`);
     if (ok) { setDone(`${f.fullName.trim()} is ${pid}. The nurse records health conditions and medicines next; family accounts are linked by a nurse with family verification.`); setF({ ...BLANK_ELDER, careTeamId: f.careTeamId }); }
   }
@@ -208,9 +257,14 @@ function NewElder({ data, users, run }) {
         <label className="ad-field"><span>Care team</span><select value={f.careTeamId} onChange={(e) => setF({ ...f, careTeamId: e.target.value, caseNurseId: '' })} required>{data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
         <label className="ad-field"><span>Monitoring plan</span><select value={f.monitoringPlanId} onChange={set('monitoringPlanId')}>{data.monitoringPlans.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
         <label className="ad-field"><span>Case nurse</span><select value={f.caseNurseId} onChange={set('caseNurseId')}><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
-        <label className="ad-field"><span>Caregiver account</span><select value={f.caregiverId} onChange={set('caregiverId')}><option value="">Not yet</option>{caregivers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select></label>
-        <label className="ad-field"><span>SMS contact name</span><input value={f.contactName} onChange={set('contactName')} placeholder="Jose Reyes" /></label>
-        <label className="ad-field"><span>SMS contact mobile</span><input value={f.contactPhone} onChange={set('contactPhone')} inputMode="tel" placeholder="09187654321" /></label>
+        <label className="ad-field"><span>Caregiver account</span><select value={f.caregiverId} onChange={pickCaregiver}><option value="">Not yet</option>{caregivers.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}</select>
+          {caregivers.length === 0 && <span className="m-sub">No caregiver account yet. <Link to={accountsPath}>Create one in Accounts</Link>, then link it here or in the Elders list below.</span>}</label>
+        <label className="ad-field"><span>SMS contact name</span><input value={f.contactName} onChange={set('contactName')} readOnly={Boolean(fromAccount)} placeholder="Jose Reyes" /></label>
+        <label className="ad-field"><span>SMS contact mobile</span>
+          {fromAccount
+            ? <><input value={`${fromAccount.phone || ''} (from ${fromAccount.username})`} readOnly aria-label="SMS contact mobile, from the caregiver's account" />
+              <button type="button" className="m-link" style={{ alignSelf: 'flex-start' }} onClick={() => setF({ ...f, contactUserId: '', contactName: '', contactPhone: '' })}>Use another contact</button></>
+            : <input value={f.contactPhone} onChange={set('contactPhone')} inputMode="tel" placeholder="09187654321" />}</label>
       </div>
       <button type="submit" className="m-btn ad-btn-auto">Register elder</button>
       {done && <p className="m-banner tone-ok" role="status" style={{ marginTop: '1rem' }}>{done}</p>}

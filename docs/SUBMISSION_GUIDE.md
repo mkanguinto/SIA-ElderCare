@@ -20,7 +20,7 @@ It also added **Node-RED** for the integration flows.
 | Nurse phone app | `src/mobile/nurse.jsx` | clinic_staff | queue, patient + EMR history, visits, add patient, daily digest (computers use the Clinic Portal below) |
 | Clinic Portal | `src/pages/ClinicQueue.jsx`, `PatientProfile.jsx`, `CaseHistory.jsx` | clinic_staff, system_admin | queue, visits, case history (paged), EMR history, care plan editor |
 | Alert Rules | `src/pages/AlertRules.jsx` | admin (edit), clinic (read) | `GET/POST/PATCH/DELETE /api/alerts/rules` |
-| Admin console | `src/admin/AdminConsole.jsx` | system_admin | `/api/admin/health`, `/api/admin/messaging` (+ replay), `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, daily digest export (JSON / XML), link to the Node-RED DLQ dashboard |
+| Admin console | `src/admin/AdminConsole.jsx` | system_admin | `/api/admin/health`, `/api/admin/messaging` (+ replay), `/api/admin/users`, `/api/admin/security`, `POST /api/admin/users/:id/revoke-sessions`, link to the Node-RED DLQ dashboard |
 
 Caregivers and families have no desktop pages: on a computer the phone app is shown in a phone-sized frame.
 
@@ -298,26 +298,28 @@ the order it happens in real life. Password for every demo account: `ElderCare@2
    (`caregiver.maria`, `family.jose`) you can skip account creation in step 1.
 3. If you rehearsed and want an empty start again: `node scripts/reset-patient-data.mjs --yes`.
 
-**1 · Admin sets up (computer, `admin.harold`)**
-- *Integration monitor* / *Service health*: every service is up; *Dead-letter queue*: empty.
-- *Accounts*: the SMS check at the top must say **Live** and the TextBee phone **online** (open the TextBee app on
-  the SMS phone if "last online" is old). Real texts go only to numbers on `SMS_RECIPIENT_ALLOWLIST`.
-- **Create the caregiver account** (role, name, username, mobile number). The person receives an SMS with an
-  8-character code; the page follows it (*waiting for the SMS phone* → *sent* → *delivered*). If it stays
-  *waiting*, the SMS phone is offline: open TextBee on it, then **Resend code**.
-- On the caregiver's phone: *Sign in → Activate my account* → username + code → choose a password. Do the same for
-  a family account if you show the family side.
+**1 · Team-lead nurse sets up (computer, `nurse.ana`, lead of Team A)**
+- *Operations → Integration monitor / Service health*: every service is up; *Dead-letter queue*: empty (a team lead
+  sees them read-only; the admin, `admin.harold`, replays dead letters and manages staff accounts and teams).
+- *Team lead → Accounts*: the SMS check at the top must say **Live** and the TextBee phone **online** (open the
+  TextBee app on the SMS phone if it warns that the phone has been offline). Real texts go only to numbers on
+  `SMS_RECIPIENT_ALLOWLIST`.
+- **Create the caregiver account** (name, username, mobile number; no elder yet). The person receives an SMS with
+  an 8-character code; the page follows it (*waiting for the SMS phone* → *sent* → *delivered*). If it stays
+  *waiting*, open TextBee on the SMS phone, then **Resend code**. Create the **family** account the same way.
+- On the caregiver's phone: *Sign in → Activate my account* → username + code → choose a password (same for family).
 
-**2 · Admin registers the elder (*Care teams → + Add New Elder*)**
+**2 · Team-lead nurse registers the elder (*Team lead → Elders & linking → Add a new elder*)**
 - Name, birth date, sex, barangay, city, ZIP code (drives the weather check), care team (*RHU Manila - Team A*),
-  monitoring plan, case nurse (*Ana Cruz*), caregiver account, SMS contact. **Register elder** shows the new
-  number (P-1001 on a clean start). The admin enters no health information.
+  monitoring plan, case nurse, and the **caregiver account**: choosing it fills the SMS contact with the caregiver's
+  name and the number on their account. **Register elder** shows the new number (P-1001 on a clean start).
+- No health information here. A caregiver whose account is made later is linked in the *Elders* list below.
 
-**3 · Nurse completes the clinical profile (`nurse.ana`, *Patients* → the elder)**
+**3 · Nurse on the team completes the clinical profile (*Patients* → the elder)**
 - *Overview → Health conditions → Record*: e.g. high blood pressure, limited mobility (they feed the risk score).
 - *Care team* tab → link the family account with **How did you confirm they are family?**
-- The caregiver and family see the elder from their next sign-in. On their first visit a four-step intro explains
-  what ElderCare does and what they do in it (Skip is always there; *Me → How ElderCare works* shows it again).
+- The caregiver and family see the elder the next time they open the app. On their first visit a four-step intro
+  explains what ElderCare does and what they do in it (Skip is always there; *Me → How ElderCare works*).
 
 **4 · Nurse writes the care plan (`nurse.ana`, patient → *Care Plan & Medicines*)**
 - **Add medicine** from the prescription: strength, dose, route, *How often* = Twice a day → two time dropdowns

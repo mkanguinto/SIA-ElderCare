@@ -11,7 +11,6 @@ import { Accounts, AuditLog } from './Accounts';
 import AlertRules from '../pages/AlertRules';
 import { ToastProvider } from '../toast';
 import DesktopShell from '../components/DesktopShell';
-import { manilaDay } from '../mobile/kit';
 import '../mobile/mobile.css';
 
 const DLQ_DASHBOARD = import.meta.env.VITE_DLQ_DASHBOARD_URL || 'http://localhost:1880/dlq';
@@ -34,12 +33,11 @@ const SECTIONS = [
     { to: '/admin/care-teams', label: 'Care teams', icon: 'users' },
     { to: '/admin/audit', label: 'Audit log', icon: 'shield' },
   ] },
-  { title: 'Reports', items: [{ to: '/admin/digest', label: 'Digest export', icon: 'file' }] },
   { title: 'Settings', items: [{ to: '/admin/alert-rules', label: 'Alert rules', icon: 'sliders' }] },
 ];
 
 /** /api/admin/health + /api/admin/messaging, refreshed every 5 s. */
-function useLive() {
+export function useLive() {
   const [state, setState] = useState({});
   const load = useCallback(() => Promise.all([
     api('/api/admin/health').catch((e) => ({ error: e.message })),
@@ -65,12 +63,11 @@ export default function AdminConsole({ user, path }) {
   else if (sub === '/admin/audit') page = <AuditLog Head={Head} />;
   else if (sub === '/admin/care-teams') page = <CareTeams Head={Head} />;
   else if (sub === '/admin/dlq') page = <Dlq live={live} reload={reload} />;
-  else if (sub === '/admin/digest') page = <DigestExport />;
   else if (sub === '/admin/alert-rules') page = <AlertRules user={user} />;
   else page = <Monitor live={live} />;
   return (
     <ToastProvider>
-      <DesktopShell variant="admin" label="Admin" role="Admin" sections={SECTIONS} user={user} userSub="System Administrator">
+      <DesktopShell variant="admin" label="Admin" role="Admin" sections={SECTIONS} user={user} userSub="Health Center Administrator">
         <p className="m-banner tone-info ad-phone-note" role="note"><Icon name="monitor" />The admin console is made for a computer. On a phone you can check status, but use a computer to manage the system.</p>
         {page}
       </DesktopShell>
@@ -78,7 +75,7 @@ export default function AdminConsole({ user, path }) {
   );
 }
 
-function Head({ title, sub, live, children }) {
+export function Head({ title, sub, live, children }) {
   const h = live && live.health;
   const services = h && h.services ? h.services : [];
   const up = services.filter((s) => s.status === 'up').length + (h && h.gateway === 'up' ? 1 : 0);
@@ -105,7 +102,7 @@ function Kpi({ icon, label, value, note, children }) {
 }
 
 /* ------------------------------ integration monitor ------------------------------ */
-function Monitor({ live }) {
+export function Monitor({ live }) {
   const { health, messaging } = live;
   if (!health) return <><Head title="Integration monitor" sub="Live path of every event through the gateway, RabbitMQ and the services." /><p className="ad-on-dark">Loading…</p></>;
   if (health.error) return <p className="m-error">{health.error}</p>;
@@ -176,7 +173,7 @@ function Monitor({ live }) {
 }
 
 /* ------------------------------ service health ------------------------------ */
-function Health({ live }) {
+export function Health({ live }) {
   const { health, messaging } = live;
   if (!health) return <><Head title="Service health" sub="Each service, its own database, and the circuit breaker the gateway keeps for it." /><p className="ad-on-dark">Loading…</p></>;
   if (health.error) return <p className="m-error">{health.error}</p>;
@@ -212,7 +209,8 @@ function Health({ live }) {
 }
 
 /* ------------------------------ dead-letter queue ------------------------------ */
-function Dlq({ live, reload }) {
+/** readOnly: a team-lead nurse sees the dead letters; replaying them stays with the admin. */
+export function Dlq({ live, reload, readOnly = false }) {
   const [msg, setMsg] = useState('');
   const { messaging } = live;
   async function replay(q) {
@@ -225,7 +223,7 @@ function Dlq({ live, reload }) {
   const dlqs = queuesOf(messaging).filter((q) => q.queue.endsWith('.dlq'));
   return (
     <>
-      <Head title="Dead-letter queue" sub="Messages that failed after all retries (5 s, 30 s, 2 min). Fix the cause, then replay." live={live} />
+      <Head title="Dead-letter queue" sub={readOnly ? 'Messages that failed after all retries (5 s, 30 s, 2 min). The admin fixes the cause and replays them.' : 'Messages that failed after all retries (5 s, 30 s, 2 min). Fix the cause, then replay.'} live={live} />
       {msg && <p className="m-banner tone-info" role="status">{msg}</p>}
       <section className="ad-panel">
         <div className="m-between"><h2>Parked messages</h2><a className="m-btn ad-btn-auto" href={DLQ_DASHBOARD} target="_blank" rel="noreferrer">Open the Node-RED DLQ dashboard ↗</a></div>
@@ -237,71 +235,12 @@ function Dlq({ live, reload }) {
               <tr key={q.queue}>
                 <td>{q.queue}</td><td>{q.service}</td>
                 <td>{q.messages ? <Chip tone="moderate" icon="alert">{q.messages} parked</Chip> : <Chip icon="checkCircle">Empty</Chip>}</td>
-                <td><button type="button" className="m-btn ad-btn-auto" disabled={!q.messages} onClick={() => replay(q)}>Replay</button></td>
+                <td>{!readOnly && <button type="button" className="m-btn ad-btn-auto" disabled={!q.messages} onClick={() => replay(q)}>Replay</button>}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {live.at && <p className="m-caption" style={{ marginTop: '.75rem' }}>Checked {relTime(live.at)}.</p>}
-      </section>
-    </>
-  );
-}
-
-/* ------------------------------ daily digest export (JSON / XML) ------------------------------ */
-// The nurse app shows the digest as a list; the machine-readable copies for the barangay health office
-// and other systems live here, in the system console, not in the phone app.
-const esc = (v) => String(v).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-// The admin's digest is de-identified (Batch 3a): counts, case ages and statuses from
-// GET /api/clinic/queue/summary - no patient names, ids, reasons or readings. Nurses see the named digest.
-function buildDigest(q) {
-  return {
-    digest: {
-      generatedAt: q.generatedAt, date: manilaDay(), deidentified: true,
-      open: q.open, closedLast7Days: q.closedLast7Days, pendingHandovers: q.handovers,
-      cases: q.cases,
-    },
-  };
-}
-function toXml(d) {
-  const g = d.digest;
-  const cases = g.cases.map((c) => `    <case ref="${esc(c.ref)}" priority="${c.priority}" category="${esc(c.category || '')}" status="${c.status}" handover="${c.handoverStatus}" assigned="${c.assigned}" ageHours="${c.ageHours}"/>`).join('\n');
-  const p = g.open.byPriority;
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<digest date="${g.date}" generatedAt="${g.generatedAt}" deidentified="true">\n  <open total="${g.open.total}" p1="${p.P1}" p2="${p.P2}" p3="${p.P3}" p4="${p.P4}" unassigned="${g.open.unassigned}" olderThan24h="${g.open.olderThan24h}"/>\n  <closedLast7Days resolved="${g.closedLast7Days.resolved}" dismissed="${g.closedLast7Days.dismissed}"/>\n  <handovers pending="${g.pendingHandovers.pending}" overdue="${g.pendingHandovers.overdue}"/>\n  <cases>\n${cases}\n  </cases>\n</digest>`;
-}
-function download(name, type, text) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function DigestExport() {
-  const [q, setQ] = useState(null);
-  const [tab, setTab] = useState('json');
-  const load = useCallback(() => api('/api/clinic/queue/summary').then(setQ).catch((e) => setQ({ error: e.message })), []);
-  useEffect(() => { load(); }, [load]);
-  const digest = q && q.open ? buildDigest(q) : null;
-  const text = digest ? (tab === 'json' ? JSON.stringify(digest, null, 2) : toXml(digest)) : '';
-  return (
-    <>
-      <Head title="Daily digest export" sub="Workload counts in machine-readable form (JSON and XML) for the barangay health office and other systems. De-identified: no names, readings or reasons - those stay with the nurses." />
-      <section className="ad-panel">
-        <div className="m-between">
-          <div className="m-seg" role="group" aria-label="Format" style={{ width: '16rem' }}>
-            <button type="button" aria-pressed={tab === 'json'} onClick={() => setTab('json')}>JSON</button>
-            <button type="button" aria-pressed={tab === 'xml'} onClick={() => setTab('xml')}>XML</button>
-          </div>
-          <div className="m-row">
-            <button type="button" className="m-btn" onClick={load}><Icon name="refresh" size={18} />Rebuild</button>
-            <button type="button" className="m-btn is-dark" disabled={!digest} onClick={() => download(`digest-${manilaDay()}.${tab}`, tab === 'json' ? 'application/json' : 'application/xml', text)}>Download .{tab}</button>
-          </div>
-        </div>
-        {!q && <p>Loading…</p>}
-        {q && q.error && <p className="m-error">{q.error}</p>}
-        {digest && <pre className="m-code" style={{ marginTop: '1rem', maxHeight: '36rem' }}>{text}</pre>}
       </section>
     </>
   );

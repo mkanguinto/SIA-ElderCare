@@ -96,7 +96,7 @@ ok((await call('POST', '/api/patients', admin, { ...newPatient, conditions: ['hy
 r = await call('POST', '/api/patients', admin, newPatient);
 ok(r.s === 201 || r.s === 409, `the admin registers a patient or the duplicate is detected (${r.s} ${r.j.patient ? r.j.patient.id : r.j.patientId})`);
 const e2ePid = r.j.patient ? r.j.patient.id : r.j.patientId;
-ok((await call('POST', '/api/patients', nurse, newPatient)).s === 403, 'a nurse cannot register patients (403)');
+ok((await call('POST', '/api/patients', await login('nurse.ben'), newPatient)).s === 403, 'a nurse who is not a team lead cannot register patients (403)');
 ok((await call('POST', '/api/patients', cg, newPatient)).s === 403, 'caregiver cannot register patients (403)');
 r = await call('PATCH', `/api/patients/${e2ePid}/health`, nurse, { conditions: ['hypertension', 'Heart disease'], mobilityRestricted: true });
 ok(r.s === 200 && r.j.patient.conditions.includes('heart_disease') && r.j.patient.mobilityRestricted === true, 'the nurse records conditions and limited mobility');
@@ -387,7 +387,7 @@ ok((await call('DELETE', `/api/clinic/care-teams/CT-MNL-A/members/U-CS-001`, adm
 ok((await call('DELETE', `/api/clinic/care-teams/${teamId}/members/U-CS-003`, admin)).s === 200, 'a nurse without cases can be removed');
 r = await call('GET', '/api/clinic/care-log?limit=50', admin);
 ok(r.s === 200 && r.j.entries.some((e) => e.action === 'handover_accepted' && e.details.handoverId === hid) && r.j.entries.some((e) => e.action === 'member_added'), 'assignment log records handovers and team changes with who and when');
-ok((await call('GET', '/api/clinic/care-log', nurse)).s === 403, 'nurse cannot read the admin assignment log (403)');
+ok((await call('GET', '/api/clinic/care-log', ben)).s === 403, 'a nurse who is not a team lead cannot read the assignment log (403)');
 
 // ---- Batch 3a: accounts, sessions, admin limits ----
 console.log('\n-- Accounts and sessions --');
@@ -462,5 +462,40 @@ ok(r.j.checkin.archived && r.j.checkin.status !== 'reviewed' && !r.j.checkin.rev
 ok((await call('POST', `/api/checkins/${lastDemo.id}/review`, nurse, {})).s === 409, 'archived demo record cannot be reviewed (409)');
 r = await call('GET', '/api/checkins/review-queue?view=pending&pageSize=200', nurse);
 ok(!r.j.checkins.some((c) => c.dataOrigin === 'demo'), 'no demo record left in the pending review lists');
+
+// ---- Team-lead nurse: caregiver / family accounts, elder registration for own teams, operations (read) ----
+console.log('\n-- Team-lead nurse --');
+{
+  const lead = await login('nurse.ana'); // lead of Team A
+  const plain = await login('nurse.ben'); // nurse on Team A, not a lead
+  r = await call('GET', '/api/me', lead);
+  ok(r.s === 200 && r.j.teamLead === true && r.j.leadTeams.includes('CT-MNL-A'), `Ana is a team lead (${r.j && r.j.leadTeams})`);
+  ok((await call('GET', '/api/me', plain)).j.teamLead === false, 'Ben is not a team lead');
+  const t = Date.now().toString(36).slice(-6);
+  r = await call('POST', '/api/admin/accounts', lead, { username: `caregiver.lead${t}`, name: 'Lead Made Caregiver', role: 'caregiver', phone: `0917${String(Date.now()).slice(-7)}` });
+  ok(r.s === 201, `team lead creates a caregiver account (${r.s})`);
+  const leadCg = r.j.account && r.j.account.id;
+  ok((await call('POST', '/api/admin/accounts', lead, { username: `nurse.lead${t}`, name: 'Not Allowed', role: 'clinic_staff', phone: '09175550123' })).s === 403, 'team lead cannot create staff accounts (403)');
+  ok((await call('POST', '/api/admin/accounts', plain, { username: `caregiver.ben${t}`, name: 'Not Allowed', role: 'caregiver', phone: '09175550124' })).s === 403, 'a nurse who is not a lead cannot create accounts (403)');
+  r = await call('GET', '/api/admin/accounts', lead);
+  ok(r.s === 200 && r.j.accounts.every((a) => ['caregiver', 'family_member'].includes(a.role)), 'team lead sees caregiver and family accounts only');
+  ok((await call('GET', '/api/admin/audit?limit=5', lead)).s === 200 && (await call('GET', '/api/admin/health', lead)).s === 200 && (await call('GET', '/api/admin/messaging', lead)).s === 200, 'team lead reads the audit log, service health and message queues');
+  {
+    const accts = (await call('GET', '/api/admin/accounts', admin)).j.accounts;
+    const community = new Set(accts.filter((x) => ['caregiver', 'family_member'].includes(x.role)).map((x) => x.id));
+    const entries = (await call('GET', '/api/admin/audit?limit=200', lead)).j.entries;
+    ok(entries.length > 0 && entries.every((e) => community.has(e.targetId)), `team lead's audit log shows only caregiver and family accounts (${entries.length} entries)`);
+  }
+  ok((await call('GET', '/api/admin/accounts/U-CS-002/sessions', lead)).s === 403 && (await call('GET', '/api/admin/security', lead)).s === 403, 'sessions and security settings stay with the admin (403)');
+  r = await call('POST', '/api/patients', lead, { fullName: `Lead Registered Elder ${t}`, birthDate: '1945-02-02', sex: 'M', addressLine: 'Brgy 5, Manila', zipCode: '1000' });
+  ok(r.s === 201, `team lead registers an elder (${r.s})`);
+  const lp = r.j.patient && r.j.patient.id;
+  ok((await call('PUT', `/api/clinic/patients/${lp}/care`, lead, { patientName: `Lead Registered Elder ${t}`, careTeamId: 'CT-MNL-B', monitoringPlanId: 'MP-DAILY' })).s === 403, 'team lead cannot link an elder to a team they do not lead (403)');
+  r = await call('PUT', `/api/clinic/patients/${lp}/care`, lead, { patientName: `Lead Registered Elder ${t}`, careTeamId: 'CT-MNL-A', monitoringPlanId: 'MP-DAILY', caseNurseId: 'U-CS-002' });
+  ok(r.s === 201, `team lead links the elder to Team A with Ben as case nurse (${r.s})`);
+  ok((await call('PUT', `/api/directory/users/${leadCg}/patients`, lead, { add: [lp] })).s === 200, 'team lead links the caregiver to the elder');
+  ok((await call('POST', '/api/patients', plain, { fullName: `Not Allowed ${t}`, birthDate: '1945-02-02', addressLine: 'x street', zipCode: '1000' })).s === 403, 'a nurse who is not a lead cannot register elders (403)');
+  ok((await call('GET', '/api/clinic/care-log?limit=20', lead)).j.entries.every((e) => !e.teamId || e.teamId === 'CT-MNL-A'), "team lead reads the assignment log of their own team");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);

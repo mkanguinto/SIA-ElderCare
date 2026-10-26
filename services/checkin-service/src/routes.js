@@ -258,11 +258,12 @@ router.get('/api/patients', async (req, res, next) => {
   }
 });
 
-// POST /api/patients   (admin) - register a new elder: identity, address and contacts. The clinical part
-// (conditions, mobility, usual readings, prescriptions) is recorded afterwards by a nurse.
+// POST /api/patients   (admin or team-lead nurse) - register a new elder: identity, address and contacts. The
+// clinical part (conditions, mobility, usual readings, prescriptions) is recorded afterwards by a nurse.
 router.post('/api/patients', async (req, res, next) => {
   try {
-    if (!requireRole(req, res, ['system_admin'])) return undefined;
+    const teamLead = req.user && req.user.role === 'clinic_staff' && req.user.leadTeams && req.user.leadTeams.length > 0;
+    if (!teamLead && !requireRole(req, res, ['system_admin'])) return undefined;
     const b = req.body || {};
     const clinical = [(Array.isArray(b.conditions) && b.conditions.length) && 'conditions', b.mobilityRestricted && 'mobilityRestricted',
       (b.baseline && Object.keys(b.baseline).length) && 'baseline', (Array.isArray(b.medications) && b.medications.length) && 'medications'].filter(Boolean);

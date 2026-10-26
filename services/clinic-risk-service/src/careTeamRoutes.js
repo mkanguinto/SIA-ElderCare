@@ -37,6 +37,21 @@ const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const isNurse = (req) => req.user && req.user.role === 'clinic_staff';
 const isAdmin = (req) => req.user && req.user.role === 'system_admin';
 const forbid = (res, message) => res.status(403).json({ error: 'forbidden', message });
+/** Teams this nurse leads (team_role = 'lead'). A team-lead nurse registers and links elders for those teams. */
+async function leadTeams(nurseId, db = pool) {
+  if (!nurseId) return [];
+  const { rows } = await db.query(`SELECT team_id FROM care_team_members WHERE nurse_id = $1 AND team_role = 'lead' AND removed_at IS NULL`, [nurseId]);
+  return rows.map((r) => r.team_id);
+}
+
+// GET /internal/staff/:id/lead-teams   (gateway) - which teams a nurse leads, for the team-lead tools
+router.get('/internal/staff/:id/lead-teams', requireInternalToken, async (req, res, next) => {
+  try {
+    return res.json({ nurseId: req.params.id, teams: await leadTeams(req.params.id) });
+  } catch (err) {
+    return next(err);
+  }
+});
 // eslint-disable-next-line global-require
 const queueDto = (r) => require('./routes').toDto(r);
 
@@ -356,7 +371,7 @@ router.get('/api/clinic/care-teams', async (req, res, next) => {
 
 router.post('/api/clinic/care-teams', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const { id, name, clinicId } = req.body || {};
     const errors = [];
     if (typeof id !== 'string' || !/^CT-[A-Z0-9-]{1,30}$/.test(id)) errors.push('id must look like CT-MNL-A (capital letters, digits, -)');
@@ -378,7 +393,7 @@ router.post('/api/clinic/care-teams', async (req, res, next) => {
 
 router.post('/api/clinic/care-teams/:id/members', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const { nurseId, nurseName, teamRole = 'nurse' } = req.body || {};
     const errors = [];
     if (typeof nurseId !== 'string' || !/^U-CS-[0-9A-Za-z-]{1,40}$/.test(nurseId)) errors.push('nurseId must be a nurse account id (U-CS-...)');
@@ -405,7 +420,7 @@ router.post('/api/clinic/care-teams/:id/members', async (req, res, next) => {
 
 router.delete('/api/clinic/care-teams/:id/members/:nurseId', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const result = await withTransaction(async (client) => {
       const { rows: [m] } = await client.query('SELECT * FROM care_team_members WHERE team_id = $1 AND nurse_id = $2 AND removed_at IS NULL FOR UPDATE', [req.params.id, req.params.nurseId]);
       if (!m) return { status: 404, body: { error: 'not_found', message: 'This nurse is not on the team' } };
@@ -435,9 +450,16 @@ router.delete('/api/clinic/care-teams/:id/members/:nurseId', async (req, res, ne
  */
 router.put('/api/clinic/patients/:id/care', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin links elders to care teams');
+    // The admin, or a team-lead nurse for the teams they lead (both the elder's current team and the new one).
+    const led = isNurse(req) ? await leadTeams(req.user.id) : [];
+    if (!isAdmin(req) && !led.length) return forbid(res, 'Only the admin or a team-lead nurse links elders to care teams');
     if (!ID_RE.test(req.params.id)) return res.status(404).json({ error: 'not_found' });
     const { patientName, careTeamId, monitoringPlanId, caseNurseId } = req.body || {};
+    if (!isAdmin(req)) {
+      if (!led.includes(careTeamId)) return forbid(res, 'You can link elders only to a team you lead');
+      const { rows: [now] } = await pool.query('SELECT care_team_id FROM patient_care WHERE patient_id = $1', [req.params.id]);
+      if (now && now.care_team_id && !led.includes(now.care_team_id)) return forbid(res, 'This elder is on a team you do not lead');
+    }
     const errors = [];
     if (patientName !== undefined && (typeof patientName !== 'string' || patientName.trim().length < 2 || patientName.length > 120)) errors.push('patientName must be 2-120 characters');
     if (typeof careTeamId !== 'string' || !ID_RE.test(careTeamId)) errors.push('careTeamId is required');
@@ -497,9 +519,13 @@ router.put('/api/clinic/patients/:id/care', async (req, res, next) => {
 
 router.get('/api/clinic/care-log', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin reads the assignment log');
+    const led = isNurse(req) ? await leadTeams(req.user.id) : [];
+    if (!isAdmin(req) && !led.length) return forbid(res, 'Only the admin or a team-lead nurse reads the assignment log');
     const limit = Math.min(Number(req.query.limit) || 100, 500);
-    const { rows } = await pool.query('SELECT * FROM care_assignment_log ORDER BY created_at DESC, id DESC LIMIT $1', [limit]);
+    // A team lead sees the log of the teams they lead.
+    const { rows } = isAdmin(req)
+      ? await pool.query('SELECT * FROM care_assignment_log ORDER BY created_at DESC, id DESC LIMIT $1', [limit])
+      : await pool.query('SELECT * FROM care_assignment_log WHERE team_id = ANY($2) ORDER BY created_at DESC, id DESC LIMIT $1', [limit, led]);
     return res.json({ entries: rows.map((r) => ({ id: r.id, action: r.action, actorId: r.actor_id, actorRole: r.actor_role, patientId: r.patient_id, teamId: r.team_id, details: r.details, at: r.created_at })) });
   } catch (err) {
     return next(err);

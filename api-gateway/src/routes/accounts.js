@@ -37,8 +37,8 @@ const express = require('express');
 const config = require('../config');
 const logger = require('../lib/logger');
 const { authenticate } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
 const { ROLES } = require('../config/roles');
+const { adminOrTeamLead, isTeamLead } = require('../middleware/teamLead');
 const { store, hashPassword, publicAccount, audit } = require('../auth/userStore');
 const { sendAccountSms, checkAccountSms, smsHealth, lastCaptured } = require('../auth/accountSms');
 const { revokeUserSessions, listUserSessions, revokeOneSession } = require('../auth/tokenService');
@@ -95,12 +95,21 @@ const ownStaff = (req, a, me) => Boolean(a.staffId && me && me.staffId === a.sta
 
 /* =============================== admin =============================== */
 const admin = express.Router();
-admin.use(authenticate, authorize(ROLES.ADMIN));
+// The admin manages every account. A team-lead nurse creates and looks after caregiver and family accounts only
+// (codes, resets, disable / enable) and reads the SMS check and the audit log; staff accounts and sessions stay
+// with the admin.
+admin.use(authenticate, adminOrTeamLead);
+const COMMUNITY = ['caregiver', 'family_member'];
+const adminOnly = (req, res, next) => (req.user.role === ROLES.ADMIN ? next() : res.status(403).json({ error: 'forbidden', message: 'Only the admin can do this' }));
 
 async function loadTarget(req, res, { notOwn = false } = {}) {
   if (!ID_RE.test(req.params.id)) { res.status(404).json({ error: 'not_found', message: 'Account not found' }); return null; }
   const a = await store.getById(req.params.id);
   if (!a) { res.status(404).json({ error: 'not_found', message: 'Account not found' }); return null; }
+  if (isTeamLead(req) && !COMMUNITY.includes(a.role)) {
+    res.status(403).json({ error: 'forbidden', message: 'A team-lead nurse manages caregiver and family accounts only' });
+    return null;
+  }
   if (notOwn && a.id !== req.user.id && ownStaff(req, a, await store.getById(req.user.id))) {
     res.status(409).json({ error: 'own_account', message: `This is another account of yours (${a.staffId}). Ask another admin to do this.` });
     return null;
@@ -110,7 +119,7 @@ async function loadTarget(req, res, { notOwn = false } = {}) {
 
 admin.get('/accounts', async (req, res, next) => {
   try {
-    const accounts = await store.list();
+    const accounts = (await store.list()).filter((a) => !isTeamLead(req) || COMMUNITY.includes(a.role));
     const rows = await Promise.all(accounts.map(async (a) => {
       const t = a.status === 'pending_activation' ? await followDelivery(req, await store.latestToken(a.id, 'activation')) : null;
       return { ...publicAccount(a), sessions: listUserSessions(a.id).length, activation: messageView(t) };
@@ -132,6 +141,7 @@ admin.post('/accounts', async (req, res, next) => {
   try {
     const v = R.validateNewAccount(req.body);
     if (!v.ok) return res.status(422).json({ error: 'validation_failed', details: v.errors });
+    if (isTeamLead(req) && !COMMUNITY.includes(v.value.role)) return res.status(403).json({ error: 'forbidden', message: 'A team-lead nurse creates caregiver and family accounts only' });
     if (await store.getByUsername(v.value.username)) return res.status(409).json({ error: 'conflict', message: `The username ${v.value.username} is taken` });
     const all = await store.list();
     let { staffId } = v.value;
@@ -253,7 +263,7 @@ admin.get('/sms-check', async (req, res, next) => {
   }
 });
 
-admin.get('/accounts/:id/sessions', async (req, res, next) => {
+admin.get('/accounts/:id/sessions', adminOnly, async (req, res, next) => {
   try {
     const a = await loadTarget(req, res);
     if (!a) return undefined;
@@ -263,7 +273,7 @@ admin.get('/accounts/:id/sessions', async (req, res, next) => {
   }
 });
 
-admin.delete('/accounts/:id/sessions/:sid', async (req, res, next) => {
+admin.delete('/accounts/:id/sessions/:sid', adminOnly, async (req, res, next) => {
   try {
     const a = await loadTarget(req, res);
     if (!a) return undefined;
@@ -280,8 +290,12 @@ admin.get('/audit', async (req, res, next) => {
     const targetId = req.query.targetId && ID_RE.test(req.query.targetId) ? String(req.query.targetId) : undefined;
     const action = req.query.action && /^[a-z_]{2,40}$/.test(req.query.action) ? String(req.query.action) : undefined;
     const staffId = req.query.staffId && /^ST-\d{3,6}$/.test(String(req.query.staffId).toUpperCase()) ? String(req.query.staffId).toUpperCase() : undefined;
-    const entries = await store.auditList({ limit: Math.min(Number(req.query.limit) || 100, 500), targetId, action, staffId });
-    res.json({ entries });
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    if (!isTeamLead(req)) return res.json({ entries: await store.auditList({ limit, targetId, action, staffId }) });
+    // A team-lead nurse sees only what happened to caregiver and family accounts (not staff or admin accounts).
+    const community = new Set((await store.list()).filter((a) => COMMUNITY.includes(a.role)).map((a) => a.id));
+    const entries = (await store.auditList({ limit: 500, targetId, action, staffId })).filter((e) => e.targetId && community.has(e.targetId));
+    return res.json({ entries: entries.slice(0, limit) });
   } catch (err) {
     next(err);
   }

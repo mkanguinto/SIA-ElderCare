@@ -705,7 +705,7 @@
 .ad-head h1 { margin: 0; font-size: 1.75rem; letter-spacing: -.01em; }
 .ad-head p { margin: .35rem 0 0; color: var(--text-secondary); max-width: 62rem; }
 .ad-head .m-seg { background: var(--bg-muted); }
-.is-admin .ad-head h1, .is-admin .ad-main > .page-header h1, .ad-on-dark { color: #fff; }
+.is-admin .ad-head h1, .is-admin .ad-main > .page-header h1, .is-admin .ad-on-dark { color: #fff; }
 .is-admin .ad-head p { color: rgba(255,255,255,.88); }
 .ad-live { display: inline-flex; align-items: center; gap: .5rem; padding: .5rem 1rem; border-radius: 999px; background: #fff; color: var(--text-primary); font-size: .875rem; font-weight: 700; white-space: nowrap; }
 .ad-live > span { width: .45rem; height: .45rem; border-radius: 50%; background: var(--text-primary); }
@@ -1098,3 +1098,15 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .m-intro-actions > * { flex: 1; }
 /* The clinic closed the case after a flagged reading: the same card, calm colours. */
 .m-attention.is-followed-up { background: var(--bg-primary-soft); color: var(--text-brand); }
+/* Admin elders list: linked caregivers with Unlink. */
+.ad-linked { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; font-weight: 600; }
+.ad-linked .m-link { font-size: .875rem; }
+/* Admin elders list: fit the width (no sideways scrolling); every column wraps. */
+.ad-table.ad-elders { table-layout: fixed; }
+.ad-table.ad-elders th:nth-child(1) { width: 15%; }
+.ad-table.ad-elders th:nth-child(2), .ad-table.ad-elders th:nth-child(3) { width: 19%; }
+.ad-table.ad-elders th:nth-child(4) { width: 15%; }
+.ad-table.ad-elders th:last-child { width: 4.5rem; }
+.ad-table.ad-elders select { width: 100%; min-width: 0; }
+.ad-fallback summary { cursor: pointer; font-weight: 600; color: var(--text-brand); }
+.ad-fallback[open] summary { margin-bottom: .75rem; }

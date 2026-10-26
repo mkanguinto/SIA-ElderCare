@@ -8,7 +8,7 @@ const ROLES = Object.freeze({
   CAREGIVER: 'caregiver', //        Primary Caregiver
   FAMILY: 'family_member', //       Family Member / Sponsor
   CLINIC: 'clinic_staff', //        Clinic Staff / Nurse
-  ADMIN: 'system_admin', //         System Administrator
+  ADMIN: 'system_admin', //         Health Center Administrator (accounts, care teams, operations)
 });
 
 const ALL_ROLES = Object.freeze(Object.values(ROLES));

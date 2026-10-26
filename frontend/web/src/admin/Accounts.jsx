@@ -10,7 +10,7 @@ import { ROLE_LABEL, initials, relTime } from '../format';
 import { Chip, toneFor } from '../mobile/kit';
 import Icon from '../mobile/icons';
 
-const ROLE_NAME = { caregiver: 'Caregiver', family_member: 'Family (view only)', clinic_staff: 'Nurse', system_admin: 'System admin' };
+const ROLE_NAME = { caregiver: 'Caregiver', family_member: 'Family (view only)', clinic_staff: 'Nurse', system_admin: 'Health Center Admin' };
 const STATUS_CHIP = { active: ['ok', 'check', 'Active'], pending_activation: ['moderate', 'clock', 'Waiting for activation'], disabled: ['critical', 'x', 'Disabled'] };
 const ACTION_LABEL = {
   account_created: 'Account created', activation_code_sent: 'Activation code sent', account_activated: 'Account activated', activation_failed: 'Activation failed',
@@ -58,7 +58,8 @@ function smsText(s, name) {
 }
 const smsTone = (s) => (s.delivery === 'delivered' ? 'ok' : ['simulated', 'failed'].includes(s.delivery) ? 'critical' : 'info');
 
-export function Accounts({ Head }) {
+/** lead: a team-lead nurse in the nurse console - caregiver and family accounts only, no session controls. */
+export function Accounts({ Head, lead = false }) {
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState(null);
   const [tracking, setTracking] = useState(null); // { accountId, name, first }
@@ -81,11 +82,12 @@ export function Accounts({ Head }) {
   const others = (a) => (a.staffId && data.staff ? (data.staff.find((p) => p.staffId === a.staffId) || { accounts: [] }).accounts.filter((x) => x.id !== a.id) : []);
   return (
     <>
-      <Head title="Accounts" sub="Create accounts and send activation and password-reset codes by SMS. You never see a code or password; every action is in the audit log." />
+      <Head title="Accounts" sub={lead ? 'Create caregiver and family accounts and send their activation codes by SMS. You never see a code or password; every action is in the audit log.'
+        : 'Create accounts and send activation and password-reset codes by SMS. You never see a code or password; every action is in the audit log.'} />
       <SmsCheck />
       {msg && <p className={`m-banner tone-${msg.tone}`} role={msg.tone === 'critical' ? 'alert' : 'status'} style={{ marginBottom: '1rem' }}>{msg.text}</p>}
       {tracking && <DeliveryTracker key={`${tracking.accountId}-${tracking.first.sentAt}`} t={tracking} onFinal={load} onClose={() => setTracking(null)} />}
-      <NewAccount staff={(data && data.staff) || []} onCreate={async (body) => {
+      <NewAccount lead={lead} staff={(data && data.staff) || []} onCreate={async (body) => {
         const r = await run(() => api('/api/admin/accounts', { method: 'POST', body }), (x) => `${x.account.name} (${x.account.username}${x.account.staffId ? `, staff ${x.account.staffId}` : ''}) created.`);
         if (r) sent(r.account, r.activation);
         return Boolean(r);
@@ -123,7 +125,7 @@ export function Accounts({ Head }) {
                       <td>{a.sessions}</td>
                       <td><button type="button" className="m-link" aria-expanded={open === a.id} onClick={() => setOpen(open === a.id ? null : a.id)}>{open === a.id ? 'Close' : 'Manage'}</button></td>
                     </tr>
-                    {open === a.id && <tr><td colSpan={6}><Manage a={a} run={run} sent={sent} /></td></tr>}
+                    {open === a.id && <tr><td colSpan={6}><Manage a={a} run={run} sent={sent} lead={lead} /></td></tr>}
                   </React.Fragment>
                 );
               })}
@@ -192,10 +194,11 @@ function DeliveryTracker({ t, onFinal, onClose }) {
   );
 }
 
-function Manage({ a, run, sent }) {
+function Manage({ a, run, sent, lead }) {
   const [sessions, setSessions] = useState(null);
   const [reason, setReason] = useState('');
-  const loadSessions = useCallback(() => api(`/api/admin/accounts/${a.id}/sessions`).then((r) => setSessions(r.sessions)).catch(() => setSessions([])), [a.id]);
+  // Sessions are the admin's (a team lead looks after codes, resets and disabling).
+  const loadSessions = useCallback(() => (lead ? Promise.resolve() : api(`/api/admin/accounts/${a.id}/sessions`).then((r) => setSessions(r.sessions)).catch(() => setSessions([]))), [a.id, lead]);
   useEffect(() => { loadSessions(); }, [loadSessions]);
   const post = (path, body) => api(`/api/admin/accounts/${a.id}/${path}`, { method: 'POST', body });
   const send = async (path, key) => { const r = await run(() => post(path)); if (r) sent(a, r[key]); };
@@ -213,8 +216,8 @@ function Manage({ a, run, sent }) {
             </>
           )}
       </div>
-      <h3 style={{ fontSize: '.9375rem', margin: '1rem 0 .25rem' }}>Active sessions</h3>
-      {!sessions && <p className="m-caption">Loading…</p>}
+      {!lead && <h3 style={{ fontSize: '.9375rem', margin: '1rem 0 .25rem' }}>Active sessions</h3>}
+      {!lead && !sessions && <p className="m-caption">Loading…</p>}
       {sessions && !sessions.length && <p className="m-caption">Not signed in anywhere.</p>}
       {sessions && sessions.length > 0 && (
         <ul className="ad-members" style={{ margin: '.25rem 0 0' }}>
@@ -231,10 +234,10 @@ function Manage({ a, run, sent }) {
   );
 }
 
-const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'System admin'], ['family_member', 'Family member (link via verification)']];
+const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'Health Center Admin'], ['family_member', 'Family member (link via verification)']];
 const STAFF = ['clinic_staff', 'system_admin'];
-function NewAccount({ staff, onCreate }) {
-  const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '', patients: '' };
+function NewAccount({ staff, onCreate, lead }) {
+  const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '' };
   const [f, setF] = useState(blank);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const isStaff = STAFF.includes(f.role);
@@ -244,19 +247,18 @@ function NewAccount({ staff, onCreate }) {
   return (
     <section className="ad-panel">
       <h2>New account</h2>
-      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Family members are linked to an elder only after the clinic verifies them.
+      <p className="m-caption">The person gets an SMS with their username and an activation code (valid 24 hours) and chooses their own password. Elders are linked afterwards: caregivers in Care teams → Link &amp; Assignments, family members by a nurse after family verification.
         A nurse who is also an admin gets a second, separate account linked to the same staff ID: separate password and sessions, one person in the audit log.</p>
       <form onSubmit={async (e) => {
         e.preventDefault();
         const ok = await onCreate({
           role: f.role, name: (person ? person.name : f.name).trim(), username: f.username.trim(), phone: f.phone.trim(),
           ...(isStaff && f.staffId ? { staffId: f.staffId } : {}),
-          ...(f.role === 'caregiver' && f.patients.trim() ? { patients: f.patients.split(/[\s,]+/).filter(Boolean) } : {}),
         });
         if (ok) setF({ ...blank, role: f.role });
       }}>
         <div className="ad-form-grid">
-          <label className="ad-field"><span>Role</span><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, staffId: '' })}>{ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label className="ad-field"><span>Role</span><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value, staffId: '' })}>{ROLES.filter(([k]) => !lead || !STAFF.includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           {isStaff && (
             <label className="ad-field"><span>Staff member</span>
               <select value={f.staffId} onChange={set('staffId')}>
@@ -267,7 +269,6 @@ function NewAccount({ staff, onCreate }) {
           <label className="ad-field"><span>Full name</span><input value={person ? person.name : f.name} onChange={set('name')} readOnly={Boolean(person)} minLength={2} required /></label>
           <label className="ad-field"><span>Username</span><input value={f.username} onChange={set('username')} placeholder={f.role === 'system_admin' ? 'admin.ana' : 'caregiver.liza'} pattern="[A-Za-z][A-Za-z0-9._\-]{2,39}" required /></label>
           <label className="ad-field"><span>Mobile number</span><input value={f.phone} onChange={set('phone')} placeholder="0917 123 4567" inputMode="tel" required /></label>
-          {f.role === 'caregiver' && <label className="ad-field"><span>Elder IDs</span><input value={f.patients} onChange={set('patients')} placeholder="P-1003" /></label>}
         </div>
         <button type="submit" className="m-btn is-dark ad-btn-auto">Create and send code</button>
       </form>
