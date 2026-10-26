@@ -4,7 +4,7 @@ export const ROLE_LABEL = {
   caregiver: 'Caregiver',
   family_member: 'Family member',
   clinic_staff: 'Clinic nurse',
-  system_admin: 'Health center administrator',
+  system_admin: 'Health Center Administrator',
 };
 
 export const STATUS_LABEL = {

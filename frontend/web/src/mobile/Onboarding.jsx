@@ -18,7 +18,7 @@ const ROLES = [
   { username: 'caregiver.maria', icon: 'clipboard', en: ['Caregiver', 'Log daily check-ins and medicines'], fil: ['Tagapag-alaga', 'Mag-check-in araw-araw at itala ang gamot'] },
   { username: 'family.jose', icon: 'heart', en: ['Family', 'See how your loved one is doing'], fil: ['Pamilya', 'Tingnan ang kalagayan ng mahal mo sa buhay'] },
   { username: 'nurse.ana', icon: 'users', en: ['Nurse', 'Risk queue, visits and patients'], fil: ['Nars', 'Risk queue, pagbisita at pasyente'], tag: ['Phone or computer', 'Phone o computer'] },
-  { username: 'admin.harold', icon: 'monitor', en: ['Health center admin', 'Service health, staff accounts and care teams'], fil: ['Admin ng health center', 'Kalagayan ng serbisyo, account ng kawani at care team'], tag: ['Computer', 'Computer'] },
+  { username: 'admin.harold', icon: 'monitor', en: ['Health Center Admin', 'Service health, staff accounts and care teams'], fil: ['Admin ng health center', 'Kalagayan ng serbisyo, account ng kawani at care team'], tag: ['Computer', 'Computer'] },
 ];
 
 export function Landing() {
