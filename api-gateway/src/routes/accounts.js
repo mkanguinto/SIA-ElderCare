@@ -290,8 +290,12 @@ admin.get('/audit', async (req, res, next) => {
     const targetId = req.query.targetId && ID_RE.test(req.query.targetId) ? String(req.query.targetId) : undefined;
     const action = req.query.action && /^[a-z_]{2,40}$/.test(req.query.action) ? String(req.query.action) : undefined;
     const staffId = req.query.staffId && /^ST-\d{3,6}$/.test(String(req.query.staffId).toUpperCase()) ? String(req.query.staffId).toUpperCase() : undefined;
-    const entries = await store.auditList({ limit: Math.min(Number(req.query.limit) || 100, 500), targetId, action, staffId });
-    res.json({ entries });
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    if (!isTeamLead(req)) return res.json({ entries: await store.auditList({ limit, targetId, action, staffId }) });
+    // A team-lead nurse sees only what happened to caregiver and family accounts (not staff or admin accounts).
+    const community = new Set((await store.list()).filter((a) => COMMUNITY.includes(a.role)).map((a) => a.id));
+    const entries = (await store.auditList({ limit: 500, targetId, action, staffId })).filter((e) => e.targetId && community.has(e.targetId));
+    return res.json({ entries: entries.slice(0, limit) });
   } catch (err) {
     next(err);
   }

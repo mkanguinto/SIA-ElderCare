@@ -480,6 +480,12 @@ console.log('\n-- Team-lead nurse --');
   r = await call('GET', '/api/admin/accounts', lead);
   ok(r.s === 200 && r.j.accounts.every((a) => ['caregiver', 'family_member'].includes(a.role)), 'team lead sees caregiver and family accounts only');
   ok((await call('GET', '/api/admin/audit?limit=5', lead)).s === 200 && (await call('GET', '/api/admin/health', lead)).s === 200 && (await call('GET', '/api/admin/messaging', lead)).s === 200, 'team lead reads the audit log, service health and message queues');
+  {
+    const accts = (await call('GET', '/api/admin/accounts', admin)).j.accounts;
+    const community = new Set(accts.filter((x) => ['caregiver', 'family_member'].includes(x.role)).map((x) => x.id));
+    const entries = (await call('GET', '/api/admin/audit?limit=200', lead)).j.entries;
+    ok(entries.length > 0 && entries.every((e) => community.has(e.targetId)), `team lead's audit log shows only caregiver and family accounts (${entries.length} entries)`);
+  }
   ok((await call('GET', '/api/admin/accounts/U-CS-002/sessions', lead)).s === 403 && (await call('GET', '/api/admin/security', lead)).s === 403, 'sessions and security settings stay with the admin (403)');
   r = await call('POST', '/api/patients', lead, { fullName: `Lead Registered Elder ${t}`, birthDate: '1945-02-02', sex: 'M', addressLine: 'Brgy 5, Manila', zipCode: '1000' });
   ok(r.s === 201, `team lead registers an elder (${r.s})`);
