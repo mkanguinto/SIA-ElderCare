@@ -67,7 +67,7 @@ export default function AdminConsole({ user, path }) {
   else page = <Monitor live={live} />;
   return (
     <ToastProvider>
-      <DesktopShell variant="admin" label="Admin" role="Admin" sections={SECTIONS} user={user} userSub="System Administrator">
+      <DesktopShell variant="admin" label="Admin" role="Admin" sections={SECTIONS} user={user} userSub="Health Center Administrator">
         <p className="m-banner tone-info ad-phone-note" role="note"><Icon name="monitor" />The admin console is made for a computer. On a phone you can check status, but use a computer to manage the system.</p>
         {page}
       </DesktopShell>

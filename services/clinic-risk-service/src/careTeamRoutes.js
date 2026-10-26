@@ -371,7 +371,7 @@ router.get('/api/clinic/care-teams', async (req, res, next) => {
 
 router.post('/api/clinic/care-teams', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const { id, name, clinicId } = req.body || {};
     const errors = [];
     if (typeof id !== 'string' || !/^CT-[A-Z0-9-]{1,30}$/.test(id)) errors.push('id must look like CT-MNL-A (capital letters, digits, -)');
@@ -393,7 +393,7 @@ router.post('/api/clinic/care-teams', async (req, res, next) => {
 
 router.post('/api/clinic/care-teams/:id/members', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const { nurseId, nurseName, teamRole = 'nurse' } = req.body || {};
     const errors = [];
     if (typeof nurseId !== 'string' || !/^U-CS-[0-9A-Za-z-]{1,40}$/.test(nurseId)) errors.push('nurseId must be a nurse account id (U-CS-...)');
@@ -420,7 +420,7 @@ router.post('/api/clinic/care-teams/:id/members', async (req, res, next) => {
 
 router.delete('/api/clinic/care-teams/:id/members/:nurseId', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) return forbid(res, 'Only the system admin manages care teams');
+    if (!isAdmin(req)) return forbid(res, 'Only the health center administrator manages care teams');
     const result = await withTransaction(async (client) => {
       const { rows: [m] } = await client.query('SELECT * FROM care_team_members WHERE team_id = $1 AND nurse_id = $2 AND removed_at IS NULL FOR UPDATE', [req.params.id, req.params.nurseId]);
       if (!m) return { status: 404, body: { error: 'not_found', message: 'This nurse is not on the team' } };

@@ -10,7 +10,7 @@ import { ROLE_LABEL, initials, relTime } from '../format';
 import { Chip, toneFor } from '../mobile/kit';
 import Icon from '../mobile/icons';
 
-const ROLE_NAME = { caregiver: 'Caregiver', family_member: 'Family (view only)', clinic_staff: 'Nurse', system_admin: 'System admin' };
+const ROLE_NAME = { caregiver: 'Caregiver', family_member: 'Family (view only)', clinic_staff: 'Nurse', system_admin: 'Health center admin' };
 const STATUS_CHIP = { active: ['ok', 'check', 'Active'], pending_activation: ['moderate', 'clock', 'Waiting for activation'], disabled: ['critical', 'x', 'Disabled'] };
 const ACTION_LABEL = {
   account_created: 'Account created', activation_code_sent: 'Activation code sent', account_activated: 'Account activated', activation_failed: 'Activation failed',
@@ -234,7 +234,7 @@ function Manage({ a, run, sent, lead }) {
   );
 }
 
-const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'System admin'], ['family_member', 'Family member (link via verification)']];
+const ROLES = [['caregiver', 'Caregiver'], ['clinic_staff', 'Nurse'], ['system_admin', 'Health center admin'], ['family_member', 'Family member (link via verification)']];
 const STAFF = ['clinic_staff', 'system_admin'];
 function NewAccount({ staff, onCreate, lead }) {
   const blank = { role: 'caregiver', staffId: '', name: '', username: '', phone: '' };
