@@ -56,7 +56,7 @@ router.put('/users/:userId/patients', async (req, res, next) => {
       if (r.status === 404) return res.status(422).json({ error: 'validation_failed', details: [`Patient ${pid} does not exist`] });
       if (r.status !== 200) return res.status(502).json({ error: 'bad_gateway', message: 'Could not verify the patient' });
     }
-    // Family verification: a family member sees an elder only after a nurse records how the relationship was
+    // Family verification: a family member sees an elder only after a nurse (or the admin) records how the relationship was
     // confirmed (by the elder in person or by phone, an ID and a document, or another way described in words).
     let familyVerification;
     if (target.role === 'family_member' && add.length) {
@@ -64,7 +64,8 @@ router.put('/users/:userId/patients', async (req, res, next) => {
       const other = typeof v.methodOther === 'string' ? v.methodOther.trim() : '';
       const note = typeof v.note === 'string' ? v.note.trim() : '';
       const errors = [];
-      if (req.user.role !== ROLES.CLINIC) errors.push('Only a nurse can verify a family member');
+      // A nurse, or the Health Center Admin (the nurse supervisor) in Care teams, records how it was confirmed.
+      if (![ROLES.CLINIC, ROLES.ADMIN].includes(req.user.role)) errors.push('Only a nurse or the health center administrator can verify a family member');
       if (!FAMILY_VERIFY_METHODS.includes(v.method)) errors.push(`Family members are linked to an elder through family verification: familyVerification.method must be one of ${FAMILY_VERIFY_METHODS.join(', ')}`);
       if (v.method === 'other' && (other.length < 2 || other.length > 80)) errors.push('familyVerification.methodOther is required when "other" is chosen (2-80 characters)');
       if (note.length > 300) errors.push('familyVerification.note must be at most 300 characters');

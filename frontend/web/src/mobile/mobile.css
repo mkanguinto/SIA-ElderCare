@@ -1103,9 +1103,10 @@ body:has(.ad-app.is-admin) { background: #15362c; }
 .ad-linked .m-link { font-size: .875rem; }
 /* Admin elders list: fit the width (no sideways scrolling); every column wraps. */
 .ad-table.ad-elders { table-layout: fixed; }
-.ad-table.ad-elders th:nth-child(1) { width: 15%; }
-.ad-table.ad-elders th:nth-child(2), .ad-table.ad-elders th:nth-child(3) { width: 19%; }
-.ad-table.ad-elders th:nth-child(4) { width: 15%; }
+.ad-table.ad-elders th:nth-child(1) { width: 13%; }
+.ad-table.ad-elders th:nth-child(2), .ad-table.ad-elders th:nth-child(3) { width: 15%; }
+.ad-table.ad-elders th:nth-child(4) { width: 13%; }
+.ad-verify-pick { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
 .ad-table.ad-elders th:last-child { width: 4.5rem; }
 .ad-table.ad-elders select { width: 100%; min-width: 0; }
 .ad-fallback summary { cursor: pointer; font-weight: 600; color: var(--text-brand); }
