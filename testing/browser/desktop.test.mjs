@@ -53,6 +53,7 @@ export default async function run({ shots } = {}) {
     await page.click('Link & Assignments', '.ad-tabs');
     check(await page.waitFor('Add a new elder') && await page.waitFor('Register elder') && await page.waitFor('Elder missing from the list above'), 'admin: link & assignments tab registers a new elder (patient number only as a fallback)');
     check(await page.evaluate("[...document.querySelectorAll('.ad-elders th')].some((th) => th.textContent === 'Caregiver') && !!document.querySelector('select[aria-label^=\"Link a caregiver\"]')"), 'admin: each elder row links a caregiver');
+    check(await page.evaluate("[...document.querySelectorAll('.ad-elders th')].some((th) => th.textContent === 'Family') && !!document.querySelector('select[aria-label^=\"Link a family member\"]')"), 'admin: each elder row links a family member (with family verification)');
     await page.click('Create New Team');
     check(await page.waitFor({ expr: "!!document.querySelector('.ad-drawer [role=dialog], .ad-drawer')" }) && await page.waitFor('New care team'), 'admin: Create New Team opens the drawer');
     await page.goto('/admin/users');

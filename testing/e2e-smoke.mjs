@@ -284,7 +284,8 @@ for (let i = 0; i < 10; i++) {
   await new Promise((res) => setTimeout(res, 500));
 }
 ok(st && st.checkin.status === 'awaiting_review' && st.statusLog.length === 2, 'moves to awaiting review once delivered to the clinic queue');
-r = await call('GET', '/api/checkins/review-queue?pageSize=200', nurse);
+r = await call('GET', '/api/checkins/review-queue?patientId=P-1001&pageSize=200', nurse); // oldest first: the new one is on the last page
+if (r.s === 200 && r.j.pagination.totalPages > 1) r = await call('GET', `/api/checkins/review-queue?patientId=P-1001&pageSize=200&page=${r.j.pagination.totalPages}`, nurse);
 ok(r.s === 200 && r.j.checkins.some((c) => c.id === statusId), 'nurse review queue lists it');
 ok((await call('POST', `/api/checkins/${statusId}/review`, cg, {})).s === 403, 'caregiver cannot review (403)');
 r = await call('POST', `/api/checkins/${statusId}/review`, nurse, { note: 'smoke test review' });

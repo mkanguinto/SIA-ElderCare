@@ -4485,8 +4485,12 @@
                 "exec": [
                   "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "pm.test(\"contains the new check-in with the patient name\", () => { const c = j.checkins.find((x) => x.id === pm.collectionVariables.get(\"statusCheckinId\")); pm.expect(c).to.be.ok; pm.expect(c.patientName).to.be.a(\"string\"); });",
-                  "pm.test(\"paginated\", () => pm.expect(j.pagination.totalItems).to.be.above(0));"
+                  "pm.test(\"paginated\", () => pm.expect(j.pagination.totalItems).to.be.above(0));",
+                  "const id = pm.collectionVariables.get(\"statusCheckinId\");",
+                  "const check = (list) => pm.test(\"contains the new check-in with the patient name\", () => { const c = list.find((x) => x.id === id); pm.expect(c).to.be.ok; pm.expect(c.patientName).to.be.a(\"string\"); });",
+                  "// Most urgent first, then oldest: on a busy database the new check-in can be on the last page.",
+                  "if (j.checkins.some((x) => x.id === id) || j.pagination.totalPages <= 1) check(j.checkins);",
+                  "else pm.sendRequest({ url: pm.request.url.toString() + \"&page=\" + j.pagination.totalPages, header: { Authorization: pm.request.headers.get(\"Authorization\") } }, (err, res) => check(err ? [] : res.json().checkins));"
                 ]
               }
             }

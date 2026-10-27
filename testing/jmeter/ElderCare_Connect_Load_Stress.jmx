@@ -127,7 +127,7 @@
           <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments">
             <elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{
-  "patientId": "${__chooseRandom(P-1001,P-1002,checkinPatient)}",
+  "patientId": "P-100${__Random(1,2,checkinNo)}",
   "vitals": {
     "systolic": ${__Random(110,175)},
     "diastolic": ${__Random(65,99)},
@@ -394,7 +394,7 @@
         <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /api/checkins (abnormal vitals -> alert + queue)" enabled="true">
           <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
           <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments">
-            <elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"patientId":"${__chooseRandom(P-1001,P-1002,stressPatient)}","vitals":{"systolic":${__Random(165,195)},"diastolic":${__Random(95,119)},"heartRate":${__Random(95,125)},"temperatureC":38.${__Random(0,9)},"spo2":${__Random(89,95)}},"medication":{"taken":false}}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp>
+            <elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"patientId":"P-100${__Random(1,2,stressNo)}","vitals":{"systolic":${__Random(165,195)},"diastolic":${__Random(95,119)},"heartRate":${__Random(95,125)},"temperatureC":38.${__Random(0,9)},"spo2":${__Random(89,95)}},"medication":{"taken":false}}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp>
           </collectionProp></elementProp>
           <stringProp name="HTTPSampler.path">/api/checkins</stringProp>
           <stringProp name="HTTPSampler.method">POST</stringProp>

@@ -7,6 +7,7 @@ import { Link } from '../router';
 import { relTime, initials } from '../format';
 import Icon from '../mobile/icons';
 import { Chip, toneFor } from '../mobile/kit';
+import { SelectOther, FAMILY_VERIFY, familyVerificationBody } from '../components/ui';
 
 const ACTION_LABEL = {
   team_created: 'Care team created', member_added: 'Nurse added to team', member_removed: 'Nurse removed from team',
@@ -109,8 +110,8 @@ export function CareTeams({ Head, leadTeams = null, accountsPath = '/admin/users
             <h2>Elders</h2>
             <p className="m-caption">Cases already held by a nurse move only by an accepted handover.</p>
             <table className="ad-table ad-elders">
-              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th>Caregiver</th><th><span className="m-sr">Save</span></th></tr></thead>
-              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} caregivers={(users || []).filter((u) => u.role === 'caregiver' && u.status !== 'disabled')} run={run} accountsPath={accountsPath}
+              <thead><tr><th>Elder</th><th>Care team</th><th>Monitoring plan</th><th>Case held by</th><th>Caregiver</th><th>Family</th><th><span className="m-sr">Save</span></th></tr></thead>
+              <tbody>{data.patients.map((p) => <ElderRow key={p.id} p={p} data={data} caregivers={(users || []).filter((u) => u.role === 'caregiver' && u.status !== 'disabled')} family={(users || []).filter((u) => u.role === 'family_member' && u.status !== 'disabled')} run={run} accountsPath={accountsPath}
                 onSave={(body, label) => run(() => api(`/api/clinic/patients/${encodeURIComponent(p.id)}/care`, { method: 'PUT', body }), label)} />)}</tbody>
             </table>
           </section>
@@ -155,23 +156,36 @@ export function CareTeams({ Head, leadTeams = null, accountsPath = '/admin/users
   );
 }
 
-function ElderRow({ p, data, caregivers, run, onSave, accountsPath }) {
+function ElderRow({ p, data, caregivers, family, run, onSave, accountsPath }) {
   const [team, setTeam] = useState(p.careTeamId || '');
   const [plan, setPlan] = useState(p.monitoringPlanId || '');
   const [nurse, setNurse] = useState('');
   const [caregiver, setCaregiver] = useState('');
+  // Family members are linked with how the relationship was confirmed (family verification, in the audit log).
+  const [relative, setRelative] = useState('');
+  const [verify, setVerify] = useState({ method: '', methodOther: '' });
+  const linkedFamily = family.filter((u) => (u.patients || []).includes(p.id));
+  const freeFamily = family.filter((u) => !(u.patients || []).includes(p.id));
+  const verified = verify.method && (verify.method !== 'other' || verify.methodOther.trim().length >= 2);
   const members = (data.teams.find((t) => t.id === team) || { members: [] }).members;
   // Caregivers are linked to an elder here (not when the account is made); one elder can have more than one.
   const linked = caregivers.filter((u) => (u.patients || []).includes(p.id));
   const free = caregivers.filter((u) => !(u.patients || []).includes(p.id));
   const careChanged = team !== (p.careTeamId || '') || plan !== (p.monitoringPlanId || '') || nurse;
-  const changed = careChanged || caregiver;
+  const changed = careChanged || caregiver || (relative && verified);
   async function save() {
     if (careChanged) await onSave({ careTeamId: team, monitoringPlanId: plan || null, ...(nurse ? { caseNurseId: nurse } : {}) }, `${p.name} updated`);
     if (caregiver) {
       const name = (caregivers.find((u) => u.id === caregiver) || {}).name;
       await run(() => api(`/api/directory/users/${caregiver}/patients`, { method: 'PUT', body: { add: [p.id] } }), `${name} is now ${p.name}'s caregiver (they see it the next time they open the app)`);
       setCaregiver('');
+    }
+    if (relative && verified) {
+      const name = (family.find((u) => u.id === relative) || {}).name;
+      await run(() => api(`/api/directory/users/${relative}/patients`, { method: 'PUT', body: { add: [p.id], familyVerification: familyVerificationBody(verify) } }),
+        `${name} is now linked to ${p.name} as family (they see it the next time they open the app)`);
+      setRelative('');
+      setVerify({ method: '', methodOther: '' });
     }
   }
   const unlink = (u) => window.confirm(`Unlink ${u.name} from ${p.name}? They will no longer see this elder.`)
@@ -197,10 +211,30 @@ function ElderRow({ p, data, caregivers, run, onSave, accountsPath }) {
           ? <span className="m-sub">No caregiver account yet. <Link to={accountsPath}>Create one in Accounts</Link></span>
           : free.length > 0 && (
             <select value={caregiver} onChange={(e) => setCaregiver(e.target.value)} aria-label={`Link a caregiver to ${p.name}`}>
-              <option value="">{linked.length ? 'Add another caregiver' : 'No caregiver yet - choose'}</option>
+              <option value="">{linked.length ? '+ Add another' : 'Choose caregiver'}</option>
               {free.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
             </select>
           )}
+      </td>
+      <td>
+        {linkedFamily.map((u) => (
+          <span key={u.id} className="ad-linked">{u.name}<button type="button" className="m-link" onClick={() => unlink(u)} aria-label={`Unlink ${u.name}`}>Unlink</button></span>
+        ))}
+        {family.length === 0
+          ? <span className="m-sub">No family account yet. <Link to={accountsPath}>Create one in Accounts</Link></span>
+          : freeFamily.length > 0 && (
+            <select value={relative} onChange={(e) => setRelative(e.target.value)} aria-label={`Link a family member to ${p.name}`}>
+              <option value="">{linkedFamily.length ? '+ Add another' : 'Choose family'}</option>
+              {freeFamily.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
+            </select>
+          )}
+        {relative && (
+          <div className="ad-verify-pick">
+            <span className="m-sub">How did you confirm they are family?</span>
+            <SelectOther label={`Family verification for ${p.name}`} value={verify.method} onChange={(method) => setVerify({ ...verify, method })}
+              other={verify.methodOther} onOther={(methodOther) => setVerify({ ...verify, methodOther })} options={FAMILY_VERIFY} placeholder="Choose" otherPlaceholder="How it was confirmed" />
+          </div>
+        )}
       </td>
       <td><button type="button" className="m-link" disabled={!changed} onClick={save}>Save</button></td>
     </tr>
